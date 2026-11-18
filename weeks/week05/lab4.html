@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lab 4 — Changing Data, Constraints and Views · CS 4600/5200</title>
+<meta name="description" content="CS 4600/5200 Lab 4: ten questions that create a table, change data with INSERT, UPDATE and DELETE, add constraints and foreign key actions, define views and write a recursive query on the university database, plus two short written answers.">
+<link rel="stylesheet" href="../../assets/course.css">
+<link rel="stylesheet" href="../../assets/db.css">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to the lab</a>
+
+<div class="doc">
+<header class="doc-masthead">
+  <p class="inst"><span>CS 4600/5200 · Database Theory and Applications</span><span>Week 5</span><span><a href="../../index.html">Course home</a></span></p>
+  <h1>Lab 4: Changing data, constraints and views</h1>
+  <p class="tagline">Until now every query only read the database. In this lab you build a table, change rows, add rules the data must follow, and save queries as views. The questions run in order, and each one changes what the next one sees.</p>
+</header>
+
+<dl class="facts">
+  <div><dt>Due</dt><dd>Sunday, February 14, 11:59 p.m. CT</dd></div>
+  <div><dt>Time</dt><dd>About 2 hours, half of it in class</dd></div>
+  <div><dt>Submit</dt><dd>One zip file, uploaded to Brightspace</dd></div>
+  <div><dt>Worth</dt><dd>One of the labs (labs are 25% of the grade)</dd></div>
+</dl>
+
+<nav class="toc" aria-labelledby="toc-h">
+  <h2 id="toc-h">On this page</h2>
+  <ol>
+    <li><a href="#files">Files for this lab</a></li>
+    <li><a href="#a">Part A: warm up in the playground</a></li>
+    <li><a href="#b">Part B: ten questions in SQL</a></li>
+    <li><a href="#c">Part C: two short answers</a></li>
+    <li><a href="#d">Part D: CS 5200 only</a></li>
+    <li><a href="#submit">What to submit and how it is graded</a></li>
+    <li><a href="#help">If something goes wrong</a></li>
+  </ol>
+</nav>
+
+<main id="main">
+
+<section id="files" aria-labelledby="files-h">
+  <h2 id="files-h">Files for this lab</h2>
+  <p>This week's database has an eighth table, <code>prereq</code>, so download the new <code>university.sql</code> even if you have last week's. Put all three files in one folder, for example <code>Documents/cs5200/lab4</code>:</p>
+  <ul>
+    <li><a href="university.sql" download>university.sql</a>: the eight-table database.</li>
+    <li><a href="lab4.sql" download>lab4.sql</a>: the starter file for your SQL.</li>
+    <li><a href="lab4_answers.txt" download>lab4_answers.txt</a>: the starter file for your name, your row counts and your written answers.</li>
+  </ul>
+  <p>You do not need to load the database yourself. The first lines of <code>lab4.sql</code> reload <code>university.sql</code> from the same folder every time you run it, so a run always starts from the same data, however many times you have run it before. That is why the two files must sit in the same folder.</p>
+  <p>Run the whole file, never one question alone: Q3 expects the column Q2 added, Q7 expects the row Q6 inserted, and so on.</p>
+<pre>psql -d university -e -f lab4.sql &gt; lab4_output.txt 2&gt;&amp;1</pre>
+  <p>On Windows, add <code>-U postgres</code> after <code>psql</code>. In Colab, start the line with <code>!</code>. The <code>-e</code> prints each statement above its result, so the grader can match them.</p>
+</section>
+
+<section id="a" aria-labelledby="a-h">
+  <h2 id="a-h">Part A: warm up in the playground (20 minutes)</h2>
+  <p>Open the <a href="playground.html">week 5 playground</a> and solve exercises 1 to 7; exercise 8 is a good start on Q9. They are not graded. Then open the foreign key explorer in section 3 and delete History with each of the three ON DELETE actions. Say to yourself what happened to Lena Fischer and Tomas Novak each time.</p>
+</section>
+
+<section id="b" aria-labelledby="b-h">
+  <h2 id="b-h">Part B: ten questions in SQL</h2>
+  <p>Try each statement in the playground's <a href="playground.html#scratch">scratch pad</a> first, inside <code>BEGIN;</code> … <code>ROLLBACK;</code>, then copy it into <code>lab4.sql</code> under its comment. Every question ends with a SELECT: write the number of rows it returned in <code>lab4_answers.txt</code>. Show exactly the columns asked for, in the order asked, and name a computed column the way the question does.</p>
+  <ol class="qs">
+    <li><p><strong>Q1.</strong> Create a table <code>classroom</code> with a <code>building</code> (up to 15 characters), a <code>room_number</code> (up to 7 characters) and a <code>capacity</code> that must be given and must be more than 0. A room is identified by its building and room number together. Insert four rooms: Hale 101 for 120, Hale 214 for 40, Kirk 110 for 60 and Linden 7 for 25. Then show the whole table, sorted by building and room number. Keep the <code>DROP TABLE IF EXISTS classroom;</code> line above it.</p></li>
+    <li><p><strong>Q2.</strong> Add an integer column <code>level</code> to <code>course</code>. Fill it, with one UPDATE, with the hundreds of the course number: CS-101 is level 100, CS-347 is level 300. Then show <code>course_id</code> and <code>level</code>, highest level first, then by course. Hint: <code>substring(course_id FROM '[0-9]+')</code> gives the digits as text, and integer division by 100 drops the rest.</p></li>
+    <li><p><strong>Q3.</strong> Ines Duarte, id 91011, joins Comp. Sci. at 88,000 and will teach CS-319 in Fall 2027. Insert both rows. Then show every course's <code>course_id</code> with the number of times it has been taught as <code>times_taught</code>, 0 included, sorted by course.</p></li>
+    <li><p><strong>Q4.</strong> In one UPDATE, give every instructor paid under 70,000 a 4% raise and everyone else 2%. Then show every instructor's name and salary, sorted by name.</p></li>
+    <li><p><strong>Q5.</strong> Delete every enrollment in a course offered by the Music department. Use a subquery: <code>takes</code> has no department column. Then show the number of enrollments left as <code>enrollments</code>.</p></li>
+    <li><p><strong>Q6.</strong> Add a constraint named <code>grade_valid</code> to <code>takes</code> that allows only the grades A, A-, B+, B, B-, C+, C, C-, D and F. Then run these two INSERTs exactly as they are, and show the number of enrollments as <code>enrollments</code>. One of the INSERTs is meant to fail; your output file should show its error.</p>
+<pre>INSERT INTO takes VALUES ('12345', 'MA-201', 'Spring', 2027, 'E');
+INSERT INTO takes VALUES ('12345', 'MA-201', 'Spring', 2027, NULL);</pre></li>
+    <li><p><strong>Q7.</strong> Create a view <code>transcript</code> with each enrollment's student id, student name, course title, semester, year, grade and credits. Then use the view to show Morgan Lee's title, semester, year and grade, sorted by year, then semester (Spring before Fall), then title.</p></li>
+    <li><p><strong>Q8.</strong> Create a view <code>dept_stats</code> with every department's name and its numbers of <code>instructors</code>, <code>students</code> and <code>courses</code>, 0 included. Then show the whole view, sorted by department. Join all four tables in one query; Part C asks what goes wrong if you are not careful.</p></li>
+    <li><p><strong>Q9.</strong> Every course a student must pass before CS-319, directly or through other courses: <code>prereq_id</code>, the course title and <code>depth</code>, where depth 1 is a direct prerequisite, 2 a prerequisite of one of those, and so on. If a course can be reached in more than one way, show its smallest depth. Sort by depth, then by course. Use <code>WITH RECURSIVE</code>.</p></li>
+    <li><p><strong>Q10.</strong> The registrar wants deleting a student to delete their enrollments and their advisor row too. Change the foreign keys <code>takes_id_fkey</code> and <code>advisor_s_id_fkey</code> to <code>ON DELETE CASCADE</code>: drop each and add it again under the same name, in one ALTER TABLE per table. Then delete Drew Kim (id 45678) and run:</p>
+<pre>SELECT (SELECT count(*) FROM takes)   AS takes,
+       (SELECT count(*) FROM advisor) AS advisors;</pre></li>
+  </ol>
+  <div class="callout">
+    <span class="mark" aria-hidden="true">§</span>
+    <p>Check yourself: Q2 returns 10 rows, Q4 returns 12 and Q8 returns 7. In Q4, Avery Chen's salary should be 99,960; if it is higher, the raise was applied twice. In Q5, 21 enrollments are left. If Q7 shows Morgan Lee 4 times instead of 5, the second INSERT of Q6 failed too; Part C asks why it should not. If Q8 shows 60 for anything, read W1.</p>
+  </div>
+</section>
+
+<section id="c" aria-labelledby="c-h">
+  <h2 id="c-h">Part C: two short answers</h2>
+  <p>Answer in <code>lab4_answers.txt</code>, two to four sentences each. Run the queries first; the numbers are part of the answer.</p>
+  <ol class="qs">
+    <li><p><strong>W1.</strong> Here is <code>dept_stats</code> written the obvious way, for one department. Put it in <code>lab4.sql</code> under the W1 comment, after Q10, and run the file. Give the three counts it shows for Comp. Sci. and the true counts from your Q8. Then explain where the extra rows come from, and why <code>count(DISTINCT …)</code> fixes it.</p>
+<pre>SELECT d.dept_name, count(i.id) AS instructors,
+       count(s.id) AS students, count(c.course_id) AS courses
+FROM department d
+LEFT JOIN instructor i ON i.dept_name = d.dept_name
+LEFT JOIN student s    ON s.dept_name = d.dept_name
+LEFT JOIN course c     ON c.dept_name = d.dept_name
+WHERE d.dept_name = 'Comp. Sci.'
+GROUP BY d.dept_name;</pre></li>
+    <li><p><strong>W2.</strong> In Q6, one INSERT failed and the other worked. Which one, and why did <code>grade_valid</code> let the second one in? How would you stop a NULL grade, if you wanted to, and why might the registrar not want to?</p></li>
+  </ol>
+</section>
+
+<section id="d" aria-labelledby="d-h">
+  <h2 id="d-h">Part D: CS 5200 only</h2>
+  <p>CS 4600 students may skip this part. Put these at the end of <code>lab4.sql</code>, after W1.</p>
+  <ol class="qs">
+    <li><p><strong>Q11.</strong> Write a trigger function <code>credits_earned</code> and a trigger of the same name on <code>takes</code> that adds a course's credits to the student's <code>tot_cred</code> when an enrollment gets a passing grade it did not have before: the old grade was NULL or F, and the new one is neither. A change from one passing grade to another must not add credits again. Then run:</p>
+<pre>UPDATE takes SET grade = 'B'
+WHERE id = '70557' AND course_id = 'CS-347' AND year = 2027;
+UPDATE takes SET grade = 'A'
+WHERE id = '54321' AND course_id = 'MA-201' AND year = 2027;
+UPDATE takes SET grade = 'A-'
+WHERE id = '54321' AND course_id = 'MA-201' AND year = 2027;
+SELECT name, tot_cred FROM student
+WHERE id IN ('70557', '54321') ORDER BY name;</pre>
+    <p>In the answers file, give both totals and say why Alex Johnson's went up only once.</p></li>
+    <li><p><strong>Q12.</strong> Create a role <code>grader</code> (start with <code>DROP ROLE IF EXISTS grader;</code> so the file can run twice). Grant it SELECT on <code>transcript</code>, and SELECT and UPDATE of the <code>grade</code> column only on <code>takes</code>. Then run the lines below. One statement is meant to fail. In the answers file, say what happened to each of the three statements and why.</p>
+<pre>SET ROLE grader;
+SELECT count(*) AS rows_visible FROM transcript;
+UPDATE takes SET grade = 'C+'
+WHERE id = '12345' AND course_id = 'CS-101' AND year = 2025;
+SELECT salary FROM instructor;
+RESET ROLE;</pre></li>
+  </ol>
+</section>
+
+<section id="submit" aria-labelledby="sub-h">
+  <h2 id="sub-h">What to submit and how it is graded</h2>
+  <p>Upload <strong>one zip file</strong> to the Lab 4 assignment in Brightspace. Name it <code>lab4_lastname_firstname.zip</code>, for example <code>lab4_rivera_jamie.zip</code>, and put these three files in it:</p>
+  <ul>
+    <li><code>lab4_answers.txt</code>: your name, the row counts, and your answers to W1 and W2 (and Q11 and Q12, for CS 5200).</li>
+    <li><code>lab4.sql</code>: your statements.</li>
+    <li><code>lab4_output.txt</code>: what psql printed when you ran the whole file.</li>
+  </ul>
+  <p>Save <code>lab4_answers.txt</code> as plain text: in TextEdit choose <strong>Format › Make Plain Text</strong> first; Notepad and VS Code save plain text already. To make the zip, put the three files in one folder and select them, then:</p>
+  <ul>
+    <li><strong>Windows:</strong> right-click and choose <strong>Compress to ZIP file</strong> (on Windows 10, <strong>Send to › Compressed (zipped) folder</strong>), then rename the zip.</li>
+    <li><strong>macOS:</strong> right-click, choose <strong>Compress 3 Items</strong>, and rename <code>Archive.zip</code>.</li>
+    <li><strong>Linux or Colab:</strong> run the line below. In Colab, start it with <code>!</code>, then right-click the zip in the file panel and choose <strong>Download</strong>.</li>
+  </ul>
+<pre>zip lab4_lastname_firstname.zip lab4_answers.txt lab4.sql lab4_output.txt</pre>
+  <p>Before you upload, open the zip and check that all three files are inside and that <code>lab4_output.txt</code> shows a result under every question. Two errors are expected: the first INSERT of Q6, and (for CS 5200) the SELECT salary of Q12. Upload a new zip if you need to change anything before the deadline; the latest one is graded.</p>
+  <div class="fig-scroll" tabindex="0" role="region" aria-label="Lab 4 rubric, 10 points">
+  <table class="tbl">
+    <caption>Lab 4 rubric, 10 points</caption>
+    <thead><tr><th scope="col">Item</th><th scope="col">What earns full credit</th><th scope="col" class="num">Points</th></tr></thead>
+    <tbody>
+      <tr><td>Questions Q1–Q9</td><td>Each statement runs, changes exactly what was asked, and the final SELECT shows the right rows, with the count in the answers file.</td><td class="num">6</td></tr>
+      <tr><td>Output</td><td><code>lab4_output.txt</code> shows the whole file running from the reload, with only the two expected errors.</td><td class="num">1</td></tr>
+      <tr><td>Written (W1, W2)</td><td>W1 gives both sets of counts and explains the row multiplication; W2 explains why CHECK accepts NULL and how NOT NULL would differ.</td><td class="num">1</td></tr>
+      <tr><td>Q10 and Part D</td><td>CS 4600: Q10 correct, 2 points. CS 5200: Q10, 1 point; Q11 and Q12 with their answers, 1 point.</td><td class="num">2</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Late work loses 10% per day for up to three days and is not accepted after that. Under the course's limited-use AI policy, you may ask an AI tool to explain an error message or a keyword, but the statements and answers must be your own, and you should be ready to explain any of them. Say how you used AI at the end of the answers file.</p>
+</section>
+
+<section id="help" aria-labelledby="help-h">
+  <h2 id="help-h">If something goes wrong</h2>
+  <ul>
+    <li><strong>"university.sql: No such file or directory"</strong>: <code>lab4.sql</code> and <code>university.sql</code> are not in the same folder. Move them together and run again.</li>
+    <li><strong>"relation … already exists"</strong>: you ran part of the file on its own, outside the reload. Run the whole file; the reload drops everything the lab creates.</li>
+    <li><strong>"violates foreign key constraint"</strong> on a DELETE: rows elsewhere still point at the row you are deleting (slide 8). In Q10 that means the constraint was not replaced; check its name with <code>\d takes</code>.</li>
+    <li><strong>"check constraint … is violated by some row"</strong> when adding a constraint: a row already breaks the rule. Find it with a SELECT using the opposite condition.</li>
+    <li><strong>A count that is too high in Q8</strong>: see W1.</li>
+    <li><strong>"permission denied to create role"</strong> in Q12: your PostgreSQL user is not allowed to create roles. Run psql as the <code>postgres</code> user (<code>-U postgres</code>), which can; in Colab you already are.</li>
+    <li><strong>"syntax error at or near "$$""</strong> in Q11: the function body must be closed with <code>END $$;</code> and the dollar signs must match (slide 25).</li>
+    <li><strong>Anything else</strong>: copy the exact message and bring it to office hours, Tuesday and Wednesday 12:00–3:00 p.m., MIC room D159, or post it in the week 5 discussion in Brightspace.</li>
+  </ul>
+</section>
+</main>
+
+<footer>
+  <p>CS 4600/5200 · Database Theory and Applications · University of Central Missouri · Dr. Gorkem Kar · Spring 2027</p>
+</footer>
+</div>
+</body>
+</html>

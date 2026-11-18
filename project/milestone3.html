@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Project Milestone 3 — Working Application · CS 4600/5200</title>
+<meta name="description" content="CS 4600/5200 project milestone 3: a Python program that reads and changes your project database through parameterized queries, with one transaction that keeps a business rule, data loaded from CSV files, and a least-privilege role. Seven points, due Sunday, April 4.">
+<link rel="stylesheet" href="../assets/course.css">
+<link rel="stylesheet" href="../assets/db.css">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to the milestone</a>
+
+<div class="doc">
+<header class="doc-masthead">
+  <p class="inst"><span>CS 4600/5200 · Database Theory and Applications</span><span>Week 11 · <a href="index.html">Term project</a></span><span><a href="../index.html">Course home</a></span></p>
+  <h1>Milestone 3: a working application</h1>
+  <p class="tagline">Your database gets a program in front of it. Someone from your domain, a pantry volunteer or a league coordinator, should be able to sit down and use it: look things up, record what happened, and be stopped politely when they try something your rules forbid.</p>
+</header>
+
+<dl class="facts">
+  <div><dt>Due</dt><dd>Sunday, April 4, 11:59 p.m. CT</dd></div>
+  <div><dt>Time</dt><dd>About 10 to 12 hours, over weeks 9 to 11</dd></div>
+  <div><dt>Submit</dt><dd>One zip file per team, uploaded to Brightspace</dd></div>
+  <div><dt>Worth</dt><dd>7 of the project's 25 points</dd></div>
+</dl>
+
+<nav class="toc" aria-labelledby="toc-h">
+  <h2 id="toc-h">On this page</h2>
+  <ol>
+    <li><a href="#prog">Part A: the program</a></li>
+    <li><a href="#tx">Part B: one transaction that keeps a rule</a></li>
+    <li><a href="#load">Part C: loading data from CSV</a></li>
+    <li><a href="#role">Part D: a role with only what it needs</a></li>
+    <li><a href="#grad">Part E: CS 5200 only</a></li>
+    <li><a href="#submit">What to submit and how it is graded</a></li>
+    <li><a href="#help">Questions people usually ask</a></li>
+  </ol>
+</nav>
+
+<main id="main">
+
+<section id="prog" aria-labelledby="prog-h">
+  <h2 id="prog-h">Part A: the program</h2>
+  <p>Write a Python program that uses <code>psycopg</code> 3, as in <a href="../weeks/week09/lab6.html">Lab 6</a>, and gives one kind of user in your domain a menu of things to do. A command-line menu is enough; a small web page is fine too, but earns nothing extra. Start from your milestone 2 schema, with the feedback applied.</p>
+  <p>The program offers at least <strong>seven features</strong>:</p>
+  <ul>
+    <li><strong>Four that read</strong>, each answering one of your milestone 1 questions. Among them: one that searches by a value the user types, one that lists many rows a page at a time with keyset pagination (week 9), and one report that uses GROUP BY.</li>
+    <li><strong>Three that change data</strong>: one INSERT, one UPDATE and one DELETE, each of something a real user would do, like recording a visit or cancelling a booking.</li>
+  </ul>
+  <p>Whatever the program does, three rules hold everywhere:</p>
+  <ul>
+    <li>Every value the user types reaches PostgreSQL as a <strong>parameter</strong> (<code>%s</code> with a tuple of values). No SQL is built with f-strings, <code>+</code> or <code>.format()</code>. The grader searches for them.</li>
+    <li>When PostgreSQL refuses a change, because of a key, a foreign key or a CHECK, the program says so in words the user understands, and carries on. Catch the specific error (for example <code>psycopg.errors.UniqueViolation</code>), not every exception.</li>
+    <li>No password is written in the code. Read the connection settings from environment variables, as Lab 6 did, or let <code>~/.pgpass</code> supply the password.</li>
+  </ul>
+</section>
+
+<section id="tx" aria-labelledby="tx-h">
+  <h2 id="tx-h">Part B: one transaction that keeps a rule</h2>
+  <p>One of the features that change data must make two or more changes that only make sense together, inside one transaction (<code>with conn.transaction():</code>), and check a business rule before it commits. If the rule fails, the whole transaction rolls back and the user is told why. Lab 6's enrollment, which checked prerequisites and logged every request, is the model.</p>
+  <p>Examples: a pantry visit that records the visit and lowers the stock of each item, refused if any item would go below zero; a booking that inserts the booking and marks the room busy, refused if the times overlap. In the notes, say which rule it keeps and what would go wrong without the transaction.</p>
+</section>
+
+<section id="load" aria-labelledby="load-h">
+  <h2 id="load-h">Part C: loading data from CSV</h2>
+  <p>Milestone 2's hand-written INSERTs are too few for week 12's query plans. Grow your two or three busiest tables to <strong>at least 1,000 rows</strong> in the busiest and 200 in the others, with invented data, and load them from CSV files with a Python script, <code>m3_load.py</code>:</p>
+  <ul>
+    <li>Read each file with Python's <code>csv</code> module and insert the rows with <code>cursor.executemany(…)</code>, or stream them with <code>cursor.copy("COPY … FROM STDIN")</code>. Both send the values as data, never as SQL.</li>
+    <li>Load the tables in foreign key order, all in one transaction, so a bad row leaves nothing half loaded.</li>
+    <li>You may write the CSV files by hand, with a spreadsheet, or with a short script of your own. Never use real people's personal details.</li>
+  </ul>
+  <p>The script must run twice in a row and leave the same data: start by emptying the tables it fills, or reload <code>m3_schema.sql</code> first.</p>
+</section>
+
+<section id="role" aria-labelledby="role-h">
+  <h2 id="role-h">Part D: a role with only what it needs</h2>
+  <p>Create a login role for the program, as Lab 6 created <code>registrar_app</code>, and GRANT it only the privileges its features use: SELECT on what it reads, and INSERT, UPDATE or DELETE only on the tables it changes. Put the CREATE ROLE and GRANT statements at the end of <code>m3_schema.sql</code>, and run the program as that role. The loader may run as you.</p>
+</section>
+
+<section id="grad" aria-labelledby="grad-h">
+  <h2 id="grad-h">Part E: CS 5200 only</h2>
+  <ul>
+    <li>Your milestone 2 <code>jsonb</code> column gets two features of its own in the program: one that stores a new document from what the user types (build it with Python's <code>json</code> module, pass it as a parameter, and use <code>psycopg.types.json.Jsonb</code>), and one that finds rows by a field inside the documents. These count among the seven features.</li>
+    <li>In the notes, name your <a href="papers.html">critique paper</a>: its number and title from the list, in one line.</li>
+  </ul>
+</section>
+
+<section id="submit" aria-labelledby="sub-h">
+  <h2 id="sub-h">What to submit and how it is graded</h2>
+  <p>Upload <strong>one zip file</strong> to the Milestone 3 assignment in Brightspace. Name it <code>m3_lastname_firstname.zip</code>; a team uses both last names, like <code>m3_rivera_nguyen.zip</code>, and only one partner uploads it. Put these files in it:</p>
+  <ul>
+    <li>The program: <code>m3_app.py</code>, and any other <code>.py</code> files it imports.</li>
+    <li><code>m3_load.py</code> and its CSV files, in a folder named <code>data</code>.</li>
+    <li><code>m3_schema.sql</code>: milestone 2's schema with any changes, and the role at the end.</li>
+    <li><code>m3_run.txt</code>: a copy of one session at the terminal in which you use all seven features (nine for CS 5200), including one change your rules refuse and one search for <code>' OR 1=1 --</code> that finds nothing.</li>
+    <li><code>m3_notes.pdf</code>: your names; how to run the program, in three or four commands; each feature with the milestone 1 question it answers; the rule Part B keeps; what changed since milestone 2; for CS 5200, your paper; and one line on how you used AI tools, if at all.</li>
+  </ul>
+  <p>Leave out passwords, virtual environment folders and <code>__pycache__</code>.</p>
+  <div class="fig-scroll" tabindex="0" role="region" aria-label="Milestone 3 rubric, 7 points">
+  <table class="tbl">
+    <caption>Milestone 3 rubric, 7 points</caption>
+    <thead><tr><th scope="col">Item</th><th scope="col">What earns full credit</th><th scope="col" class="num">Points</th></tr></thead>
+    <tbody>
+      <tr><td>Features</td><td>Seven features that work and answer real questions from your domain, including the search, the paged list and the report; for CS 5200, the two <code>jsonb</code> features.</td><td class="num">2.5</td></tr>
+      <tr><td>Safe queries</td><td>Every user value passed as a parameter, refused changes explained to the user, no password in the code, and the program running as its own role with only the privileges it needs.</td><td class="num">1.5</td></tr>
+      <tr><td>Transaction</td><td>Two or more changes in one transaction, a business rule checked, and a clean rollback when it fails.</td><td class="num">1</td></tr>
+      <tr><td>Loading</td><td>CSV files loaded with <code>executemany</code> or <code>COPY</code>, in one transaction, rerunnable, with the row counts asked for.</td><td class="num">1</td></tr>
+      <tr><td>Run and notes</td><td>The session shows every feature, the refusal and the harmless injection attempt; the notes are short and complete, with the AI line.</td><td class="num">1</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Late work loses 10% per day for up to three days and is not accepted after that. The week 15 walkthrough will ask you to explain this code, so write it so you can.</p>
+</section>
+
+<section id="help" aria-labelledby="help-h">
+  <h2 id="help-h">Questions people usually ask</h2>
+  <ul>
+    <li><strong>Can I use an ORM, like SQLAlchemy's or Django's?</strong> No. The course grades your SQL, so it has to be in your code, sent with <code>psycopg</code>.</li>
+    <li><strong>Can my program be a web app?</strong> Yes, with Flask or similar, if you already know how. It earns nothing extra, and the same rules apply: parameters only, and no password in the code.</li>
+    <li><strong>How do I copy a terminal session into <code>m3_run.txt</code>?</strong> Select the text in the terminal window and paste it into a plain text file. On macOS and Linux, <code>script m3_run.txt</code> records everything until you type <code>exit</code>.</li>
+    <li><strong>My data generator makes the same rows every time. Is that a problem?</strong> No; that is what makes the load rerunnable. Make sure the values vary enough for your report to say something.</li>
+    <li><strong>"permission denied for table …"</strong> when the program runs: the role is missing a GRANT for that table. Add only the privilege that feature needs.</li>
+    <li><strong>Anything else</strong>: office hours, Tuesday and Wednesday 12:00–3:00 p.m., MIC room D159, or the project discussion in Brightspace.</li>
+  </ul>
+</section>
+</main>
+
+<footer>
+  <p>CS 4600/5200 · Database Theory and Applications · University of Central Missouri · Dr. Gorkem Kar · Spring 2027</p>
+</footer>
+</div>
+</body>
+</html>

@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lab 3 — Aggregates, Subqueries and Windows · CS 4600/5200</title>
+<meta name="description" content="CS 4600/5200 Lab 3: ten SQL questions on the seven-table university database, covering GROUP BY, HAVING, subqueries, EXISTS, WITH, CASE and window functions, plus two short written answers.">
+<link rel="stylesheet" href="../../assets/course.css">
+<link rel="stylesheet" href="../../assets/db.css">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to the lab</a>
+
+<div class="doc">
+<header class="doc-masthead">
+  <p class="inst"><span>CS 4600/5200 · Database Theory and Applications</span><span>Week 4</span><span><a href="../../index.html">Course home</a></span></p>
+  <h1>Lab 3: Aggregates, subqueries and windows</h1>
+  <p class="tagline">Ten questions in SQL that summarize, compare and rank, and two short answers about what a count or a rank really means. As in Lab 2, most of the marks are for getting exactly the right rows.</p>
+</header>
+
+<dl class="facts">
+  <div><dt>Due</dt><dd>Sunday, February 7, 11:59 p.m. CT</dd></div>
+  <div><dt>Time</dt><dd>About 2 hours, half of it in class</dd></div>
+  <div><dt>Submit</dt><dd>One zip file, uploaded to Brightspace</dd></div>
+  <div><dt>Worth</dt><dd>One of the labs (labs are 25% of the grade)</dd></div>
+</dl>
+
+<nav class="toc" aria-labelledby="toc-h">
+  <h2 id="toc-h">On this page</h2>
+  <ol>
+    <li><a href="#files">Files for this lab</a></li>
+    <li><a href="#a">Part A: warm up in the playground</a></li>
+    <li><a href="#b">Part B: ten questions in SQL</a></li>
+    <li><a href="#c">Part C: two short answers</a></li>
+    <li><a href="#d">Part D: CS 5200 only</a></li>
+    <li><a href="#submit">What to submit and how it is graded</a></li>
+    <li><a href="#help">If something goes wrong</a></li>
+  </ol>
+</nav>
+
+<main id="main">
+
+<section id="files" aria-labelledby="files-h">
+  <h2 id="files-h">Files for this lab</h2>
+  <p>This lab uses the same seven-table database as Lab 2, so you do not need to reload it unless you changed it. If you are not sure, reload it; the file drops the old tables first, so it is safe to run more than once:</p>
+<pre>psql -d university -f university.sql</pre>
+  <p>On Windows, add <code>-U postgres</code> after <code>psql</code>. In Colab, start the line with <code>!</code>. Download these into one folder, for example <code>Documents/cs5200/lab3</code>:</p>
+  <ul>
+    <li><a href="university.sql" download>university.sql</a>: the seven-table database, the same file as week 3.</li>
+    <li><a href="lab3.sql" download>lab3.sql</a>: the starter file for your SQL.</li>
+    <li><a href="lab3_answers.txt" download>lab3_answers.txt</a>: the starter file for your name, your row counts and your written answers.</li>
+  </ul>
+  <p>To check the database, run <code>SELECT count(*), count(salary) FROM instructor;</code>. It should say 11 and 10.</p>
+</section>
+
+<section id="a" aria-labelledby="a-h">
+  <h2 id="a-h">Part A: warm up in the playground (20 minutes)</h2>
+  <p>Open the <a href="playground.html">week 4 playground</a> and solve exercises 1 to 6; exercises 7 and 8 use window functions and are a good start on Q10. They are not graded. Then open the GROUP BY explorer in section 1, try each HAVING option, and say to yourself which groups disappear and why.</p>
+</section>
+
+<section id="b" aria-labelledby="b-h">
+  <h2 id="b-h">Part B: ten questions in SQL</h2>
+  <p>Try each query in the playground's <a href="playground.html#scratch">scratch pad</a>, then copy it into <code>lab3.sql</code> under its comment. Write the number of rows it returned in <code>lab3_answers.txt</code>. Show exactly the columns asked for, in the order asked, and name a computed column the way the question does.</p>
+  <ol class="qs">
+    <li><p><strong>Q1.</strong> For every department that offers courses: the department, the number of courses as <code>courses</code>, and their total credits as <code>credits</code>, sorted by department.</p></li>
+    <li><p><strong>Q2.</strong> For every term in <code>takes</code>: the year, the semester, and the number of different students enrolled as <code>students</code>, sorted by year and then semester. A student who took two courses that term counts once.</p></li>
+    <li><p><strong>Q3.</strong> The departments whose instructors' salaries add up to more than 150,000, with that total as <code>total</code>.</p></li>
+    <li><p><strong>Q4.</strong> Every instructor with the number of students they advise as <code>advisees</code>, most first, then by name. An instructor who advises nobody must appear with 0.</p></li>
+    <li><p><strong>Q5.</strong> The title and enrollment count of every course taken more often than the average course. Count enrollments per course in a <code>WITH</code> step, and average over the courses in that step.</p></li>
+    <li><p><strong>Q6.</strong> The names of students who took at least one course from outside their own department. Use <code>EXISTS</code>.</p></li>
+    <li><p><strong>Q7.</strong> The names of instructors paid more than every History instructor. Use <code>ALL</code>.</p></li>
+    <li><p><strong>Q8.</strong> The names of students who took every course that Avery Chen has taught. Use <code>NOT EXISTS</code> with <code>EXCEPT</code>, as on slide 15.</p></li>
+    <li><p><strong>Q9.</strong> The number of enrollments in each grade band, as <code>band</code> and <code>enrollments</code>, sorted by band. The bands are <code>A</code>, <code>B</code>, <code>C</code> and <code>F</code> (an A− is an A, a B+ is a B, and so on), and a course with no grade yet is <code>in progress</code>. Use <code>CASE</code>.</p></li>
+    <li><p><strong>Q10.</strong> The student or students with the most total credits in each department: department, name and total credits, sorted by department. If two students tie, show both. Leave out students with no department. Use <code>rank()</code> with <code>PARTITION BY</code>.</p></li>
+  </ol>
+  <div class="callout">
+    <span class="mark" aria-hidden="true">§</span>
+    <p>Check yourself: Q1 returns 6 rows, Q4 returns 11 and Q8 returns 1. If Q4 returns 7, the instructors with no advisees have gone missing; slide 9 says why. If every advisee count in Q4 is at least 1, you counted <code>*</code> instead of a column from <code>advisor</code>. If Q10 returns 7 rows, a student with no department has slipped in.</p>
+  </div>
+  <p>When every query works, run the whole file in your own PostgreSQL:</p>
+<pre>psql -d university -e -f lab3.sql &gt; lab3_output.txt 2&gt;&amp;1</pre>
+  <p>The <code>-e</code> prints each query above its result, so the grader can match them.</p>
+</section>
+
+<section id="c" aria-labelledby="c-h">
+  <h2 id="c-h">Part C: two short answers</h2>
+  <p>Answer in <code>lab3_answers.txt</code>, two to four sentences each. Run the queries first; the numbers are part of the answer.</p>
+  <ol class="qs">
+    <li><p><strong>W1.</strong> Both queries are meant to count the students who are not in Physics. Run them and give each number. Then explain the difference, naming the student who causes it and what <code>&lt;&gt;</code> does with a NULL.</p>
+<pre>SELECT count(*) FROM student WHERE dept_name &lt;&gt; 'Physics';
+
+SELECT (SELECT count(*) FROM student)
+     - (SELECT count(*) FROM student WHERE dept_name = 'Physics');</pre></li>
+    <li><p><strong>W2.</strong> The department gives an award to its "top two" advisors, by number of advisees. Run the query below. If you kept the rows where each of <code>rk</code>, <code>drk</code> and <code>rn</code> is at most 2, how many advisors would get the award each time? Say which one you would use and why, and what is wrong with the other two here.</p>
+<pre>WITH c AS (
+  SELECT i.name, count(a.s_id) AS n
+  FROM instructor i LEFT JOIN advisor a ON a.i_id = i.id
+  GROUP BY i.id, i.name)
+SELECT name, n,
+       rank()       OVER (ORDER BY n DESC) AS rk,
+       dense_rank() OVER (ORDER BY n DESC) AS drk,
+       row_number() OVER (ORDER BY n DESC) AS rn
+FROM c ORDER BY rn;</pre></li>
+  </ol>
+</section>
+
+<section id="d" aria-labelledby="d-h">
+  <h2 id="d-h">Part D: CS 5200 only</h2>
+  <p>CS 4600 students may skip this part. Put these queries at the end of <code>lab3.sql</code>.</p>
+  <ol class="qs">
+    <li><p><strong>Q11.</strong> Every instructor paid less than the average of their own department: name, department, and how far below the average as <code>below</code>, rounded to a whole number, most below first. Compute the department average with a window function in a <code>WITH</code> step, not with a subquery or GROUP BY.</p></li>
+    <li><p><strong>Q12.</strong> Q8 again, this time with two nested <code>NOT EXISTS</code> and no <code>EXCEPT</code>. In <code>lab3_answers.txt</code>, read your query aloud as one English sentence that starts "There is no course that Avery Chen taught…".</p></li>
+  </ol>
+</section>
+
+<section id="submit" aria-labelledby="sub-h">
+  <h2 id="sub-h">What to submit and how it is graded</h2>
+  <p>Upload <strong>one zip file</strong> to the Lab 3 assignment in Brightspace. Name it <code>lab3_lastname_firstname.zip</code>, for example <code>lab3_rivera_jamie.zip</code>, and put these three files in it:</p>
+  <ul>
+    <li><code>lab3_answers.txt</code>: your name, the row count for every question, and your answers to W1 and W2 (and Q12, for CS 5200).</li>
+    <li><code>lab3.sql</code>: your queries.</li>
+    <li><code>lab3_output.txt</code>: what psql printed when you ran it.</li>
+  </ul>
+  <p>Save <code>lab3_answers.txt</code> as plain text: in TextEdit choose <strong>Format › Make Plain Text</strong> first; Notepad and VS Code save plain text already. To make the zip, put the three files in one folder and select them, then:</p>
+  <ul>
+    <li><strong>Windows:</strong> right-click and choose <strong>Compress to ZIP file</strong> (on Windows 10, <strong>Send to › Compressed (zipped) folder</strong>), then rename the zip.</li>
+    <li><strong>macOS:</strong> right-click, choose <strong>Compress 3 Items</strong>, and rename <code>Archive.zip</code>.</li>
+    <li><strong>Linux or Colab:</strong> run the line below. In Colab, start it with <code>!</code>, then right-click the zip in the file panel and choose <strong>Download</strong>.</li>
+  </ul>
+<pre>zip lab3_lastname_firstname.zip lab3_answers.txt lab3.sql lab3_output.txt</pre>
+  <p>Before you upload, open the zip and check that all three files are inside and that <code>lab3_output.txt</code> shows a result under every query. Upload a new zip if you need to change anything before the deadline; the latest one is graded.</p>
+  <div class="fig-scroll" tabindex="0" role="region" aria-label="Lab 3 rubric, 10 points">
+  <table class="tbl">
+    <caption>Lab 3 rubric, 10 points</caption>
+    <thead><tr><th scope="col">Item</th><th scope="col">What earns full credit</th><th scope="col" class="num">Points</th></tr></thead>
+    <tbody>
+      <tr><td>Queries Q1–Q9</td><td>Each query runs and returns exactly the rows and columns asked for, with the count in the answers file.</td><td class="num">6</td></tr>
+      <tr><td>Output</td><td><code>lab3_output.txt</code> shows every query with its result and no errors.</td><td class="num">1</td></tr>
+      <tr><td>Written (W1, W2)</td><td>W1 gives both numbers and names the NULL comparison; W2 gives the three counts and defends one choice.</td><td class="num">1</td></tr>
+      <tr><td>Q10 and Part D</td><td>CS 4600: Q10 correct, 2 points. CS 5200: Q10, 1 point; Q11 and Q12, 1 point.</td><td class="num">2</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Late work loses 10% per day for up to three days and is not accepted after that. Under the course's limited-use AI policy, you may ask an AI tool to explain an error message or a keyword, but the queries and answers must be your own, and you should be ready to explain any of them. Say how you used AI at the end of the answers file.</p>
+</section>
+
+<section id="help" aria-labelledby="help-h">
+  <h2 id="help-h">If something goes wrong</h2>
+  <ul>
+    <li><strong>"column … must appear in the GROUP BY clause or be used in an aggregate function"</strong>: a column in SELECT is neither grouped nor inside an aggregate (slide 7). Add it to GROUP BY, or wrap it in an aggregate.</li>
+    <li><strong>"aggregate functions are not allowed in WHERE"</strong>: a condition on a group belongs in HAVING (slide 8).</li>
+    <li><strong>"window functions are not allowed in WHERE"</strong>: compute the rank in a <code>WITH</code> step, then filter on it in the outer query (slide 23).</li>
+    <li><strong>"more than one row returned by a subquery used as an expression"</strong>: a subquery after <code>=</code> or <code>&gt;</code> returned a list. Use <code>IN</code>, <code>ALL</code> or <code>SOME</code>, or make it return one value (slides 11 and 12).</li>
+    <li><strong>A count that is too high after a join</strong>: <code>count(*)</code> counts the padded row too. Count a column from the right-hand table (slide 9), or use <code>count(DISTINCT …)</code> where the question says "different".</li>
+    <li><strong>Anything else</strong>: copy the exact message and bring it to office hours, Tuesday and Wednesday 12:00–3:00 p.m., MIC room D159, or post it in the week 4 discussion in Brightspace.</li>
+  </ul>
+</section>
+</main>
+
+<footer>
+  <p>CS 4600/5200 · Database Theory and Applications · University of Central Missouri · Dr. Gorkem Kar · Spring 2027</p>
+</footer>
+</div>
+</body>
+</html>

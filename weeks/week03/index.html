@@ -1,0 +1,1075 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Week 3 — SQL I: Queries, Joins and NULLs · CS 4600/5200</title>
+<meta name="description" content="CS 4600/5200 week 3: SQL queries in depth. SELECT, WHERE, ORDER BY and LIMIT, inner joins, self joins, outer joins, NULLs in conditions and sorting, and the set operations UNION, INTERSECT and EXCEPT.">
+<link rel="stylesheet" href="../../assets/course.css">
+<link rel="stylesheet" href="../../assets/db.css">
+</head>
+<body>
+<a class="skip-link" href="#s1">Skip to the first slide</a>
+
+<div class="deck-stage">
+<main class="deck" aria-label="Week 3 lecture slides: SQL queries, joins and NULLs">
+
+<!-- 1 ─────────────────────────────────────────────────────────── title -->
+<section class="slide slide--title" id="s1">
+  <p class="course-line">CS 4600/5200 · Database Theory and Applications · Week 3 of 15</p>
+  <h1>SQL I: Queries, Joins and NULLs</h1>
+  <p class="subtitle">
+    Last week's algebra, written the way PostgreSQL reads it. Today we join tables in every
+    way SQL allows, keep the rows an ordinary join would lose, and learn where NULLs quietly
+    change an answer.
+  </p>
+  <p class="byline">
+    Dr. Gorkem Kar
+    <span>University of Central Missouri</span>
+    <span>School of Computer Science and Cybersecurity</span>
+  </p>
+  <div class="title-art">
+<svg viewBox="0 0 380 330" aria-hidden="true" focusable="false" style="--dg-k:1">
+<g class="v-in" style="--d:0.20s"><rect class="dg-box" x="0" y="30" width="120" height="34" rx="4"/><text class="dg-sm" x="14" y="53">Avery</text></g>
+<g class="v-in" style="--d:0.35s"><rect class="dg-box" x="0" y="110" width="120" height="34" rx="4"/><text class="dg-sm" x="14" y="133">Kofi</text></g>
+<g class="v-in" style="--d:0.50s"><rect class="dg-box" x="0" y="190" width="120" height="34" rx="4"/><text class="dg-sm" x="14" y="213">Priya</text></g>
+<g class="v-in" style="--d:0.50s"><rect class="dg-box-t" x="250" y="10" width="120" height="34" rx="4"/><text class="dg-sm dg-mono" x="264" y="33">CS-101</text></g>
+<g class="v-in" style="--d:0.65s"><rect class="dg-box-t" x="250" y="70" width="120" height="34" rx="4"/><text class="dg-sm dg-mono" x="264" y="93">CS-347</text></g>
+<g class="v-in" style="--d:0.80s"><rect class="dg-box-t" x="250" y="170" width="120" height="34" rx="4"/><text class="dg-sm dg-mono" x="264" y="193">CS-101</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.00s" d="M120 47.0 C 185 47.0, 185 27.0, 250 27.0"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.20s" d="M120 47.0 C 185 47.0, 185 87.0, 250 87.0"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.40s" d="M120 207.0 C 185 207.0, 185 187.0, 250 187.0"/>
+<g class="v-in" style="--d:2.00s"><rect class="dg-warn" x="250" y="270" width="120" height="34" rx="4"/><text class="dg-sm dg-mono" x="264" y="293">NULL</text></g>
+<path class="dg-dash v-draw" pathLength="1" style="--d:1.80s" d="M120 127.0 C 185 127.0, 185 287, 250 287"/>
+</svg>
+  </div>
+  
+</section>
+
+<!-- 2 ─────────────────────────────────────────────── last week -->
+<section class="slide" id="s2">
+  <h2>Last week, in four lines</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <ol class="steps">
+        <li><span class="n" aria-hidden="true">1</span><div><strong>σ is WHERE, π is the SELECT list, × is FROM.</strong><p>A plain query is π(σ(R × S)).</p></div></li>
+        <li><span class="n" aria-hidden="true">2</span><div><strong>A join is a product followed by a selection.</strong><p>Natural join matches every shared attribute name.</p></div></li>
+        <li><span class="n" aria-hidden="true">3</span><div><strong>The algebra works on sets; SQL works on bags.</strong><p>DISTINCT turns a bag back into a set.</p></div></li>
+        <li><span class="n" aria-hidden="true">4</span><div><strong>∪ ∩ − need union-compatible inputs.</strong><p>SQL spells them UNION, INTERSECT and EXCEPT.</p></div></li>
+      </ol>
+      <div class="fill" style="gap:16px">
+        <div class="panel panel--key">
+          <h3>Today: what the algebra leaves out</h3>
+          <p>Sorting, limits, string patterns, joins that keep unmatched rows, and the NULLs those joins produce. All of it is SQL you will write every week from now on.</p>
+        </div>
+        <div class="panel">
+          <h3>The database grew</h3>
+          <p>Two new tables, <code>teaches</code> and <code>advisor</code>, plus a few rows with gaps in them. Reload <code>university.sql</code> from the week 3 module before Lab 2.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 3 ─────────────────────────────────────────────── the database -->
+<section class="slide" id="s3">
+  <h2>Two new tables, and rows with gaps</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div>
+        <table class="tbl tbl--compact">
+          <caption>New relations</caption>
+          <thead><tr><th scope="col">Relation</th><th scope="col">Attributes</th><th scope="col">Meaning</th></tr></thead>
+          <tbody>
+            <tr><td><code>teaches</code></td><td><u>id</u> → instructor, <u>course_id</u> → course, <u>semester</u>, <u>year</u></td><td>Who teaches which course, when. 12 rows.</td></tr>
+            <tr><td><code>advisor</code></td><td><u>s_id</u> → student, i_id → instructor</td><td>Each student's advisor. 10 rows.</td></tr>
+          </tbody>
+        </table>
+        <p class="note-line">Underlined attributes form the primary key; → marks a foreign key.</p>
+      </div>
+      <div>
+        <table class="tbl tbl--compact">
+          <caption>New rows that leave gaps</caption>
+          <thead><tr><th scope="col">Row</th><th scope="col">The gap</th></tr></thead>
+          <tbody>
+            <tr><td>Economics department</td><td>No instructors, students or courses</td></tr>
+            <tr><td>Noor Haddad, Mathematics</td><td>Salary is NULL; teaches nothing</td></tr>
+            <tr><td>Emery Walsh, student</td><td>dept_name is NULL; no advisor</td></tr>
+            <tr><td>CS-319 Image Processing</td><td>Nobody teaches or takes it</td></tr>
+          </tbody>
+        </table>
+        <p class="note-line">Kofi Mensah and Tomas Novak teach nothing either; Sky Martinez and Quinn Davis have no advisor.</p>
+      </div>
+    </div>
+    <p><a class="try" href="playground.html#schema">See every table, and peek at its rows, in the playground</a></p>
+  </div>
+  
+</section>
+
+<!-- 4 ─────────────────────────────────────────────── written vs run order -->
+<section class="slide" id="s4">
+  <h2>SQL is written in one order and runs in another</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:960px">
+<svg style="--dg-k:1" viewBox="0 0 1100 330" role="img" aria-labelledby="cot cod">
+<title id="cot">The order SQL clauses are written in, and the order they run in</title>
+<desc id="cod">Top row, as written: SELECT, DISTINCT, FROM and JOIN, WHERE, ORDER BY, LIMIT. Bottom row, the logical order PostgreSQL follows: 1 FROM and JOIN build the rows, 2 WHERE keeps the rows whose condition is true, 3 SELECT computes the output columns and their aliases, 4 DISTINCT removes duplicates, 5 ORDER BY sorts, 6 LIMIT keeps the first rows. Lines connect each written clause to its place in the run order. Because SELECT runs after WHERE, an alias made in SELECT cannot be used in WHERE, but ORDER BY, which runs later, can use it.</desc>
+<defs><marker id="coa" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#0e5a6b"/></marker></defs>
+<text class="dg-lbl" x="22" y="26">As you write it</text>
+<text class="dg-lbl" x="22" y="198">As it runs</text>
+<g class="v-in" style="--d:0.10s"><rect class="dg-box-m" x="22" y="40" width="160" height="46" rx="5"/><text class="dg-sm-b dg-mono" x="102.0" y="69" text-anchor="middle">SELECT</text></g>
+<g class="v-in" style="--d:0.18s"><rect class="dg-box-m" x="206" y="40" width="160" height="46" rx="5"/><text class="dg-sm-b dg-mono" x="286.0" y="69" text-anchor="middle">DISTINCT</text></g>
+<g class="v-in" style="--d:0.26s"><rect class="dg-box-m" x="390" y="40" width="160" height="46" rx="5"/><text class="dg-sm-b dg-mono" x="470.0" y="69" text-anchor="middle">FROM … JOIN</text></g>
+<g class="v-in" style="--d:0.34s"><rect class="dg-box-m" x="574" y="40" width="160" height="46" rx="5"/><text class="dg-sm-b dg-mono" x="654.0" y="69" text-anchor="middle">WHERE</text></g>
+<g class="v-in" style="--d:0.42s"><rect class="dg-box-m" x="758" y="40" width="160" height="46" rx="5"/><text class="dg-sm-b dg-mono" x="838.0" y="69" text-anchor="middle">ORDER BY</text></g>
+<g class="v-in" style="--d:0.50s"><rect class="dg-box-m" x="942" y="40" width="160" height="46" rx="5"/><text class="dg-sm-b dg-mono" x="1022.0" y="69" text-anchor="middle">LIMIT</text></g>
+<g class="v-in" style="--d:1.40s"><rect class="dg-box-t" x="22" y="212" width="160" height="58" rx="5"/><text class="dg-sm-b" x="36" y="237">1</text><text class="dg-sm-b dg-mono" x="110.0" y="237" text-anchor="middle">FROM … JOIN</text><text class="dg-xs" x="102.0" y="260" text-anchor="middle">build the rows</text></g>
+<path class="dg-line-q v-draw" pathLength="1" style="--d:1.10s" d="M470.0 88 C 470.0 150, 102.0 150, 102.0 208" marker-end="url(#coa)"/>
+<g class="v-in" style="--d:1.75s"><rect class="dg-box-a" x="206" y="212" width="160" height="58" rx="5"/><text class="dg-sm-b" x="220" y="237">2</text><text class="dg-sm-b dg-mono" x="294.0" y="237" text-anchor="middle">WHERE</text><text class="dg-xs" x="286.0" y="260" text-anchor="middle">keep true rows</text></g>
+<path class="dg-line-q v-draw" pathLength="1" style="--d:1.45s" d="M654.0 88 C 654.0 150, 286.0 150, 286.0 208" marker-end="url(#coa)"/>
+<g class="v-in" style="--d:2.10s"><rect class="dg-box-a" x="390" y="212" width="160" height="58" rx="5"/><text class="dg-sm-b" x="404" y="237">3</text><text class="dg-sm-b dg-mono" x="478.0" y="237" text-anchor="middle">SELECT</text><text class="dg-xs" x="470.0" y="260" text-anchor="middle">compute columns</text></g>
+<path class="dg-line-q v-draw" pathLength="1" style="--d:1.80s" d="M102.0 88 C 102.0 150, 470.0 150, 470.0 208" marker-end="url(#coa)"/>
+<g class="v-in" style="--d:2.45s"><rect class="dg-box-t" x="574" y="212" width="160" height="58" rx="5"/><text class="dg-sm-b" x="588" y="237">4</text><text class="dg-sm-b dg-mono" x="662.0" y="237" text-anchor="middle">DISTINCT</text><text class="dg-xs" x="654.0" y="260" text-anchor="middle">drop duplicates</text></g>
+<path class="dg-line-q v-draw" pathLength="1" style="--d:2.15s" d="M286.0 88 C 286.0 150, 654.0 150, 654.0 208" marker-end="url(#coa)"/>
+<g class="v-in" style="--d:2.80s"><rect class="dg-box-t" x="758" y="212" width="160" height="58" rx="5"/><text class="dg-sm-b" x="772" y="237">5</text><text class="dg-sm-b dg-mono" x="846.0" y="237" text-anchor="middle">ORDER BY</text><text class="dg-xs" x="838.0" y="260" text-anchor="middle">sort</text></g>
+<path class="dg-line-q v-draw" pathLength="1" style="--d:2.50s" d="M838.0 88 C 838.0 150, 838.0 150, 838.0 208" marker-end="url(#coa)"/>
+<g class="v-in" style="--d:3.15s"><rect class="dg-box-t" x="942" y="212" width="160" height="58" rx="5"/><text class="dg-sm-b" x="956" y="237">6</text><text class="dg-sm-b dg-mono" x="1030.0" y="237" text-anchor="middle">LIMIT</text><text class="dg-xs" x="1022.0" y="260" text-anchor="middle">keep the first n</text></g>
+<path class="dg-line-q v-draw" pathLength="1" style="--d:2.85s" d="M1022.0 88 C 1022.0 150, 1022.0 150, 1022.0 208" marker-end="url(#coa)"/>
+<text class="dg-txt-s v-in" style="--d:3.60s" x="22" y="310">An alias made in SELECT (step 3) does not exist yet in WHERE (step 2); ORDER BY (step 5) can use it.</text>
+</svg>
+      <figcaption><strong>Figure 3.1.</strong> The logical order of a query's clauses. PostgreSQL may run a query differently for speed, but the answer is always the one this order gives.</figcaption>
+    </figure>
+    <div class="cols-2">
+      <pre class="code"><span class="c">-- error: column "raise" does not exist</span>
+<span class="k">SELECT</span> name, salary * 1.05 <span class="k">AS</span> raise
+<span class="k">FROM</span> instructor
+<span class="k">WHERE</span> raise &gt; 90000;</pre>
+      <pre class="code"><span class="c">-- fine: ORDER BY runs after SELECT</span>
+<span class="k">SELECT</span> name, salary * 1.05 <span class="k">AS</span> raise
+<span class="k">FROM</span> instructor
+<span class="k">ORDER</span> <span class="k">BY</span> raise <span class="k">DESC</span>;</pre>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 5 ─────────────────────────────────────────────── section -->
+<section class="slide slide--section" id="s5">
+  <h2>Reading one table well</h2>
+  <p>Expressions and aliases in SELECT, patterns and ranges in WHERE, and ORDER BY and LIMIT to shape the result.</p>
+  
+</section>
+
+<!-- 6 ─────────────────────────────────────────────── select list -->
+<section class="slide" id="s6">
+  <h2>The SELECT list computes new columns</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div>
+        <pre class="code"><span class="k">SELECT</span> name,
+       round(salary / 12, 2) <span class="k">AS</span> monthly,
+       <span class="s">'Dept: '</span> || dept_name <span class="k">AS</span> label
+<span class="k">FROM</span> instructor
+<span class="k">WHERE</span> dept_name = <span class="s">'Physics'</span>;</pre>
+        <table class="tbl tbl--result" style="margin-top:16px">
+          <caption>Result: 2 rows</caption>
+          <thead><tr><th scope="col">name</th><th scope="col" class="num">monthly</th><th scope="col">label</th></tr></thead>
+          <tbody>
+            <tr><td>Sam Okafor</td><td class="num">7916.67</td><td>Dept: Physics</td></tr>
+            <tr><td>Kofi Mensah</td><td class="num">7250.00</td><td>Dept: Physics</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="fill" style="gap:14px">
+        <ul>
+          <li><strong>Arithmetic</strong>: <code>+ - * /</code> on numbers. Integer ÷ integer truncates: <code>7 / 2</code> is 3, <code>7 / 2.0</code> is 3.5.</li>
+          <li><strong>Strings</strong>: <code>||</code> joins two strings. <code>upper()</code>, <code>length()</code> and many more are built in.</li>
+          <li><strong>AS</strong> names a column. Without it PostgreSQL invents a name such as <code>?column?</code>.</li>
+          <li><strong>DISTINCT</strong> applies to the whole row, not to one column.</li>
+        </ul>
+        <div class="panel panel--definition">
+          <span class="term">Algebra</span>
+          <p>A computed column is the generalized projection π<sub>name, salary/12</sub>, which the algebra allows as well.</p>
+        </div>
+      </div>
+    </div>
+    <p><a class="try" href="playground.html#one">Run it, playground example 1.1</a></p>
+  </div>
+  
+</section>
+
+<!-- 7 ─────────────────────────────────────────────── where -->
+<section class="slide" id="s7">
+  <h2>WHERE has more tests than = and &lt;</h2>
+  <div class="slide-main">
+    <table class="tbl tbl--compact">
+      <caption class="visually-hidden">Comparison tests in WHERE, with an example and its result on the course database</caption>
+      <thead><tr><th scope="col">Test</th><th scope="col">Example</th><th scope="col">Keeps</th></tr></thead>
+      <tbody>
+        <tr><td>Range, both ends included</td><td><code>salary BETWEEN 80000 AND 90000</code></td><td>Maria Lopez, Kofi Mensah, Hana Sato</td></tr>
+        <tr><td>Membership in a list</td><td><code>dept_name IN ('History', 'Music')</code></td><td>Lena Fischer, Tomas Novak, Diego Torres</td></tr>
+        <tr><td>Pattern: <code>%</code> is any run of characters</td><td><code>title LIKE '%Intro%'</code></td><td>Intro to Computer Science, Intro to Biology</td></tr>
+        <tr><td>Pattern: <code>_</code> is exactly one character</td><td><code>course_id LIKE 'CS-1__'</code></td><td>CS-101, CS-190</td></tr>
+        <tr><td>Pattern, ignoring case (PostgreSQL)</td><td><code>name ILIKE 'a%'</code></td><td>Avery Chen; among students, Alex Johnson and Avery Clark</td></tr>
+        <tr><td>Missing value</td><td><code>salary IS NULL</code></td><td>Noor Haddad</td></tr>
+      </tbody>
+    </table>
+    <p class="note-line"><code>LIKE</code> is case-sensitive in PostgreSQL. Each test can be negated: <code>NOT BETWEEN</code>, <code>NOT IN</code>, <code>NOT LIKE</code>, <code>IS NOT NULL</code>. Slide 22 shows the trap in <code>NOT IN</code>.</p>
+    <p><a class="try" href="playground.html#one">Try each one, playground examples 1.2 and 1.3</a></p>
+  </div>
+  
+</section>
+
+<!-- 8 ─────────────────────────────────────────────── order by / limit -->
+<section class="slide" id="s8">
+  <h2>ORDER BY sorts; LIMIT keeps the first rows</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div>
+        <pre class="code"><span class="k">SELECT</span> name, salary
+<span class="k">FROM</span> instructor
+<span class="k">ORDER</span> <span class="k">BY</span> salary <span class="k">DESC</span> <span class="k">NULLS</span> <span class="k">LAST</span>, name
+<span class="k">LIMIT</span> 3;</pre>
+        <table class="tbl tbl--result" style="margin-top:16px">
+          <caption>Result: 3 rows</caption>
+          <thead><tr><th scope="col">name</th><th scope="col" class="num">salary</th></tr></thead>
+          <tbody>
+            <tr><td>Avery Chen</td><td class="num">98000.00</td></tr>
+            <tr><td>Sam Okafor</td><td class="num">95000.00</td></tr>
+            <tr><td>Jordan Patel</td><td class="num">92000.00</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="fill" style="gap:14px">
+        <ul>
+          <li><strong>Without ORDER BY, row order is not promised.</strong> It can change between runs.</li>
+          <li><strong>Ties</strong> are broken by the next key: <code>name</code> above.</li>
+          <li><strong>NULLs sort as larger than any value</strong> in PostgreSQL, so <code>DESC</code> puts Noor Haddad's NULL salary first. <code>NULLS LAST</code> moves it.</li>
+          <li><strong>LIMIT n OFFSET k</strong> skips k rows, then keeps n. The standard spelling is <code>FETCH FIRST n ROWS ONLY</code>.</li>
+        </ul>
+        <div class="callout">
+          <span class="mark" aria-hidden="true">!</span>
+          <p>LIMIT without ORDER BY gives "some" 3 rows, not "the top" 3.</p>
+        </div>
+      </div>
+    </div>
+    <p><a class="try" href="playground.html#one">Run it with and without NULLS LAST, playground example 1.4</a></p>
+  </div>
+  
+</section>
+
+<!-- 9 ─────────────────────────────────────────────── section -->
+<section class="slide slide--section" id="s9">
+  <h2>Joining tables</h2>
+  <p>JOIN … ON is the algebra's theta join. Every way of writing it gives the same rows; the clearest one is the one to use.</p>
+  
+</section>
+
+<!-- 10 ────────────────────────────────────────────── inner join -->
+<section class="slide" id="s10">
+  <h2>An inner join keeps the pairs that match</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:960px">
+<svg style="--dg-k:1" viewBox="0 0 960 270" role="img" aria-labelledby="ijt ijd">
+<title id="ijt">An inner join keeps only the pairs that match</title>
+<desc id="ijd">Five instructors on the left and six rows of teaches on the right. Lines join each instructor to the teaches rows with the same id: Avery Chen matches three rows, Sam Okafor one, Priya Raman two. Kofi Mensah and Noor Haddad match nothing, so the inner join drops them. The result has 6 rows, one per matching pair.</desc>
+<defs><marker id="ija" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#0e5a6b"/></marker></defs>
+<text class="dg-sm-b" x="110" y="42">instructor</text>
+<rect class="dg-box" x="110" y="52" width="200" height="180"/>
+<rect class="dg-box-m" x="110" y="52" width="200" height="30"/>
+<text class="dg-xs" font-weight="700" x="118" y="72">id</text>
+<text class="dg-xs" font-weight="700" x="188" y="72">name</text>
+<g>
+<text class="dg-xs" x="118" y="102">10101</text>
+<text class="dg-xs" x="188" y="102">Avery Chen</text>
+</g>
+<path class="dg-line-q" d="M110 112 H310"/>
+<g>
+<text class="dg-xs" x="118" y="132">22222</text>
+<text class="dg-xs" x="188" y="132">Sam Okafor</text>
+</g>
+<path class="dg-line-q" d="M110 142 H310"/>
+<g class="v-dim" style="--d:2.20s">
+<text class="dg-xs" x="118" y="162">33456</text>
+<text class="dg-xs" x="188" y="162">Kofi Mensah</text>
+</g>
+<path class="dg-line-q" d="M110 172 H310"/>
+<g>
+<text class="dg-xs" x="118" y="192">45565</text>
+<text class="dg-xs" x="188" y="192">Priya Raman</text>
+</g>
+<path class="dg-line-q" d="M110 202 H310"/>
+<g class="v-dim" style="--d:2.20s">
+<text class="dg-xs" x="118" y="222">98345</text>
+<text class="dg-xs" x="188" y="222">Noor Haddad</text>
+</g>
+<text class="dg-sm-b" x="390" y="42">teaches</text>
+<rect class="dg-box" x="390" y="52" width="266" height="210"/>
+<rect class="dg-box-m" x="390" y="52" width="266" height="30"/>
+<text class="dg-xs" font-weight="700" x="398" y="72">id</text>
+<text class="dg-xs" font-weight="700" x="464" y="72">course_id</text>
+<text class="dg-xs" font-weight="700" x="554" y="72">term</text>
+<g>
+<text class="dg-xs" x="398" y="102">10101</text>
+<text class="dg-xs" x="464" y="102">CS-101</text>
+<text class="dg-xs" x="554" y="102">Fall 2025</text>
+</g>
+<path class="dg-line-q" d="M390 112 H656"/>
+<g>
+<text class="dg-xs" x="398" y="132">10101</text>
+<text class="dg-xs" x="464" y="132">CS-347</text>
+<text class="dg-xs" x="554" y="132">Fall 2025</text>
+</g>
+<path class="dg-line-q" d="M390 142 H656"/>
+<g>
+<text class="dg-xs" x="398" y="162">10101</text>
+<text class="dg-xs" x="464" y="162">CS-315</text>
+<text class="dg-xs" x="554" y="162">Spring 2026</text>
+</g>
+<path class="dg-line-q" d="M390 172 H656"/>
+<g>
+<text class="dg-xs" x="398" y="192">22222</text>
+<text class="dg-xs" x="464" y="192">PHY-101</text>
+<text class="dg-xs" x="554" y="192">Fall 2025</text>
+</g>
+<path class="dg-line-q" d="M390 202 H656"/>
+<g>
+<text class="dg-xs" x="398" y="222">45565</text>
+<text class="dg-xs" x="464" y="222">CS-101</text>
+<text class="dg-xs" x="554" y="222">Spring 2026</text>
+</g>
+<path class="dg-line-q" d="M390 232 H656"/>
+<g>
+<text class="dg-xs" x="398" y="252">45565</text>
+<text class="dg-xs" x="464" y="252">CS-347</text>
+<text class="dg-xs" x="554" y="252">Spring 2027</text>
+</g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:0.60s" d="M310 97.0 C 370 97.0, 330 97.0, 390 97.0"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:0.80s" d="M310 97.0 C 370 97.0, 330 127.0, 390 127.0"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.00s" d="M310 97.0 C 370 97.0, 330 157.0, 390 157.0"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.20s" d="M310 127.0 C 370 127.0, 330 187.0, 390 187.0"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.40s" d="M310 187.0 C 370 187.0, 330 217.0, 390 217.0"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.60s" d="M310 187.0 C 370 187.0, 330 247.0, 390 247.0"/>
+<text class="dg-xs dg-txt-bad v-in" style="--d:2.40s" x="100" y="162" text-anchor="end">✗ no match</text>
+<text class="dg-xs dg-txt-bad v-in" style="--d:2.40s" x="100" y="222" text-anchor="end">✗ no match</text>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:2.70s" d="M670 150 h40" marker-end="url(#ija)"/>
+<g class="v-in" style="--d:3.00s"><text class="dg-sm-b" x="722" y="42">result: 6 rows</text>
+<rect class="dg-box" x="722" y="52" width="226" height="210"/>
+<rect class="dg-box-m" x="722" y="52" width="226" height="30"/>
+<text class="dg-xs" font-weight="700" x="730" y="72">name</text>
+<text class="dg-xs" font-weight="700" x="860" y="72">course_id</text>
+<g>
+<text class="dg-xs" x="730" y="102">Avery Chen</text>
+<text class="dg-xs" x="860" y="102">CS-101</text>
+</g>
+<path class="dg-line-q" d="M722 112 H948"/>
+<g>
+<text class="dg-xs" x="730" y="132">Avery Chen</text>
+<text class="dg-xs" x="860" y="132">CS-347</text>
+</g>
+<path class="dg-line-q" d="M722 142 H948"/>
+<g>
+<text class="dg-xs" x="730" y="162">Avery Chen</text>
+<text class="dg-xs" x="860" y="162">CS-315</text>
+</g>
+<path class="dg-line-q" d="M722 172 H948"/>
+<g>
+<text class="dg-xs" x="730" y="192">Sam Okafor</text>
+<text class="dg-xs" x="860" y="192">PHY-101</text>
+</g>
+<path class="dg-line-q" d="M722 202 H948"/>
+<g>
+<text class="dg-xs" x="730" y="222">Priya Raman</text>
+<text class="dg-xs" x="860" y="222">CS-101</text>
+</g>
+<path class="dg-line-q" d="M722 232 H948"/>
+<g>
+<text class="dg-xs" x="730" y="252">Priya Raman</text>
+<text class="dg-xs" x="860" y="252">CS-347</text>
+</g></g>
+</svg>
+      <figcaption><strong>Figure 3.2.</strong> Five instructors and six <code>teaches</code> rows. Each match becomes one result row; an instructor with no match disappears. <a class="try" href="playground.html#joins">Watch it in the playground's join explorer</a></figcaption>
+    </figure>
+    <pre class="code"><span class="k">SELECT</span> i.name, t.course_id
+<span class="k">FROM</span> instructor i <span class="k">JOIN</span> teaches t <span class="k">ON</span> i.id = t.id;</pre>
+  </div>
+  
+</section>
+
+<!-- 11 ────────────────────────────────────────────── same join four ways -->
+<section class="slide" id="s11">
+  <h2>One join, four spellings</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div>
+        <pre class="code"><span class="c">-- 1. JOIN ... ON: say exactly what matches</span>
+<span class="k">SELECT</span> s.name, c.title
+<span class="k">FROM</span> takes t
+<span class="k">JOIN</span> course c <span class="k">ON</span> t.course_id = c.course_id
+<span class="k">JOIN</span> student s <span class="k">ON</span> s.id = t.id;
+
+<span class="c">-- 2. USING: the columns share a name</span>
+<span class="k">SELECT</span> name, title
+<span class="k">FROM</span> takes <span class="k">JOIN</span> course <span class="k">USING</span> (course_id)
+           <span class="k">JOIN</span> student <span class="k">USING</span> (id);</pre>
+      </div>
+      <div>
+        <pre class="code"><span class="c">-- 3. Comma join: the product, then WHERE</span>
+<span class="k">SELECT</span> s.name, c.title
+<span class="k">FROM</span> takes t, course c, student s
+<span class="k">WHERE</span> t.course_id = c.course_id
+  <span class="k">AND</span> s.id = t.id;
+
+<span class="c">-- 4. NATURAL JOIN: 14 rows, not 22</span>
+<span class="k">SELECT</span> name, title
+<span class="k">FROM</span> takes <span class="k">NATURAL</span> <span class="k">JOIN</span> course
+           <span class="k">NATURAL</span> <span class="k">JOIN</span> student;</pre>
+      </div>
+    </div>
+    <div class="callout">
+      <span class="mark" aria-hidden="true">§</span>
+      <p>Spellings 1 to 3 return the same 22 rows. Spelling 4 also matches <code>dept_name</code>, because <code>course</code> and <code>student</code> both have one, so it keeps only students taking a course in their own department: 14 rows. A NATURAL JOIN is fragile: add a column to a table and your query changes meaning. Prefer <code>ON</code> or <code>USING</code>.</p>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 12 ────────────────────────────────────────────── self join -->
+<section class="slide" id="s12">
+  <h2>A self join compares rows of the same table</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div>
+        <pre class="code"><span class="c">-- instructors who earn more than</span>
+<span class="c">-- someone in their own department</span>
+<span class="k">SELECT</span> <span class="k">DISTINCT</span> a.name, a.salary
+<span class="k">FROM</span> instructor a
+<span class="k">JOIN</span> instructor b
+  <span class="k">ON</span> a.dept_name = b.dept_name
+ <span class="k">AND</span> a.salary &gt; b.salary
+<span class="k">ORDER</span> <span class="k">BY</span> a.name;</pre>
+        <table class="tbl tbl--result" style="margin-top:16px">
+          <caption>Result: 4 rows</caption>
+          <thead><tr><th scope="col">name</th><th scope="col" class="num">salary</th></tr></thead>
+          <tbody>
+            <tr><td>Avery Chen</td><td class="num">98000.00</td></tr>
+            <tr><td>Jordan Patel</td><td class="num">92000.00</td></tr>
+            <tr><td>Sam Okafor</td><td class="num">95000.00</td></tr>
+            <tr><td>Tomas Novak</td><td class="num">62000.00</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="fill" style="gap:14px">
+        <div class="panel panel--definition">
+          <span class="term">Table alias</span>
+          <p>A second name for a table in one query. <code>a</code> and <code>b</code> are two independent walks over <code>instructor</code>: the algebra's ρ, from slide 10 last week.</p>
+        </div>
+        <ul>
+          <li>Without aliases the query cannot say which copy it means.</li>
+          <li><code>DISTINCT</code> matters: Avery Chen earns more than two Comp. Sci. colleagues and would appear twice.</li>
+          <li><code>a.salary &gt; b.salary</code> also stops a row from matching itself.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 13 ────────────────────────────────────────────── join chain -->
+<section class="slide" id="s13">
+  <h2>Longer questions follow the foreign keys</h2>
+  <div class="slide-main">
+    <div class="cols-2-1">
+      <pre class="code"><span class="c">-- which students took a course</span>
+<span class="c">-- from Avery Chen, in the same term?</span>
+<span class="k">SELECT</span> <span class="k">DISTINCT</span> s.name, c.title
+<span class="k">FROM</span> instructor i
+<span class="k">JOIN</span> teaches t  <span class="k">ON</span> t.id = i.id
+<span class="k">JOIN</span> takes   k  <span class="k">ON</span> k.course_id = t.course_id
+               <span class="k">AND</span> k.semester  = t.semester
+               <span class="k">AND</span> k.year      = t.year
+<span class="k">JOIN</span> student s  <span class="k">ON</span> s.id = k.id
+<span class="k">JOIN</span> course  c  <span class="k">ON</span> c.course_id = t.course_id
+<span class="k">WHERE</span> i.name = <span class="s">'Avery Chen'</span>;</pre>
+      <div class="fill" style="gap:14px">
+        <ol class="steps">
+          <li><span class="n" aria-hidden="true">1</span><div><strong>Start from what you know.</strong><p>The instructor's name.</p></div></li>
+          <li><span class="n" aria-hidden="true">2</span><div><strong>Walk one foreign key per JOIN.</strong><p>instructor → teaches → takes → student.</p></div></li>
+          <li><span class="n" aria-hidden="true">3</span><div><strong>Match every part of the key.</strong><p>A section is course, semester and year together.</p></div></li>
+        </ol>
+        <p class="note-line">Result: 10 rows, from CS-101 and CS-347 in Fall 2025 and CS-315 in Spring 2026.</p>
+      </div>
+    </div>
+    <p><a class="try" href="playground.html#joins">Run it, then drop the semester and year conditions and count again: playground example 2.4</a></p>
+  </div>
+  
+</section>
+
+<!-- 14 ────────────────────────────────────────────── section -->
+<section class="slide slide--section" id="s14">
+  <h2>Outer joins</h2>
+  <p>An inner join silently drops every row without a partner. An outer join keeps them, and fills the missing side with NULL.</p>
+  
+</section>
+
+<!-- 15 ────────────────────────────────────────────── left join -->
+<section class="slide" id="s15">
+  <h2>LEFT JOIN keeps every row of the left table</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:960px">
+<svg style="--dg-k:1" viewBox="0 0 960 330" role="img" aria-labelledby="ljt ljd">
+<title id="ljt">LEFT OUTER JOIN keeps the instructors who teach nothing, padded with NULL</title>
+<desc id="ljd">The same five instructors and six teaches rows as the inner join figure. Avery Chen, Sam Okafor and Priya Raman match six teaches rows as before. Kofi Mensah and Noor Haddad have no match, but a left outer join keeps every row of the left table, so each appears once with NULL in the course_id column. The result has 8 rows: the 6 matched rows plus 2 rows padded with NULL.</desc>
+<defs><marker id="lja" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#0e5a6b"/></marker></defs>
+<text class="dg-sm-b" x="110" y="42">instructor</text>
+<rect class="dg-box" x="110" y="52" width="200" height="180"/>
+<rect class="dg-box-m" x="110" y="52" width="200" height="30"/>
+<text class="dg-xs" font-weight="700" x="118" y="72">id</text>
+<text class="dg-xs" font-weight="700" x="188" y="72">name</text>
+<g>
+<text class="dg-xs" x="118" y="102">10101</text>
+<text class="dg-xs" x="188" y="102">Avery Chen</text>
+</g>
+<path class="dg-line-q" d="M110 112 H310"/>
+<g>
+<text class="dg-xs" x="118" y="132">22222</text>
+<text class="dg-xs" x="188" y="132">Sam Okafor</text>
+</g>
+<rect class="dg-warn v-in" style="--d:2.20s" x="111" y="143" width="198" height="28"/>
+<path class="dg-line-q" d="M110 142 H310"/>
+<g>
+<text class="dg-xs" x="118" y="162">33456</text>
+<text class="dg-xs" x="188" y="162">Kofi Mensah</text>
+</g>
+<path class="dg-line-q" d="M110 172 H310"/>
+<g>
+<text class="dg-xs" x="118" y="192">45565</text>
+<text class="dg-xs" x="188" y="192">Priya Raman</text>
+</g>
+<rect class="dg-warn v-in" style="--d:2.20s" x="111" y="203" width="198" height="28"/>
+<path class="dg-line-q" d="M110 202 H310"/>
+<g>
+<text class="dg-xs" x="118" y="222">98345</text>
+<text class="dg-xs" x="188" y="222">Noor Haddad</text>
+</g>
+<text class="dg-sm-b" x="390" y="42">teaches</text>
+<rect class="dg-box" x="390" y="52" width="266" height="210"/>
+<rect class="dg-box-m" x="390" y="52" width="266" height="30"/>
+<text class="dg-xs" font-weight="700" x="398" y="72">id</text>
+<text class="dg-xs" font-weight="700" x="464" y="72">course_id</text>
+<text class="dg-xs" font-weight="700" x="554" y="72">term</text>
+<g>
+<text class="dg-xs" x="398" y="102">10101</text>
+<text class="dg-xs" x="464" y="102">CS-101</text>
+<text class="dg-xs" x="554" y="102">Fall 2025</text>
+</g>
+<path class="dg-line-q" d="M390 112 H656"/>
+<g>
+<text class="dg-xs" x="398" y="132">10101</text>
+<text class="dg-xs" x="464" y="132">CS-347</text>
+<text class="dg-xs" x="554" y="132">Fall 2025</text>
+</g>
+<path class="dg-line-q" d="M390 142 H656"/>
+<g>
+<text class="dg-xs" x="398" y="162">10101</text>
+<text class="dg-xs" x="464" y="162">CS-315</text>
+<text class="dg-xs" x="554" y="162">Spring 2026</text>
+</g>
+<path class="dg-line-q" d="M390 172 H656"/>
+<g>
+<text class="dg-xs" x="398" y="192">22222</text>
+<text class="dg-xs" x="464" y="192">PHY-101</text>
+<text class="dg-xs" x="554" y="192">Fall 2025</text>
+</g>
+<path class="dg-line-q" d="M390 202 H656"/>
+<g>
+<text class="dg-xs" x="398" y="222">45565</text>
+<text class="dg-xs" x="464" y="222">CS-101</text>
+<text class="dg-xs" x="554" y="222">Spring 2026</text>
+</g>
+<path class="dg-line-q" d="M390 232 H656"/>
+<g>
+<text class="dg-xs" x="398" y="252">45565</text>
+<text class="dg-xs" x="464" y="252">CS-347</text>
+<text class="dg-xs" x="554" y="252">Spring 2027</text>
+</g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:0.60s" d="M310 97.0 C 370 97.0, 330 97.0, 390 97.0"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:0.80s" d="M310 97.0 C 370 97.0, 330 127.0, 390 127.0"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.00s" d="M310 97.0 C 370 97.0, 330 157.0, 390 157.0"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.20s" d="M310 127.0 C 370 127.0, 330 187.0, 390 187.0"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.40s" d="M310 187.0 C 370 187.0, 330 217.0, 390 217.0"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.60s" d="M310 187.0 C 370 187.0, 330 247.0, 390 247.0"/>
+<text class="dg-xs dg-txt-warn v-in" style="--d:2.40s" x="100" y="162" text-anchor="end">no match: kept</text>
+<text class="dg-xs dg-txt-warn v-in" style="--d:2.40s" x="100" y="222" text-anchor="end">no match: kept</text>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:2.70s" d="M670 150 h40" marker-end="url(#lja)"/>
+<g class="v-in" style="--d:3.00s"><text class="dg-sm-b" x="722" y="42">result: 8 rows</text>
+<rect class="dg-box" x="722" y="52" width="226" height="270"/>
+<rect class="dg-box-m" x="722" y="52" width="226" height="30"/>
+<text class="dg-xs" font-weight="700" x="730" y="72">name</text>
+<text class="dg-xs" font-weight="700" x="860" y="72">course_id</text>
+<g>
+<text class="dg-xs" x="730" y="102">Avery Chen</text>
+<text class="dg-xs" x="860" y="102">CS-101</text>
+</g>
+<path class="dg-line-q" d="M722 112 H948"/>
+<g>
+<text class="dg-xs" x="730" y="132">Avery Chen</text>
+<text class="dg-xs" x="860" y="132">CS-347</text>
+</g>
+<path class="dg-line-q" d="M722 142 H948"/>
+<g>
+<text class="dg-xs" x="730" y="162">Avery Chen</text>
+<text class="dg-xs" x="860" y="162">CS-315</text>
+</g>
+<path class="dg-line-q" d="M722 172 H948"/>
+<g>
+<text class="dg-xs" x="730" y="192">Sam Okafor</text>
+<text class="dg-xs" x="860" y="192">PHY-101</text>
+</g>
+<rect class="dg-warn v-in" style="--d:3.48s" x="723" y="203" width="224" height="28"/>
+<path class="dg-line-q" d="M722 202 H948"/>
+<g>
+<text class="dg-xs" x="730" y="222">Kofi Mensah</text>
+<text class="dg-xs dg-txt-warn" x="860" y="222" font-style="italic">NULL</text>
+</g>
+<path class="dg-line-q" d="M722 232 H948"/>
+<g>
+<text class="dg-xs" x="730" y="252">Priya Raman</text>
+<text class="dg-xs" x="860" y="252">CS-101</text>
+</g>
+<path class="dg-line-q" d="M722 262 H948"/>
+<g>
+<text class="dg-xs" x="730" y="282">Priya Raman</text>
+<text class="dg-xs" x="860" y="282">CS-347</text>
+</g>
+<rect class="dg-warn v-in" style="--d:3.84s" x="723" y="293" width="224" height="28"/>
+<path class="dg-line-q" d="M722 292 H948"/>
+<g>
+<text class="dg-xs" x="730" y="312">Noor Haddad</text>
+<text class="dg-xs dg-txt-warn" x="860" y="312" font-style="italic">NULL</text>
+</g></g>
+</svg>
+      <figcaption><strong>Figure 3.3.</strong> The same inputs as figure 3.2. Kofi Mensah and Noor Haddad stay in the result, each once, with NULL where a course would be.</figcaption>
+    </figure>
+    <pre class="code"><span class="k">SELECT</span> i.name, t.course_id
+<span class="k">FROM</span> instructor i <span class="k">LEFT</span> <span class="k">JOIN</span> teaches t <span class="k">ON</span> i.id = t.id;   <span class="c">-- 15 rows on the full tables</span></pre>
+  </div>
+  
+</section>
+
+<!-- 16 ────────────────────────────────────────────── three bands -->
+<section class="slide" id="s16">
+  <h2>LEFT, RIGHT and FULL choose which unmatched rows to keep</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:980px">
+<svg style="--dg-k:1" viewBox="0 0 1060 418" role="img" aria-labelledby="jbt jbd">
+<title id="jbt">The rows of a FULL OUTER JOIN of department and student, in three bands</title>
+<desc id="jbd">department FULL OUTER JOIN student ON the department name gives 14 rows in three bands. Band 1, matched: 12 rows, each student with their department, for example Comp. Sci. with Riley Adams. Band 2, left only: Economics, which has no students, with NULL for the student. Band 3, right only: Emery Walsh, who has no department, with NULL for the department. An inner join returns band 1. A left join returns bands 1 and 2. A right join returns bands 1 and 3. A full join returns all three.</desc>
+<defs><marker id="jba" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#0e5a6b"/></marker></defs>
+<text class="dg-sm-b" x="0" y="30">department FULL OUTER JOIN student ON d.dept_name = s.dept_name</text>
+<rect class="dg-box" x="0" y="40" width="400" height="238"/>
+<rect class="dg-box-m" x="0" y="40" width="400" height="34"/>
+<text class="dg-xs" font-weight="700" x="8" y="63">d.dept_name</text>
+<text class="dg-xs" font-weight="700" x="158" y="63">building</text>
+<text class="dg-xs" font-weight="700" x="258" y="63">s.name</text>
+<g>
+<text class="dg-xs" x="8" y="97">Comp. Sci.</text>
+<text class="dg-xs" x="158" y="97">Hale</text>
+<text class="dg-xs" x="258" y="97">Riley Adams</text>
+</g>
+<path class="dg-line-q" d="M0 108 H400"/>
+<g>
+<text class="dg-xs" x="8" y="131">Comp. Sci.</text>
+<text class="dg-xs" x="158" y="131">Hale</text>
+<text class="dg-xs" x="258" y="131">Morgan Lee</text>
+</g>
+<path class="dg-line-q" d="M0 142 H400"/>
+<g>
+<text class="dg-xs" x="8" y="165">Physics</text>
+<text class="dg-xs" x="158" y="165">Kirk</text>
+<text class="dg-xs" x="258" y="165">Jamie Rivera</text>
+</g>
+<path class="dg-line-q" d="M0 176 H400"/>
+<g>
+<text class="dg-xs dg-txt-s" x="8" y="199">… 9 more matched rows</text>
+<text class="dg-xs" x="158" y="199"></text>
+<text class="dg-xs" x="258" y="199"></text>
+</g>
+<rect class="dg-warn v-in" style="--d:1.60s" x="1" y="211" width="398" height="32"/>
+<path class="dg-line-q" d="M0 210 H400"/>
+<g>
+<text class="dg-xs" x="8" y="233">Economics</text>
+<text class="dg-xs" x="158" y="233">Watson</text>
+<text class="dg-xs dg-txt-warn" x="258" y="233" font-style="italic">NULL</text>
+</g>
+<rect class="dg-hl-t v-in" style="--d:2.20s" x="1" y="245" width="398" height="32"/>
+<path class="dg-line-q" d="M0 244 H400"/>
+<g>
+<text class="dg-xs dg-txt-warn" x="8" y="267" font-style="italic">NULL</text>
+<text class="dg-xs dg-txt-warn" x="158" y="267" font-style="italic">NULL</text>
+<text class="dg-xs" x="258" y="267">Emery Walsh</text>
+</g>
+<path class="dg-line-a v-draw" pathLength="1" style="--d:1.10s" d="M414 77 h10 V207 h-10"/>
+<g class="v-in" style="--d:1.30s"><text class="dg-lbl" x="436" y="147.0">1  matched</text><text class="dg-xs" x="556" y="147.0">12 rows: each student with their department</text></g>
+<path class="dg-line-a v-draw" pathLength="1" style="--d:1.80s" d="M414 213 h10 V241 h-10"/>
+<g class="v-in" style="--d:2.00s"><text class="dg-lbl" x="436" y="232.0">2  left only</text><text class="dg-xs" x="556" y="232.0">Economics has no students</text></g>
+<path class="dg-line-a v-draw" pathLength="1" style="--d:2.40s" d="M414 247 h10 V275 h-10"/>
+<g class="v-in" style="--d:2.60s"><text class="dg-lbl" x="436" y="266.0">3  right only</text><text class="dg-xs" x="556" y="266.0">Emery Walsh has no department</text></g>
+<g class="v-in" style="--d:3.00s"><rect class="dg-box-m" x="0" y="322" width="246" height="64" rx="5"/><text class="dg-sm-b dg-mono" x="14" y="348">INNER JOIN</text><text class="dg-xs" x="14" y="372">bands 1 · 12 rows</text></g>
+<g class="v-in" style="--d:3.30s"><rect class="dg-box-m" x="262" y="322" width="246" height="64" rx="5"/><text class="dg-sm-b dg-mono" x="276" y="348">LEFT JOIN</text><text class="dg-xs" x="276" y="372">bands 1 + 2 · 13 rows</text></g>
+<g class="v-in" style="--d:3.60s"><rect class="dg-box-m" x="524" y="322" width="246" height="64" rx="5"/><text class="dg-sm-b dg-mono" x="538" y="348">RIGHT JOIN</text><text class="dg-xs" x="538" y="372">bands 1 + 3 · 13 rows</text></g>
+<g class="v-in" style="--d:3.90s"><rect class="dg-box-m" x="786" y="322" width="246" height="64" rx="5"/><text class="dg-sm-b dg-mono" x="800" y="348">FULL JOIN</text><text class="dg-xs" x="800" y="372">bands 1 + 2 + 3 · 14 rows</text></g>
+</svg>
+      <figcaption><strong>Figure 3.4.</strong> Every outer join result is made of up to three bands. Economics has no students; Emery Walsh has no department. <a class="try" href="playground.html#outer">Switch between the four joins in the playground</a></figcaption>
+    </figure>
+  </div>
+  
+</section>
+
+<!-- 17 ────────────────────────────────────────────── anti join -->
+<section class="slide" id="s17">
+  <h2>Find what is missing: LEFT JOIN … IS NULL</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div>
+        <pre class="code"><span class="c">-- courses nobody teaches</span>
+<span class="k">SELECT</span> c.course_id, c.title
+<span class="k">FROM</span> course c
+<span class="k">LEFT</span> <span class="k">JOIN</span> teaches t
+       <span class="k">ON</span> t.course_id = c.course_id
+<span class="k">WHERE</span> t.course_id <span class="k">IS</span> <span class="k">NULL</span>;</pre>
+        <table class="tbl tbl--result" style="margin-top:16px">
+          <caption>Result: 1 row</caption>
+          <thead><tr><th scope="col">course_id</th><th scope="col">title</th></tr></thead>
+          <tbody><tr><td>CS-319</td><td>Image Processing</td></tr></tbody>
+        </table>
+      </div>
+      <div class="fill" style="gap:14px">
+        <div class="panel panel--definition">
+          <span class="term">Anti-join</span>
+          <p>The rows of one table that have no partner in another. In the algebra: course − (course ⋉ teaches).</p>
+        </div>
+        <ul>
+          <li>The left join pads each course with no section with NULL.</li>
+          <li><code>WHERE t.course_id IS NULL</code> keeps exactly those padded rows.</li>
+          <li>Test a column that cannot be NULL in a real match: here the join column itself.</li>
+        </ul>
+        <p class="note-line">Week 4 writes the same question with <code>NOT EXISTS</code>.</p>
+      </div>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 18 ────────────────────────────────────────────── on vs where -->
+<section class="slide" id="s18">
+  <h2>In an outer join, ON and WHERE are not the same</h2>
+  <div class="slide-main">
+    <figure class="fig">
+<svg style="--dg-k:1" viewBox="0 0 1100 272" role="img" aria-labelledby="owt owd">
+<title id="owt">A condition in ON keeps the outer rows; the same condition in WHERE removes them</title>
+<desc id="owd">Two queries list instructors with what they teach in 2027. Top: the year test is part of ON. The left join keeps all 11 instructors: 2 matched a 2027 course and 9 are padded with NULL, so the result has 11 rows. Bottom: the year test is in WHERE. The left join first gives 15 rows, 3 of them padded with NULL. Then WHERE t.year = 2027 tests every row; for a NULL-padded row the test is NULL = 2027, which is unknown, so the row is dropped, and so are matched rows from other years. 2 rows remain, the same as an inner join.</desc>
+<defs><marker id="owa" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#0e5a6b"/></marker></defs>
+<text class="dg-lbl" x="0" y="26">Test in ON: an outer row is still kept</text>
+<g class="v-in" style="--d:0.20s"><rect class="dg-box-m" x="0" y="44" width="200" height="64" rx="5"/><text class="dg-sm-b dg-mono" x="14" y="71">instructor</text><text class="dg-xs" x="14" y="94">11 rows</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:0.50s" d="M204 76 H244" marker-end="url(#owa)"/>
+<g class="v-in" style="--d:0.70s"><rect class="dg-box-t" x="250" y="44" width="470" height="64" rx="5"/><text class="dg-sm-b dg-mono" x="264" y="71">LEFT JOIN teaches t</text><text class="dg-xs" x="264" y="94">ON i.id = t.id AND t.year = 2027</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.00s" d="M724 76 H764" marker-end="url(#owa)"/>
+<g class="v-in" style="--d:1.20s"><rect class="dg-ok" x="770" y="44" width="320" height="64" rx="5"/><text class="dg-sm-b dg-mono" x="784" y="71">11 rows</text><text class="dg-xs" x="784" y="94">2 matched + 9 padded with NULL</text></g>
+<text class="dg-lbl" x="0" y="186">Test in WHERE: the outer rows are thrown away</text>
+<g class="v-in" style="--d:1.80s"><rect class="dg-box-m" x="0" y="204" width="200" height="64" rx="5"/><text class="dg-sm-b dg-mono" x="14" y="231">instructor</text><text class="dg-xs" x="14" y="254">11 rows</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:2.10s" d="M204 236 H244" marker-end="url(#owa)"/>
+<g class="v-in" style="--d:2.30s"><rect class="dg-box-t" x="250" y="204" width="220" height="64" rx="5"/><text class="dg-sm-b dg-mono" x="264" y="231">LEFT JOIN teaches t</text><text class="dg-xs" x="264" y="254">ON i.id = t.id</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:2.60s" d="M474 236 H514" marker-end="url(#owa)"/>
+<g class="v-in" style="--d:2.80s"><rect class="dg-box-m" x="520" y="204" width="210" height="64" rx="5"/><text class="dg-sm-b dg-mono" x="534" y="231">15 rows</text><text class="dg-xs" x="534" y="254">3 padded with NULL</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:3.10s" d="M734 236 H774" marker-end="url(#owa)"/>
+<g class="v-in" style="--d:3.30s"><rect class="dg-bad" x="780" y="204" width="310" height="64" rx="5"/><text class="dg-sm-b dg-mono" x="794" y="231">WHERE t.year = 2027</text><text class="dg-xs" x="794" y="254">keeps 2 rows: NULL = 2027 is unknown</text></g>
+</svg>
+      <figcaption><strong>Figure 3.5.</strong> The same condition in two places. ON decides which rows match; WHERE then filters the whole result, NULL-padded rows included. <a class="try" href="playground.html#outer">Run both, playground example 3.3</a></figcaption>
+    </figure>
+    <p class="note-line">Rule of thumb: conditions on the <em>right</em> table of a LEFT JOIN go in <code>ON</code>; conditions on the <em>left</em> table go in <code>WHERE</code>. In an inner join the two places give the same answer.</p>
+  </div>
+  
+</section>
+
+<!-- 19 ────────────────────────────────────────────── section -->
+<section class="slide slide--section" id="s19">
+  <h2>NULLs in practice</h2>
+  <p>Last week: a comparison with NULL is unknown, and WHERE keeps only true rows. This week: where that rule surprises people.</p>
+  
+</section>
+
+<!-- 20 ────────────────────────────────────────────── null in expressions -->
+<section class="slide" id="s20">
+  <h2>NULL spreads through expressions</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <table class="tbl tbl--compact">
+        <caption>Each expression with Noor Haddad's NULL salary</caption>
+        <thead><tr><th scope="col">Expression</th><th scope="col">Value</th></tr></thead>
+        <tbody>
+          <tr><td><code>salary * 1.05</code></td><td>NULL</td></tr>
+          <tr><td><code>salary &gt; 50000</code></td><td>unknown</td></tr>
+          <tr><td><code>salary = NULL</code></td><td>unknown, always</td></tr>
+          <tr><td><code>salary IS NULL</code></td><td>true</td></tr>
+          <tr><td><code>'Pay: ' || salary</code></td><td>NULL</td></tr>
+          <tr><td><code>COALESCE(salary, 0)</code></td><td>0</td></tr>
+          <tr><td><code>salary IS DISTINCT FROM 60000</code></td><td>true</td></tr>
+        </tbody>
+      </table>
+      <div class="fill" style="gap:14px">
+        <div class="panel panel--definition">
+          <span class="term">COALESCE(a, b, …)</span>
+          <p>Returns the first argument that is not NULL. The usual way to show a default in a report.</p>
+        </div>
+        <pre class="code"><span class="k">SELECT</span> i.name,
+       <span class="k">COALESCE</span>(t.course_id, <span class="s">'(none)'</span>) <span class="k">AS</span> teaches
+<span class="k">FROM</span> instructor i
+<span class="k">LEFT</span> <span class="k">JOIN</span> teaches t <span class="k">ON</span> t.id = i.id;</pre>
+        <p class="note-line"><code>NULLIF(a, b)</code> does the reverse: NULL when a = b, else a. <code>IS DISTINCT FROM</code> is a comparison that treats two NULLs as equal and never returns unknown.</p>
+      </div>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 21 ────────────────────────────────────────────── three-valued logic quick check -->
+<section class="slide" id="s21">
+  <h2>AND, OR and NOT with unknown</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <table class="tbl tbl--compact">
+        <caption>Truth table with unknown (U)</caption>
+        <thead><tr><th scope="col">p</th><th scope="col">q</th><th scope="col">p AND q</th><th scope="col">p OR q</th></tr></thead>
+        <tbody>
+          <tr><td>true</td><td>U</td><td>U</td><td>true</td></tr>
+          <tr><td>false</td><td>U</td><td>false</td><td>U</td></tr>
+          <tr><td>U</td><td>U</td><td>U</td><td>U</td></tr>
+        </tbody>
+      </table>
+      <div class="fill" style="gap:14px">
+        <ul>
+          <li><strong>AND</strong> is false if either side is false, whatever the other is.</li>
+          <li><strong>OR</strong> is true if either side is true.</li>
+          <li><strong>NOT unknown</strong> is unknown. So <code>NOT (salary &gt; 90000)</code> does not return Noor Haddad either.</li>
+        </ul>
+        <div class="callout">
+          <span class="mark" aria-hidden="true">?</span>
+          <p>Does <code>WHERE salary &gt; 90000 OR salary &lt;= 90000</code> return every instructor? No: 10 of 11. Noor Haddad's row is unknown OR unknown.</p>
+        </div>
+      </div>
+    </div>
+    <p><a class="try" href="playground.html#nulls">Check it in the playground's logic explorer, section 4</a></p>
+  </div>
+  
+</section>
+
+<!-- 22 ────────────────────────────────────────────── not in trap -->
+<section class="slide" id="s22">
+  <h2>NOT IN and a single NULL</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:1040px">
+<svg style="--dg-k:1" viewBox="0 0 1100 284" role="img" aria-labelledby="nit nid">
+<title id="nit">Why NOT IN returns nothing when the list holds a NULL</title>
+<desc id="nid">The test &#x27;Economics&#x27; NOT IN the list of student departments is shorthand for &#x27;Economics&#x27; is not equal to each value, all joined with AND. The list holds Comp. Sci., History, Physics, Music, Mathematics, Biology and NULL, because Emery Walsh has no department. The first six comparisons are true. The last, &#x27;Economics&#x27; &lt;&gt; NULL, is unknown. true AND unknown is unknown, so the whole test is unknown and WHERE drops Economics. The query returns no rows.</desc>
+<defs><marker id="nia" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#0e5a6b"/></marker></defs>
+<text class="dg-sm dg-mono" x="0" y="28">WHERE 'Economics' NOT IN (SELECT dept_name FROM student)</text>
+<text class="dg-txt-s" x="0" y="64">means: &#x27;Economics&#x27; &lt;&gt; each value, joined with AND</text>
+<g class="v-in" style="--d:0.40s"><rect class="dg-ok" x="0" y="86" width="130" height="86" rx="5"/><text class="dg-xs dg-mono" x="65.0" y="112" text-anchor="middle">&lt;&gt; Comp. Sci.</text><text class="dg-sm-b dg-txt-ok" x="65.0" y="152" text-anchor="middle">true</text></g>
+<g class="v-in" style="--d:0.70s"><rect class="dg-ok" x="155" y="86" width="130" height="86" rx="5"/><text class="dg-xs dg-mono" x="220.0" y="112" text-anchor="middle">&lt;&gt; History</text><text class="dg-sm-b dg-txt-ok" x="220.0" y="152" text-anchor="middle">true</text></g>
+<text class="dg-xs v-in" style="--d:0.70s" x="142.5" y="134" text-anchor="middle">∧</text>
+<g class="v-in" style="--d:1.00s"><rect class="dg-ok" x="310" y="86" width="130" height="86" rx="5"/><text class="dg-xs dg-mono" x="375.0" y="112" text-anchor="middle">&lt;&gt; Physics</text><text class="dg-sm-b dg-txt-ok" x="375.0" y="152" text-anchor="middle">true</text></g>
+<text class="dg-xs v-in" style="--d:1.00s" x="297.5" y="134" text-anchor="middle">∧</text>
+<g class="v-in" style="--d:1.30s"><rect class="dg-ok" x="465" y="86" width="130" height="86" rx="5"/><text class="dg-xs dg-mono" x="530.0" y="112" text-anchor="middle">&lt;&gt; Music</text><text class="dg-sm-b dg-txt-ok" x="530.0" y="152" text-anchor="middle">true</text></g>
+<text class="dg-xs v-in" style="--d:1.30s" x="452.5" y="134" text-anchor="middle">∧</text>
+<g class="v-in" style="--d:1.60s"><rect class="dg-ok" x="620" y="86" width="130" height="86" rx="5"/><text class="dg-xs dg-mono" x="685.0" y="112" text-anchor="middle">&lt;&gt; Mathematics</text><text class="dg-sm-b dg-txt-ok" x="685.0" y="152" text-anchor="middle">true</text></g>
+<text class="dg-xs v-in" style="--d:1.60s" x="607.5" y="134" text-anchor="middle">∧</text>
+<g class="v-in" style="--d:1.90s"><rect class="dg-ok" x="775" y="86" width="130" height="86" rx="5"/><text class="dg-xs dg-mono" x="840.0" y="112" text-anchor="middle">&lt;&gt; Biology</text><text class="dg-sm-b dg-txt-ok" x="840.0" y="152" text-anchor="middle">true</text></g>
+<text class="dg-xs v-in" style="--d:1.90s" x="762.5" y="134" text-anchor="middle">∧</text>
+<g class="v-in" style="--d:2.20s"><rect class="dg-warn" x="930" y="86" width="130" height="86" rx="5"/><text class="dg-xs dg-mono" x="995.0" y="112" text-anchor="middle">&lt;&gt; NULL</text><text class="dg-sm-b dg-txt-warn" x="995.0" y="152" text-anchor="middle">unknown</text></g>
+<text class="dg-xs v-in" style="--d:2.20s" x="917.5" y="134" text-anchor="middle">∧</text>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:2.60s" d="M530 176 V220" marker-end="url(#nia)"/>
+<g class="v-in" style="--d:2.90s"><rect class="dg-warn" x="330" y="226" width="400" height="48" rx="5"/><text class="dg-sm-b dg-txt-warn" x="530" y="256" text-anchor="middle">true ∧ … ∧ unknown  =  unknown</text></g>
+<g class="v-in" style="--d:3.40s"><text class="dg-txt-s" x="750" y="248">WHERE keeps only true rows,</text><text class="dg-txt-s" x="750" y="272">so Economics is dropped: 0 rows.</text></g>
+</svg>
+      <figcaption><strong>Figure 3.6.</strong> "Departments with no students" should return Economics. Emery Walsh's NULL department makes the whole test unknown, so the query returns nothing. <a class="try" href="playground.html#nulls">Run it, playground example 4.3</a></figcaption>
+    </figure>
+    <div class="cols-2">
+      <pre class="code"><span class="k">SELECT</span> dept_name <span class="k">FROM</span> department
+<span class="k">WHERE</span> dept_name <span class="k">NOT</span> <span class="k">IN</span>
+  (<span class="k">SELECT</span> dept_name <span class="k">FROM</span> student);  <span class="c">-- 0 rows</span></pre>
+      <pre class="code"><span class="k">SELECT</span> dept_name <span class="k">FROM</span> department
+<span class="k">WHERE</span> dept_name <span class="k">NOT</span> <span class="k">IN</span>
+  (<span class="k">SELECT</span> dept_name <span class="k">FROM</span> student
+   <span class="k">WHERE</span> dept_name <span class="k">IS</span> <span class="k">NOT</span> <span class="k">NULL</span>);    <span class="c">-- Economics</span></pre>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 23 ────────────────────────────────────────────── section -->
+<section class="slide slide--section" id="s23">
+  <h2>Set operations</h2>
+  <p>UNION, INTERSECT and EXCEPT combine whole query results, row against row.</p>
+  
+</section>
+
+<!-- 24 ────────────────────────────────────────────── set ops -->
+<section class="slide" id="s24">
+  <h2>UNION, INTERSECT and EXCEPT, with and without ALL</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:900px">
+<svg style="--dg-k:1" viewBox="0 0 960 356" role="img" aria-labelledby="sot sod">
+<title id="sot">UNION, UNION ALL, INTERSECT and EXCEPT on the courses taught in two terms</title>
+<desc id="sod">A: the courses taught in Fall 2025: CS-101, CS-347, MA-201, PHY-101. B: the courses taught in Spring 2026: CS-101, CS-315, CS-190, HIS-351, MU-199, BIO-101. Only CS-101 is in both. A UNION B has 9 courses, CS-101 once. A UNION ALL B has 10 rows, CS-101 twice. A INTERSECT B has 1 row, CS-101. A EXCEPT B has 3 rows: CS-347, MA-201, PHY-101.</desc>
+<text class="dg-sm-b" x="0" y="42">A  Fall 2025</text>
+<text class="dg-sm-b" x="0" y="84">B  Spring 2026</text>
+<g class="v-in" style="--d:0.20s"><rect class="dg-box-a" x="170" y="20" width="74" height="34" rx="4"/><text class="dg-xs dg-mono" x="207.0" y="43" text-anchor="middle">CS-101</text></g>
+<g class="v-in" style="--d:0.28s"><rect class="dg-box-t" x="248" y="20" width="74" height="34" rx="4"/><text class="dg-xs dg-mono" x="285.0" y="43" text-anchor="middle">CS-347</text></g>
+<g class="v-in" style="--d:0.36s"><rect class="dg-box-t" x="326" y="20" width="74" height="34" rx="4"/><text class="dg-xs dg-mono" x="363.0" y="43" text-anchor="middle">MA-201</text></g>
+<g class="v-in" style="--d:0.44s"><rect class="dg-box-t" x="404" y="20" width="74" height="34" rx="4"/><text class="dg-xs dg-mono" x="441.0" y="43" text-anchor="middle">PHY-101</text></g>
+<g class="v-in" style="--d:0.50s"><rect class="dg-box-a" x="170" y="62" width="74" height="34" rx="4"/><text class="dg-xs dg-mono" x="207.0" y="85" text-anchor="middle">CS-101</text></g>
+<g class="v-in" style="--d:0.58s"><rect class="dg-box-t" x="248" y="62" width="74" height="34" rx="4"/><text class="dg-xs dg-mono" x="285.0" y="85" text-anchor="middle">CS-315</text></g>
+<g class="v-in" style="--d:0.66s"><rect class="dg-box-t" x="326" y="62" width="74" height="34" rx="4"/><text class="dg-xs dg-mono" x="363.0" y="85" text-anchor="middle">CS-190</text></g>
+<g class="v-in" style="--d:0.74s"><rect class="dg-box-t" x="404" y="62" width="74" height="34" rx="4"/><text class="dg-xs dg-mono" x="441.0" y="85" text-anchor="middle">HIS-351</text></g>
+<g class="v-in" style="--d:0.82s"><rect class="dg-box-t" x="482" y="62" width="74" height="34" rx="4"/><text class="dg-xs dg-mono" x="519.0" y="85" text-anchor="middle">MU-199</text></g>
+<g class="v-in" style="--d:0.90s"><rect class="dg-box-t" x="560" y="62" width="74" height="34" rx="4"/><text class="dg-xs dg-mono" x="597.0" y="85" text-anchor="middle">BIO-101</text></g>
+<path class="dg-line-q" d="M0 116 H960"/>
+<g class="v-in" style="--d:1.40s"><text class="dg-sm-b dg-mono" x="0" y="147">A UNION B</text><text class="dg-xs dg-txt-s" x="0" y="168">9 rows, CS-101 once</text></g>
+<g class="v-in" style="--d:1.40s"><rect class="dg-box-a" x="170" y="132" width="74" height="34" rx="4"/><text class="dg-xs dg-mono" x="207.0" y="155" text-anchor="middle">CS-101</text></g>
+<g class="v-in" style="--d:1.45s"><rect class="dg-box-t" x="248" y="132" width="74" height="34" rx="4"/><text class="dg-xs dg-mono" x="285.0" y="155" text-anchor="middle">CS-347</text></g>
+<g class="v-in" style="--d:1.50s"><rect class="dg-box-t" x="326" y="132" width="74" height="34" rx="4"/><text class="dg-xs dg-mono" x="363.0" y="155" text-anchor="middle">MA-201</text></g>
+<g class="v-in" style="--d:1.55s"><rect class="dg-box-t" x="404" y="132" width="74" height="34" rx="4"/><text class="dg-xs dg-mono" x="441.0" y="155" text-anchor="middle">PHY-101</text></g>
+<g class="v-in" style="--d:1.60s"><rect class="dg-box-t" x="482" y="132" width="74" height="34" rx="4"/><text class="dg-xs dg-mono" x="519.0" y="155" text-anchor="middle">CS-315</text></g>
+<g class="v-in" style="--d:1.65s"><rect class="dg-box-t" x="560" y="132" width="74" height="34" rx="4"/><text class="dg-xs dg-mono" x="597.0" y="155" text-anchor="middle">CS-190</text></g>
+<g class="v-in" style="--d:1.70s"><rect class="dg-box-t" x="638" y="132" width="74" height="34" rx="4"/><text class="dg-xs dg-mono" x="675.0" y="155" text-anchor="middle">HIS-351</text></g>
+<g class="v-in" style="--d:1.75s"><rect class="dg-box-t" x="716" y="132" width="74" height="34" rx="4"/><text class="dg-xs dg-mono" x="753.0" y="155" text-anchor="middle">MU-199</text></g>
+<g class="v-in" style="--d:1.80s"><rect class="dg-box-t" x="794" y="132" width="74" height="34" rx="4"/><text class="dg-xs dg-mono" x="831.0" y="155" text-anchor="middle">BIO-101</text></g>
+<g class="v-in" style="--d:2.10s"><text class="dg-sm-b dg-mono" x="0" y="203">A UNION ALL B</text><text class="dg-xs dg-txt-s" x="0" y="224">10 rows, CS-101 twice</text></g>
+<g class="v-in" style="--d:2.10s"><rect class="dg-box-a" x="170" y="188" width="74" height="34" rx="4"/><text class="dg-xs dg-mono" x="207.0" y="211" text-anchor="middle">CS-101</text></g>
+<g class="v-in" style="--d:2.15s"><rect class="dg-box-t" x="248" y="188" width="74" height="34" rx="4"/><text class="dg-xs dg-mono" x="285.0" y="211" text-anchor="middle">CS-347</text></g>
+<g class="v-in" style="--d:2.20s"><rect class="dg-box-t" x="326" y="188" width="74" height="34" rx="4"/><text class="dg-xs dg-mono" x="363.0" y="211" text-anchor="middle">MA-201</text></g>
+<g class="v-in" style="--d:2.25s"><rect class="dg-box-t" x="404" y="188" width="74" height="34" rx="4"/><text class="dg-xs dg-mono" x="441.0" y="211" text-anchor="middle">PHY-101</text></g>
+<g class="v-in" style="--d:2.30s"><rect class="dg-box-a" x="482" y="188" width="74" height="34" rx="4"/><text class="dg-xs dg-mono" x="519.0" y="211" text-anchor="middle">CS-101</text></g>
+<g class="v-in" style="--d:2.35s"><rect class="dg-box-t" x="560" y="188" width="74" height="34" rx="4"/><text class="dg-xs dg-mono" x="597.0" y="211" text-anchor="middle">CS-315</text></g>
+<g class="v-in" style="--d:2.40s"><rect class="dg-box-t" x="638" y="188" width="74" height="34" rx="4"/><text class="dg-xs dg-mono" x="675.0" y="211" text-anchor="middle">CS-190</text></g>
+<g class="v-in" style="--d:2.45s"><rect class="dg-box-t" x="716" y="188" width="74" height="34" rx="4"/><text class="dg-xs dg-mono" x="753.0" y="211" text-anchor="middle">HIS-351</text></g>
+<g class="v-in" style="--d:2.50s"><rect class="dg-box-t" x="794" y="188" width="74" height="34" rx="4"/><text class="dg-xs dg-mono" x="831.0" y="211" text-anchor="middle">MU-199</text></g>
+<g class="v-in" style="--d:2.55s"><rect class="dg-box-t" x="872" y="188" width="74" height="34" rx="4"/><text class="dg-xs dg-mono" x="909.0" y="211" text-anchor="middle">BIO-101</text></g>
+<g class="v-in" style="--d:2.80s"><text class="dg-sm-b dg-mono" x="0" y="259">A INTERSECT B</text><text class="dg-xs dg-txt-s" x="0" y="280">1 row</text></g>
+<g class="v-in" style="--d:2.80s"><rect class="dg-box-a" x="170" y="244" width="74" height="34" rx="4"/><text class="dg-xs dg-mono" x="207.0" y="267" text-anchor="middle">CS-101</text></g>
+<g class="v-in" style="--d:3.50s"><text class="dg-sm-b dg-mono" x="0" y="315">A EXCEPT B</text><text class="dg-xs dg-txt-s" x="0" y="336">3 rows</text></g>
+<g class="v-in" style="--d:3.50s"><rect class="dg-box-t" x="170" y="300" width="74" height="34" rx="4"/><text class="dg-xs dg-mono" x="207.0" y="323" text-anchor="middle">CS-347</text></g>
+<g class="v-in" style="--d:3.55s"><rect class="dg-box-t" x="248" y="300" width="74" height="34" rx="4"/><text class="dg-xs dg-mono" x="285.0" y="323" text-anchor="middle">MA-201</text></g>
+<g class="v-in" style="--d:3.60s"><rect class="dg-box-t" x="326" y="300" width="74" height="34" rx="4"/><text class="dg-xs dg-mono" x="363.0" y="323" text-anchor="middle">PHY-101</text></g>
+</svg>
+      <figcaption><strong>Figure 3.7.</strong> Courses taught in Fall 2025 (A) and in Spring 2026 (B). Only CS-101 was taught in both. <a class="try" href="playground.html#sets">Run all four, playground section 5</a></figcaption>
+    </figure>
+    <pre class="code"><span class="k">SELECT</span> course_id <span class="k">FROM</span> teaches <span class="k">WHERE</span> semester = <span class="s">'Fall'</span>   <span class="k">AND</span> year = 2025
+<span class="k">UNION</span>
+<span class="k">SELECT</span> course_id <span class="k">FROM</span> teaches <span class="k">WHERE</span> semester = <span class="s">'Spring'</span> <span class="k">AND</span> year = 2026;</pre>
+  </div>
+  
+</section>
+
+<!-- 25 ────────────────────────────────────────────── set op rules -->
+<section class="slide" id="s25">
+  <h2>The rules for combining queries</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <ol class="steps">
+        <li><span class="n" aria-hidden="true">1</span><div><strong>Same number of columns, compatible types.</strong><p>Matched by position, not by name.</p></div></li>
+        <li><span class="n" aria-hidden="true">2</span><div><strong>The first query names the columns.</strong><p>Aliases in later queries are ignored.</p></div></li>
+        <li><span class="n" aria-hidden="true">3</span><div><strong>One ORDER BY, at the very end.</strong><p>It sorts the combined result.</p></div></li>
+        <li><span class="n" aria-hidden="true">4</span><div><strong>Set operations treat NULLs as equal.</strong><p>Unlike =, two NULLs are duplicates here.</p></div></li>
+      </ol>
+      <div class="fill" style="gap:14px">
+        <pre class="code"><span class="c">-- everyone in Physics, labelled</span>
+<span class="k">SELECT</span> name, <span class="s">'instructor'</span> <span class="k">AS</span> role
+<span class="k">FROM</span> instructor <span class="k">WHERE</span> dept_name = <span class="s">'Physics'</span>
+<span class="k">UNION</span> <span class="k">ALL</span>
+<span class="k">SELECT</span> name, <span class="s">'student'</span>
+<span class="k">FROM</span> student <span class="k">WHERE</span> dept_name = <span class="s">'Physics'</span>
+<span class="k">ORDER</span> <span class="k">BY</span> role, name;</pre>
+        <p class="note-line">Result: 6 rows, 2 instructors then 4 students. INTERSECT binds tighter than UNION and EXCEPT; use parentheses when you mix them.</p>
+      </div>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 26 ────────────────────────────────────────────── takeaways -->
+<section class="slide" id="s26">
+  <h2>What to take away</h2>
+  <div class="slide-main">
+    <ol class="steps">
+      <li><span class="n" aria-hidden="true">1</span><div><strong>FROM, WHERE, SELECT, ORDER BY, LIMIT: that is the run order.</strong><p>It explains which aliases work where.</p></div></li>
+      <li><span class="n" aria-hidden="true">2</span><div><strong>Join with ON or USING; avoid NATURAL JOIN.</strong><p>Match every column of a composite key.</p></div></li>
+      <li><span class="n" aria-hidden="true">3</span><div><strong>Outer joins keep the unmatched rows, padded with NULL.</strong><p>LEFT JOIN … WHERE key IS NULL finds what is missing.</p></div></li>
+      <li><span class="n" aria-hidden="true">4</span><div><strong>A filter on the right table of a LEFT JOIN goes in ON.</strong><p>In WHERE it turns the outer join into an inner one.</p></div></li>
+      <li><span class="n" aria-hidden="true">5</span><div><strong>NULL makes comparisons unknown.</strong><p>Use IS NULL, COALESCE, and be wary of NOT IN.</p></div></li>
+    </ol>
+  </div>
+  
+</section>
+
+<!-- 27 ────────────────────────────────────────────── this week -->
+<section class="slide" id="s27">
+  <h2>This week's work</h2>
+  <div class="slide-main">
+    <div class="week-work">
+      <div>
+        <h3>Read</h3>
+        <ul>
+          <li>Silberschatz, Korth and Sudarshan, <em>Database System Concepts</em>, 7th ed., chapter 3, sections 3.1–3.7, and section 4.1 on joins.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Do</h3>
+        <ul>
+          <li>Lab 2: ten questions in SQL on the week 3 database, with two short written answers.</li>
+          <li>Week 3 playground: the eight exercises. Not graded, but quiz 4 assumes them.</li>
+          <li>Project: send your team (one or two names) in the Brightspace project group by Sunday.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Due</h3>
+        <ul>
+          <li><span class="due">Sunday, January 31, 11:59 p.m. CT</span>: Lab 2, one zip file in Brightspace.</li>
+          <li>Quiz 3: in class today; online section within 48 hours of the recording.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="callout" style="margin-top:auto">
+      <span class="mark" aria-hidden="true">→</span>
+      <p><strong>Next week:</strong> SQL II. Counting and summing with GROUP BY, queries inside queries, WITH for readable steps, and window functions for rankings and running totals.</p>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 28 ────────────────────────────────────────────── resources -->
+<section class="slide" id="s28">
+  <h2>Free resources</h2>
+  <div class="slide-main">
+    <ul class="resources">
+      <li><a href="playground.html">Week 3 playground</a><span class="src">this course</span><p>Every query from today's slides, a join explorer that switches between INNER, LEFT, RIGHT and FULL, and eight checked exercises.</p></li>
+      <li><a href="https://www.postgresql.org/docs/current/queries-table-expressions.html">Table expressions</a><span class="src">postgresql.org</span><p>The FROM clause in full: every kind of join, with small worked examples of each.</p></li>
+      <li><a href="https://www.postgresql.org/docs/current/functions-matching.html">Pattern matching</a><span class="src">postgresql.org</span><p>LIKE, ILIKE and regular expressions.</p></li>
+      <li><a href="https://www.postgresql.org/docs/current/functions-conditional.html">Conditional expressions</a><span class="src">postgresql.org</span><p>CASE, COALESCE and NULLIF.</p></li>
+      <li><a href="https://www.postgresql.org/docs/current/queries-order.html">Sorting rows</a><span class="src">postgresql.org</span><p>ORDER BY, including NULLS FIRST and NULLS LAST.</p></li>
+    </ul>
+    <div class="callout" style="margin-top:20px">
+      <span class="mark" aria-hidden="true">→</span>
+      <p>Stuck on Lab 2? Office hours are Tuesday and Wednesday 12:00–3:00 p.m., MIC room D159, or post in the week 3 discussion in Brightspace.</p>
+    </div>
+  </div>
+  
+</section>
+
+</main>
+</div>
+<script src="../../assets/deck.js"></script>
+</body>
+</html>

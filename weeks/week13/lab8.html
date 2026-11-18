@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lab 8 — Two Sessions at Once · CS 4600/5200</title>
+<meta name="description" content="CS 4600/5200 Lab 8: open two psql sessions on the same database and make them collide. Sell the last seat in a section twice, fix it three ways, watch a session wait for a lock, cause and prevent a deadlock, break a rule with write skew and catch it with Serializable, and recover from an error with savepoints.">
+<link rel="stylesheet" href="../../assets/course.css">
+<link rel="stylesheet" href="../../assets/db.css">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to the lab</a>
+
+<div class="doc">
+<header class="doc-masthead">
+  <p class="inst"><span>CS 4600/5200 · Database Theory and Applications</span><span>Week 13</span><span><a href="../../index.html">Course home</a></span></p>
+  <h1>Lab 8: Two sessions at once</h1>
+  <p class="tagline">Registration opens at 8:00 a.m., and a thousand students click Enroll in the same second. The registrar's program passed every test with one user. Here you play two users at once, in two terminal windows, and find out which ways of writing an enrollment survive.</p>
+</header>
+
+<dl class="facts">
+  <div><dt>Due</dt><dd>Sunday, April 18, 11:59 p.m. CT</dd></div>
+  <div><dt>Time</dt><dd>About 2 hours, half of it in class</dd></div>
+  <div><dt>Submit</dt><dd>One zip file, uploaded to Brightspace</dd></div>
+  <div><dt>Worth</dt><dd>One of the labs (labs are 25% of the grade)</dd></div>
+</dl>
+
+<nav class="toc" aria-labelledby="toc-h">
+  <h2 id="toc-h">On this page</h2>
+  <ol>
+    <li><a href="#files">Files and setup</a></li>
+    <li><a href="#how">How to run a task</a></li>
+    <li><a href="#tasks">Part A: the tasks, T1 to T10</a></li>
+    <li><a href="#sp">Part B: savepoints, T11</a></li>
+    <li><a href="#w">Part C: three short answers</a></li>
+    <li><a href="#d">Part D: CS 5200 only</a></li>
+    <li><a href="#submit">What to submit and how it is graded</a></li>
+    <li><a href="#help">If something goes wrong</a></li>
+  </ol>
+</nav>
+
+<main id="main">
+
+<section id="files" aria-labelledby="files-h">
+  <h2 id="files-h">Files and setup</h2>
+  <ul>
+    <li><a href="university.sql" download>university.sql</a>: the university database, the same as since week 5. If your <code>university</code> database already has it, you don't need it again.</li>
+    <li><a href="lab8_setup.sql" download>lab8_setup.sql</a>: makes this lab's three small tables in the university database: <code>lab8_section</code> (three sections, one with a single seat left), <code>lab8_enroll</code> (who is in each), and <code>lab8_duty</code> (two teaching assistants, both on duty). Running it again puts them back as they were. It never changes the university's own tables.</li>
+    <li><a href="lab8_answers.txt" download>lab8_answers.txt</a>: the starter file for your results and written answers.</li>
+  </ul>
+  <p>This lab needs <strong>two sessions on the same server at the same time</strong>: two terminal windows, each running psql. A Colab notebook runs one statement at a time and can't do this, so use PostgreSQL installed on your own computer (Lab 0, path 1). If you have used Colab so far, install it now, before you start; the university database loads the same way. pgAdmin works too: each Query Tool tab is its own session.</p>
+  <ol>
+    <li>Put the files in one folder and open two terminal windows there. Put them side by side.</li>
+    <li>In both, start psql: <code>psql -d university</code> (on Windows, <code>psql -U postgres -d university</code>). Call the left one <strong>A</strong> and the right one <strong>B</strong>.</li>
+    <li>In each, run <code>SELECT pg_backend_pid();</code>. Two different numbers: two sessions. Write them in the answers file.</li>
+    <li>In A, run <code>\i lab8_setup.sql</code>.</li>
+  </ol>
+</section>
+
+<section id="how" aria-labelledby="how-h">
+  <h2 id="how-h">How to run a task</h2>
+  <ul>
+    <li>Each task is a numbered list of steps. Type each step in the session it names, <strong>A</strong> or <strong>B</strong>, in exactly that order, and press Enter after each one.</li>
+    <li>Sometimes a statement doesn't answer: the cursor just sits there. That session is <strong>waiting</strong> for a lock. That is part of the lab: go on with the next step in the other session, and watch the waiting one finish when it is released.</li>
+    <li>Start every task with <code>\i lab8_setup.sql</code> in A, so each one starts from the same data. If a task goes wrong, run <code>ROLLBACK;</code> in both sessions, then the setup, and start the task again.</li>
+    <li>Keep everything each window shows: you hand in both, as <code>lab8_A.txt</code> and <code>lab8_B.txt</code>. On macOS or Linux, start each window with <code>script lab8_A.txt</code> (or <code>lab8_B.txt</code>) before psql, and type <code>exit</code> after quitting psql at the end. On Windows, select all the text in each window and paste it into the file. pgAdmin users copy each tab's statements and messages.</li>
+    <li>After each task, fill in its row in the answers file while the results are on screen.</li>
+  </ul>
+  <p>Before you start, step through the scenarios in the <a href="playground.html#iso">week 13 playground's replay</a>. They are the same kinds of collisions, on the department budgets, so you'll know what to look for.</p>
+</section>
+
+<section id="tasks" aria-labelledby="tasks-h">
+  <h2 id="tasks-h">Part A: the tasks, T1 to T10</h2>
+  <p>Every task but T8 gives you the statements. T1 to T5 are on the section with one seat left, <code>CS-347-1</code>: 30 seats, 29 taken.</p>
+  <ol class="qs">
+  <li id="t1"><p><strong>T1. Can B see A's uncommitted change?</strong> Run <code>\i lab8_setup.sql</code> in A first.</p>
+<ol class="tx-steps">
+  <li class="tx-sa"><span class="tx-l">A:</span> <code>BEGIN;</code></li>
+  <li class="tx-sa"><span class="tx-l">A:</span> <code>UPDATE lab8_section SET taken = taken + 1 WHERE sec = 'CS-347-1';</code></li>
+  <li class="tx-sb"><span class="tx-l">B:</span> <code>SELECT capacity, taken FROM lab8_section WHERE sec = 'CS-347-1';</code></li>
+  <li class="tx-sa"><span class="tx-l">A:</span> <code>ROLLBACK;</code></li>
+  <li class="tx-sb"><span class="tx-l">B:</span> <code>SELECT capacity, taken FROM lab8_section WHERE sec = 'CS-347-1';</code></li>
+</ol>
+  <p>Record what B saw both times.</p></li>
+  <li id="t2"><p><strong>T2. The last seat, sold twice.</strong> Run the setup again. Each session plays a program that reads how many seats are taken, sees one is left, and writes back the new total, 30, with its student's enrollment. Read Committed, the default.</p>
+<ol class="tx-steps">
+  <li class="tx-sa"><span class="tx-l">A:</span> <code>BEGIN;</code></li>
+  <li class="tx-sb"><span class="tx-l">B:</span> <code>BEGIN;</code></li>
+  <li class="tx-sa"><span class="tx-l">A:</span> <code>SELECT capacity, taken FROM lab8_section WHERE sec = 'CS-347-1';</code></li>
+  <li class="tx-sb"><span class="tx-l">B:</span> <code>SELECT capacity, taken FROM lab8_section WHERE sec = 'CS-347-1';</code></li>
+  <li class="tx-sa"><span class="tx-l">A:</span> <code>UPDATE lab8_section SET taken = 30 WHERE sec = 'CS-347-1';</code></li>
+  <li class="tx-sa"><span class="tx-l">A:</span> <code>INSERT INTO lab8_enroll VALUES ('90001', 'CS-347-1');</code></li>
+  <li class="tx-sa"><span class="tx-l">A:</span> <code>COMMIT;</code></li>
+  <li class="tx-sb"><span class="tx-l">B:</span> <code>UPDATE lab8_section SET taken = 30 WHERE sec = 'CS-347-1';</code></li>
+  <li class="tx-sb"><span class="tx-l">B:</span> <code>INSERT INTO lab8_enroll VALUES ('90002', 'CS-347-1');</code></li>
+  <li class="tx-sb"><span class="tx-l">B:</span> <code>COMMIT;</code></li>
+  <li class="tx-sa"><span class="tx-l">A:</span> <code>SELECT taken, (SELECT count(*) FROM lab8_enroll WHERE sec = 'CS-347-1') AS enrolled FROM lab8_section WHERE sec = 'CS-347-1';</code></li>
+</ol>
+  <p>Record <code>taken</code> and <code>enrolled</code> at the end. They should agree.</p></li>
+  <li id="t3"><p><strong>T3. Fix 1: one statement that checks and adds.</strong> Setup again. Now each session adds 1 and checks the capacity in the same UPDATE. A program enrolls the student only if the UPDATE changed a row.</p>
+<ol class="tx-steps">
+  <li class="tx-sa"><span class="tx-l">A:</span> <code>BEGIN;</code></li>
+  <li class="tx-sb"><span class="tx-l">B:</span> <code>BEGIN;</code></li>
+  <li class="tx-sa"><span class="tx-l">A:</span> <code>UPDATE lab8_section SET taken = taken + 1 WHERE sec = 'CS-347-1' AND taken &lt; capacity;</code></li>
+  <li class="tx-sb"><span class="tx-l">B:</span> <code>UPDATE lab8_section SET taken = taken + 1 WHERE sec = 'CS-347-1' AND taken &lt; capacity;</code></li>
+  <li class="tx-sa"><span class="tx-l">A:</span> <code>INSERT INTO lab8_enroll VALUES ('90001', 'CS-347-1');</code></li>
+  <li class="tx-sa"><span class="tx-l">A:</span> <code>COMMIT;</code></li>
+  <li class="tx-sb"><span class="tx-l">B:</span> <code>ROLLBACK;</code></li>
+  <li class="tx-sa"><span class="tx-l">A:</span> <code>SELECT taken, (SELECT count(*) FROM lab8_enroll WHERE sec = 'CS-347-1') AS enrolled FROM lab8_section WHERE sec = 'CS-347-1';</code></li>
+</ol>
+  <p>Step 4 waits. Which step lets it go on? What does it report then, and why is that right? B rolls back because its UPDATE changed nothing: the section is full.</p></li>
+  <li id="t4"><p><strong>T4. Fix 2: lock the row when you read it.</strong> Setup again. The read-then-write program from T2, with <code>FOR UPDATE</code> on the read.</p>
+<ol class="tx-steps">
+  <li class="tx-sa"><span class="tx-l">A:</span> <code>BEGIN;</code></li>
+  <li class="tx-sb"><span class="tx-l">B:</span> <code>BEGIN;</code></li>
+  <li class="tx-sa"><span class="tx-l">A:</span> <code>SELECT capacity, taken FROM lab8_section WHERE sec = 'CS-347-1' FOR UPDATE;</code></li>
+  <li class="tx-sb"><span class="tx-l">B:</span> <code>SELECT capacity, taken FROM lab8_section WHERE sec = 'CS-347-1' FOR UPDATE;</code></li>
+  <li class="tx-sa"><span class="tx-l">A:</span> <code>UPDATE lab8_section SET taken = 30 WHERE sec = 'CS-347-1';</code></li>
+  <li class="tx-sa"><span class="tx-l">A:</span> <code>INSERT INTO lab8_enroll VALUES ('90001', 'CS-347-1');</code></li>
+  <li class="tx-sa"><span class="tx-l">A:</span> <code>COMMIT;</code></li>
+  <li class="tx-sb"><span class="tx-l">B:</span> <code>ROLLBACK;</code></li>
+  <li class="tx-sa"><span class="tx-l">A:</span> <code>SELECT taken, (SELECT count(*) FROM lab8_enroll WHERE sec = 'CS-347-1') AS enrolled FROM lab8_section WHERE sec = 'CS-347-1';</code></li>
+</ol>
+  <p>Record what B's SELECT returned, and when. B sees the section is full, so it rolls back.</p></li>
+  <li id="t5"><p><strong>T5. Fix 3: Repeatable Read.</strong> Setup again. The program from T2, unchanged, in Repeatable Read transactions.</p>
+<ol class="tx-steps">
+  <li class="tx-sa"><span class="tx-l">A:</span> <code>BEGIN ISOLATION LEVEL REPEATABLE READ;</code></li>
+  <li class="tx-sb"><span class="tx-l">B:</span> <code>BEGIN ISOLATION LEVEL REPEATABLE READ;</code></li>
+  <li class="tx-sa"><span class="tx-l">A:</span> <code>SELECT capacity, taken FROM lab8_section WHERE sec = 'CS-347-1';</code></li>
+  <li class="tx-sb"><span class="tx-l">B:</span> <code>SELECT capacity, taken FROM lab8_section WHERE sec = 'CS-347-1';</code></li>
+  <li class="tx-sa"><span class="tx-l">A:</span> <code>UPDATE lab8_section SET taken = 30 WHERE sec = 'CS-347-1';</code></li>
+  <li class="tx-sa"><span class="tx-l">A:</span> <code>INSERT INTO lab8_enroll VALUES ('90001', 'CS-347-1');</code></li>
+  <li class="tx-sa"><span class="tx-l">A:</span> <code>COMMIT;</code></li>
+  <li class="tx-sb"><span class="tx-l">B:</span> <code>UPDATE lab8_section SET taken = 30 WHERE sec = 'CS-347-1';</code></li>
+  <li class="tx-sb"><span class="tx-l">B:</span> <code>ROLLBACK;</code></li>
+  <li class="tx-sa"><span class="tx-l">A:</span> <code>SELECT taken, (SELECT count(*) FROM lab8_enroll WHERE sec = 'CS-347-1') AS enrolled FROM lab8_section WHERE sec = 'CS-347-1';</code></li>
+</ol>
+  <p>Record B's error message exactly. A program would retry B's whole transaction, read 30, and stop.</p></li>
+  <li id="t6"><p><strong>T6. Watch a session wait.</strong> Setup again. B's UPDATE (step 4) waits; while it does, A looks at the server's lock table and its list of sessions.</p>
+<ol class="tx-steps">
+  <li class="tx-sa"><span class="tx-l">A:</span> <code>BEGIN;</code></li>
+  <li class="tx-sa"><span class="tx-l">A:</span> <code>UPDATE lab8_section SET taken = taken + 1 WHERE sec = 'CS-319-1';</code></li>
+  <li class="tx-sb"><span class="tx-l">B:</span> <code>BEGIN;</code></li>
+  <li class="tx-sb"><span class="tx-l">B:</span> <code>UPDATE lab8_section SET taken = taken + 1 WHERE sec = 'CS-319-1';</code></li>
+  <li class="tx-sa"><span class="tx-l">A:</span> <code>SELECT pid, locktype, relation::regclass AS relation, mode, granted FROM pg_locks WHERE NOT granted;</code></li>
+  <li class="tx-sa"><span class="tx-l">A:</span> <code>SELECT pid, state, wait_event_type, wait_event, left(query, 40) AS query FROM pg_stat_activity WHERE datname = current_database() AND pid &lt;&gt; pg_backend_pid();</code></li>
+  <li class="tx-sa"><span class="tx-l">A:</span> <code>COMMIT;</code></li>
+  <li class="tx-sb"><span class="tx-l">B:</span> <code>COMMIT;</code></li>
+  <li class="tx-sa"><span class="tx-l">A:</span> <code>SELECT taken FROM lab8_section WHERE sec = 'CS-319-1';</code></li>
+</ol>
+  <p>Record the <code>locktype</code> and <code>mode</code> of the lock B waits for, and B's <code>wait_event</code>. Your <code>pid</code> numbers will differ.</p></li>
+  <li id="t7"><p><strong>T7. Deadlock.</strong> Setup again. Each session adds a student to two sections, in opposite orders.</p>
+<ol class="tx-steps">
+  <li class="tx-sa"><span class="tx-l">A:</span> <code>BEGIN;</code></li>
+  <li class="tx-sb"><span class="tx-l">B:</span> <code>BEGIN;</code></li>
+  <li class="tx-sa"><span class="tx-l">A:</span> <code>UPDATE lab8_section SET taken = taken + 1 WHERE sec = 'CS-319-1';</code></li>
+  <li class="tx-sb"><span class="tx-l">B:</span> <code>UPDATE lab8_section SET taken = taken + 1 WHERE sec = 'BIO-101-1';</code></li>
+  <li class="tx-sa"><span class="tx-l">A:</span> <code>UPDATE lab8_section SET taken = taken + 1 WHERE sec = 'BIO-101-1';</code></li>
+  <li class="tx-sb"><span class="tx-l">B:</span> <code>UPDATE lab8_section SET taken = taken + 1 WHERE sec = 'CS-319-1';</code></li>
+  <li class="tx-sa"><span class="tx-l">A:</span> <code>COMMIT;</code></li>
+  <li class="tx-sb"><span class="tx-l">B:</span> <code>ROLLBACK;</code></li>
+</ol>
+  <p>Step 6 ends in an error after about a second. Record which session got it, the first line of the message, and what happened to A's waiting UPDATE. Leave out the <code>DETAIL</code> lines' process numbers.</p></li>
+  <li id="t8"><p><strong>T8. Fix the deadlock.</strong> Setup again. Write T7 again so that both sessions update the two sections in the same order, <code>BIO-101-1</code> first, and run it, keeping the same turns: A, B, A, B and so on. Write your steps in the answers file, then run them.</p>
+  <p>One session will wait, but no deadlock can happen. Record which step waited and the final <code>taken</code> of both sections.</p></li>
+  <li id="t9"><p><strong>T9. Write skew.</strong> Setup again. The rule: at least one teaching assistant is on duty. Ari and Bea each check that the other is still on duty, then go off duty. Repeatable Read.</p>
+<ol class="tx-steps">
+  <li class="tx-sa"><span class="tx-l">A:</span> <code>BEGIN ISOLATION LEVEL SERIALIZABLE;</code></li>
+  <li class="tx-sb"><span class="tx-l">B:</span> <code>BEGIN ISOLATION LEVEL SERIALIZABLE;</code></li>
+  <li class="tx-sa"><span class="tx-l">A:</span> <code>SELECT count(*) FROM lab8_duty WHERE on_duty;</code></li>
+  <li class="tx-sb"><span class="tx-l">B:</span> <code>SELECT count(*) FROM lab8_duty WHERE on_duty;</code></li>
+  <li class="tx-sa"><span class="tx-l">A:</span> <code>SELECT locktype, relation::regclass AS relation, page, tuple, mode FROM pg_locks WHERE mode = 'SIReadLock';</code></li>
+  <li class="tx-sa"><span class="tx-l">A:</span> <code>UPDATE lab8_duty SET on_duty = false WHERE ta = 'Ari';</code></li>
+  <li class="tx-sb"><span class="tx-l">B:</span> <code>UPDATE lab8_duty SET on_duty = false WHERE ta = 'Bea';</code></li>
+  <li class="tx-sa"><span class="tx-l">A:</span> <code>COMMIT;</code></li>
+  <li class="tx-sb"><span class="tx-l">B:</span> <code>COMMIT;</code></li>
+  <li class="tx-sa"><span class="tx-l">A:</span> <code>SELECT ta, on_duty FROM lab8_duty ORDER BY ta;</code></li>
+</ol>
+  <p>Record the last count. Did either transaction fail?</p></li>
+  <li id="t10"><p><strong>T10. Write skew, caught.</strong> Setup again. T9 again, in Serializable transactions.</p>
+<ol class="tx-steps">
+  <li class="tx-sa"><span class="tx-l">A:</span> <code>BEGIN ISOLATION LEVEL SERIALIZABLE;</code></li>
+  <li class="tx-sb"><span class="tx-l">B:</span> <code>BEGIN ISOLATION LEVEL SERIALIZABLE;</code></li>
+  <li class="tx-sa"><span class="tx-l">A:</span> <code>SELECT count(*) FROM lab8_duty WHERE on_duty;</code></li>
+  <li class="tx-sb"><span class="tx-l">B:</span> <code>SELECT count(*) FROM lab8_duty WHERE on_duty;</code></li>
+  <li class="tx-sa"><span class="tx-l">A:</span> <code>UPDATE lab8_duty SET on_duty = false WHERE ta = 'Ari';</code></li>
+  <li class="tx-sb"><span class="tx-l">B:</span> <code>UPDATE lab8_duty SET on_duty = false WHERE ta = 'Bea';</code></li>
+  <li class="tx-sa"><span class="tx-l">A:</span> <code>COMMIT;</code></li>
+  <li class="tx-sb"><span class="tx-l">B:</span> <code>COMMIT;</code></li>
+  <li class="tx-sa"><span class="tx-l">A:</span> <code>SELECT ta, on_duty FROM lab8_duty ORDER BY ta;</code></li>
+</ol>
+  <p>Record which COMMIT failed, its message, and who is on duty at the end. What should the program that ran B do next?</p></li>
+  </ol>
+</section>
+
+<section id="sp" aria-labelledby="sp-h">
+  <h2 id="sp-h">Part B: savepoints, T11</h2>
+  <ol class="qs">
+  <li id="t11"><p><strong>T11. Savepoints, in one session.</strong> Setup again; this task needs only session A. Student 00035 enrolls in three sections in one transaction, with a savepoint before each enrollment. The student is already in BIO-101-1, so that INSERT fails.</p>
+<ol class="tx-steps">
+  <li class="tx-sa"><span class="tx-l">A:</span> <code>BEGIN;</code></li>
+  <li class="tx-sa"><span class="tx-l">A:</span> <code>SAVEPOINT s1;</code></li>
+  <li class="tx-sa"><span class="tx-l">A:</span> <code>INSERT INTO lab8_enroll VALUES ('00035', 'CS-319-1');</code></li>
+  <li class="tx-sa"><span class="tx-l">A:</span> <code>UPDATE lab8_section SET taken = taken + 1 WHERE sec = 'CS-319-1';</code></li>
+  <li class="tx-sa"><span class="tx-l">A:</span> <code>SAVEPOINT s2;</code></li>
+  <li class="tx-sa"><span class="tx-l">A:</span> <code>INSERT INTO lab8_enroll VALUES ('00035', 'BIO-101-1');</code></li>
+  <li class="tx-sa"><span class="tx-l">A:</span> <code>-- your statement here</code></li>
+  <li class="tx-sa"><span class="tx-l">A:</span> <code>SAVEPOINT s3;</code></li>
+  <li class="tx-sa"><span class="tx-l">A:</span> <code>INSERT INTO lab8_enroll VALUES ('00035', 'CS-347-1');</code></li>
+  <li class="tx-sa"><span class="tx-l">A:</span> <code>UPDATE lab8_section SET taken = taken + 1 WHERE sec = 'CS-347-1';</code></li>
+  <li class="tx-sa"><span class="tx-l">A:</span> <code>COMMIT;</code></li>
+</ol>
+  <p>Replace the comment with the one statement that undoes only the failed enrollment and lets the transaction go on. Then show 00035's sections and, for every section, <code>taken</code> next to the number of enrollments. What does <code>COMMIT</code> print if you leave that statement out, and why?</p></li>
+  </ol>
+</section>
+
+<section id="w" aria-labelledby="w-h">
+  <h2 id="w-h">Part C: three short answers</h2>
+  <p>In <code>lab8_answers.txt</code>, in your own words, a short paragraph each, using what your sessions showed:</p>
+  <ol class="qs">
+    <li><p><strong>W1.</strong> Explain what went wrong in T2, and how each of T3, T4 and T5 prevented it. Which of the three would you use for the enrollment feature of a real program, and why?</p></li>
+    <li><p><strong>W2.</strong> In T6, what exactly was B waiting for, according to <code>pg_locks</code>? Why does a session wait on another <em>transaction</em> rather than on the row itself, and when does the wait end?</p></li>
+    <li><p><strong>W3.</strong> In T9, neither session changed a row the other changed, yet the rule broke. Why didn't Repeatable Read stop it? What did Serializable do differently in T10?</p></li>
+  </ol>
+</section>
+
+<section id="d" aria-labelledby="d-h">
+  <h2 id="d-h">Part D: CS 5200 only</h2>
+  <ol class="qs">
+    <li><p><strong>D1.</strong> Run T10 again, and right after step 4, run this in A:</p>
+<pre>SELECT locktype, relation::regclass AS relation, page, tuple, mode
+FROM pg_locks WHERE mode = 'SIReadLock';</pre>
+    <p>Then finish the task. These are <strong>predicate locks</strong>: they block nothing, but record what each Serializable transaction read. Record the rows. What does each lock cover, and why the whole table rather than single rows? (Hint: how did the SELECT read <code>lab8_duty</code>?) Then explain how these locks let PostgreSQL see that A and B depend on each other.</p></li>
+    <li><p><strong>D2.</strong> A different enrollment program never updates <code>taken</code>: it counts the enrollments and inserts one if there are fewer than 30. Run it in Repeatable Read, as below, then again with <code>SERIALIZABLE</code> in steps 1 and 2 (setup before each).</p>
+<ol class="tx-steps">
+  <li class="tx-sa"><span class="tx-l">A:</span> <code>BEGIN ISOLATION LEVEL REPEATABLE READ;</code></li>
+  <li class="tx-sb"><span class="tx-l">B:</span> <code>BEGIN ISOLATION LEVEL REPEATABLE READ;</code></li>
+  <li class="tx-sa"><span class="tx-l">A:</span> <code>SELECT count(*) FROM lab8_enroll WHERE sec = 'CS-347-1';</code></li>
+  <li class="tx-sb"><span class="tx-l">B:</span> <code>SELECT count(*) FROM lab8_enroll WHERE sec = 'CS-347-1';</code></li>
+  <li class="tx-sa"><span class="tx-l">A:</span> <code>INSERT INTO lab8_enroll VALUES ('90001', 'CS-347-1');</code></li>
+  <li class="tx-sb"><span class="tx-l">B:</span> <code>INSERT INTO lab8_enroll VALUES ('90002', 'CS-347-1');</code></li>
+  <li class="tx-sa"><span class="tx-l">A:</span> <code>COMMIT;</code></li>
+  <li class="tx-sb"><span class="tx-l">B:</span> <code>COMMIT;</code></li>
+  <li class="tx-sa"><span class="tx-l">A:</span> <code>SELECT count(*) FROM lab8_enroll WHERE sec = 'CS-347-1';</code></li>
+</ol>
+    <p>Record the final count each time. In Repeatable Read, the two transactions inserted different rows and changed nothing in common: explain why the section still ended up overbooked, which anomaly this is, and why Serializable caught it.</p></li>
+  </ol>
+</section>
+
+<section id="submit" aria-labelledby="sub-h">
+  <h2 id="sub-h">What to submit and how it is graded</h2>
+  <p>Upload <strong>one zip file</strong> to the Lab 8 assignment in Brightspace. Name it <code>lab8_lastname_firstname.zip</code>, for example <code>lab8_rivera_jamie.zip</code>, and put these three files in it:</p>
+  <ul>
+    <li><code>lab8_A.txt</code>: everything session A showed, from <code>pg_backend_pid()</code> to the last task.</li>
+    <li><code>lab8_B.txt</code>: the same for session B.</li>
+    <li><code>lab8_answers.txt</code>: your results table, your T8 steps, your T11 statement and written answers, saved as plain text, with one line at the end on how you used AI tools, if at all.</li>
+  </ul>
+  <p>To make the zip, put the three files in one folder and select them, then: on Windows, right-click and choose <strong>Compress to ZIP file</strong> (on Windows 10, <strong>Send to › Compressed (zipped) folder</strong>); on macOS, right-click and choose <strong>Compress 3 Items</strong>; on Linux, run:</p>
+<pre>zip lab8_lastname_firstname.zip lab8_A.txt lab8_B.txt lab8_answers.txt</pre>
+  <p>Before you upload, check that the two transcripts show every task, with the errors T5, T7 and T10 produce. The latest upload before the deadline is graded. Late work loses 10% per day, for up to three days.</p>
+  <div class="fig-scroll" tabindex="0" role="region" aria-label="Lab 8 rubric, 10 points">
+  <table class="tbl">
+    <caption>Lab 8 rubric, 10 points</caption>
+    <thead><tr><th scope="col">Item</th><th scope="col">What earns full credit</th><th scope="col" class="num">Points</th></tr></thead>
+    <tbody>
+      <tr><td>Tasks T1–T10</td><td>Both transcripts show each task run in the given order, with its waits and errors where they belong.</td><td class="num">4</td></tr>
+      <tr><td>Results table</td><td>Every row of the answers file's table filled in, matching the transcripts.</td><td class="num">1</td></tr>
+      <tr><td>T8</td><td>Your steps update the sections in the same order in both sessions, and the transcripts show a wait but no deadlock.</td><td class="num">1</td></tr>
+      <tr><td>Written (W1–W3)</td><td>Each answer explains what your sessions showed in terms of locks, snapshots and isolation levels.</td><td class="num">2</td></tr>
+      <tr><td>T11 and Part D</td><td>CS 4600: T11 correct, with the COMMIT question answered, 2 points. CS 5200: T11, 1 point; D1 and D2, 1 point.</td><td class="num">2</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>As with every lab, you may be asked to walk through your sessions in office hours or in class. You may use AI tools to explain an error message or a term, but the transcripts, the T8 steps and the written answers must be your own.</p>
+</section>
+
+<section id="help" aria-labelledby="help-h">
+  <h2 id="help-h">If something goes wrong</h2>
+  <ul>
+    <li><strong>A step you expected to wait answered at once</strong>, or the other way round: a step was skipped or done in the wrong session. Run <code>ROLLBACK;</code> in both, then the setup, and start the task again.</li>
+    <li><strong>"current transaction is aborted, commands ignored until end of transaction block"</strong>: an earlier statement in that session failed. Run <code>ROLLBACK;</code> there. That is what B does after the errors in T5 and T7.</li>
+    <li><strong>"WARNING: there is already a transaction in progress"</strong> after <code>BEGIN</code>: the previous task was never finished in that session. Run <code>ROLLBACK;</code> and start the task again.</li>
+    <li><strong>The setup itself waits</strong>: the other session still has a transaction open on the lab tables. Run <code>ROLLBACK;</code> in B.</li>
+    <li><strong>"relation "lab8_section" does not exist"</strong>: run <code>\i lab8_setup.sql</code> in A, from the folder where the file is, and check both sessions are connected to <code>university</code>.</li>
+    <li><strong>Anything else</strong>: copy the exact message and bring it to office hours, Tuesday and Wednesday 12:00–3:00 p.m., MIC room D159, or post it in the week 13 discussion in Brightspace.</li>
+  </ul>
+</section>
+</main>
+
+<footer>
+  <p>CS 4600/5200 · Database Theory and Applications · University of Central Missouri · Dr. Gorkem Kar · Spring 2027</p>
+</footer>
+</div>
+</body>
+</html>

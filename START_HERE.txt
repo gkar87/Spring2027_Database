@@ -1,0 +1,77 @@
+CS 4600/5200 Database Theory and Applications, Spring 2027
+Dr. Gorkem Kar
+
+START HERE
+==========
+
+1. Unzip the folder first
+   Extract the whole zip before you open anything (Windows: right-click it and
+   choose Extract All; macOS: double-click it). Keep the folders as they are:
+   the pages link to each other and to the assets folder.
+
+2. Open the course home
+   Open index.html in the extracted folder. It has the schedule and a link to
+   every week's slides, playground and lab, and to the term project.
+
+3. In week 1: set up PostgreSQL
+   Lab 0 (weeks/week01/lab0.html) walks you through installing PostgreSQL on
+   your own computer and loading the course database. There is no university
+   lab: all work happens on your computer. Lab 0 also offers a Google Colab
+   path, but from Lab 8 in week 13 you need PostgreSQL installed on your
+   computer, so installing it now saves trouble later.
+
+4. Every week
+   Read the slides (weeks/weekNN/index.html), try the week's playground, then
+   do the lab. Face-to-face class: Tuesdays, 3:00 to 5:40 p.m. CT at the
+   Missouri Innovation Campus. Online section: the recording and the weekly
+   quiz are in Brightspace; take the quiz within 48 hours of the recording.
+
+5. Submitting labs
+   Upload one zip file per lab to that lab's assignment in Brightspace, named
+   labN_lastname_firstname.zip (for example lab0_rivera_jamie.zip). Each lab
+   page lists the files to put in it; most labs come with a labN_answers.txt
+   to fill in. Upload again to fix something before the deadline: the latest
+   zip is graded.
+
+6. Deadlines
+   Sunday, 11:59 p.m. CT, unless the assignment says otherwise. Labs and
+   project milestones lose 10% per day for up to three days, then are not
+   accepted. Quizzes and exams are never late.
+
+7. Exams
+   Midterm on Tuesday, March 2 (weeks 1 to 7), with a practice midterm in
+   weeks/week08/practice.html. Comprehensive final in finals week, May 3 to 7.
+   Online students take both in Brightspace.
+
+8. Graduate students (CS 5200)
+   Handouts mark the extra parts for you with the label Graduate (CS 5200).
+   The exams have one extra question, G1.
+
+Running the SQL playgrounds
+---------------------------
+The SQL playgrounds (weeks/weekNN/playground.html) run PostgreSQL inside your
+browser. Browsers will not run them from a double-clicked file, so serve the
+folder first. Open a terminal in the extracted cs5200-spring2027 folder and
+run:
+
+    python3 -m http.server 8000
+
+On Windows, if python3 is not found, use: py -m http.server 8000. Then open
+http://localhost:8000/ in your browser and click through to the playground.
+Leave the terminal open while you use it, and press Ctrl+C to stop. The first
+load needs an internet connection. Slides, labs and project pages open with a
+plain double-click; only the playgrounds need this.
+
+Using the slides
+----------------
+In the slides, use the arrow keys or the Previous and Next buttons to move.
+Press O, or the Slides button, to see every slide at once and jump to any of
+them. R replays a slide's animation and P prints or saves as PDF. On a phone,
+turn it sideways for larger slides.
+
+Getting help
+------------
+Office hours: Tuesday and Wednesday, 12:00 to 3:00 p.m., MIC room D159.
+Questions about a lab: post in the Brightspace discussion, so classmates can
+see the answer, or email kar@ucmo.edu.
+

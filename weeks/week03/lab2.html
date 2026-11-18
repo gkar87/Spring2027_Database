@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lab 2 — SQL Queries · CS 4600/5200</title>
+<meta name="description" content="CS 4600/5200 Lab 2: ten SQL questions on the seven-table university database, covering filters, sorting, joins, outer joins, NULLs and set operations, plus two short written answers.">
+<link rel="stylesheet" href="../../assets/course.css">
+<link rel="stylesheet" href="../../assets/db.css">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to the lab</a>
+
+<div class="doc">
+<header class="doc-masthead">
+  <p class="inst"><span>CS 4600/5200 · Database Theory and Applications</span><span>Week 3</span><span><a href="../../index.html">Course home</a></span></p>
+  <h1>Lab 2: Queries, joins and NULLs</h1>
+  <p class="tagline">Ten questions in SQL on this week's seven-table database, and two short answers about why a query returned what it did. Most of the marks are for getting exactly the right rows, not more and not fewer.</p>
+</header>
+
+<dl class="facts">
+  <div><dt>Due</dt><dd>Sunday, January 31, 11:59 p.m. CT</dd></div>
+  <div><dt>Time</dt><dd>About 2 hours, half of it in class</dd></div>
+  <div><dt>Submit</dt><dd>One zip file, uploaded to Brightspace</dd></div>
+  <div><dt>Worth</dt><dd>One of the labs (labs are 25% of the grade)</dd></div>
+</dl>
+
+<nav class="toc" aria-labelledby="toc-h">
+  <h2 id="toc-h">On this page</h2>
+  <ol>
+    <li><a href="#files">Files for this lab, and reloading the database</a></li>
+    <li><a href="#a">Part A: warm up in the playground</a></li>
+    <li><a href="#b">Part B: ten questions in SQL</a></li>
+    <li><a href="#c">Part C: two short answers</a></li>
+    <li><a href="#d">Part D: CS 5200 only</a></li>
+    <li><a href="#submit">What to submit and how it is graded</a></li>
+    <li><a href="#help">If something goes wrong</a></li>
+  </ol>
+</nav>
+
+<main id="main">
+
+<section id="files" aria-labelledby="files-h">
+  <h2 id="files-h">Files for this lab, and reloading the database</h2>
+  <p>This week's database has two new tables, <code>teaches</code> and <code>advisor</code>, and four new rows with gaps in them. <strong>Reload it before you start</strong>, or Q5, Q6, Q8 and Q10 will fail:</p>
+<pre>psql -d university -f university.sql</pre>
+  <p>On Windows, add <code>-U postgres</code> after <code>psql</code>. In Colab, start the line with <code>!</code>. The file drops the old tables first, so it is safe to run more than once. Download these into one folder, for example <code>Documents/cs5200/lab2</code>:</p>
+  <ul>
+    <li><a href="university.sql" download>university.sql</a>: the seven-table database.</li>
+    <li><a href="lab2.sql" download>lab2.sql</a>: the starter file for your SQL.</li>
+    <li><a href="lab2_answers.txt" download>lab2_answers.txt</a>: the starter file for your name, your row counts and your written answers.</li>
+  </ul>
+  <p>To check the reload worked, run <code>SELECT count(*) FROM teaches;</code>. It should say 12.</p>
+</section>
+
+<section id="a" aria-labelledby="a-h">
+  <h2 id="a-h">Part A: warm up in the playground (20 minutes)</h2>
+  <p>Open the <a href="playground.html">week 3 playground</a> and solve exercises 1 to 7; exercise 8 is a stretch. They are not graded, but each Part B question uses one of their patterns. Then try all four joins in the join explorer in section 3, and say to yourself why each count changes.</p>
+</section>
+
+<section id="b" aria-labelledby="b-h">
+  <h2 id="b-h">Part B: ten questions in SQL</h2>
+  <p>Try each query in the playground's <a href="playground.html#scratch">scratch pad</a>, then copy it into <code>lab2.sql</code> under its comment. Write the number of rows it returned in <code>lab2_answers.txt</code>. Show exactly the columns asked for, in the order asked.</p>
+  <ol class="qs">
+    <li><p><strong>Q1.</strong> The <code>course_id</code>, title and credits of every 4-credit course, sorted by title.</p></li>
+    <li><p><strong>Q2.</strong> The name and total credits of every student with between 50 and 100 credits, both included, most credits first.</p></li>
+    <li><p><strong>Q3.</strong> For every instructor in Physics or Biology: name, salary, and the salary after a 4% raise, rounded to cents and named <code>raised</code>. Use <code>IN</code>.</p></li>
+    <li><p><strong>Q4.</strong> Every grade given in Fall 2025: the student's name, the course title and the grade, sorted by student name and then title.</p></li>
+    <li><p><strong>Q5.</strong> The name of every student whose advisor earns more than 90,000, with the advisor's name.</p></li>
+    <li><p><strong>Q6.</strong> Every department with the names of its instructors, sorted by department and then name. A department with no instructors must still appear once.</p></li>
+    <li><p><strong>Q7.</strong> The names of students who have never taken a course. Use an outer join.</p></li>
+    <li><p><strong>Q8.</strong> The names of instructors who both teach at least one course and advise at least one student. Use <code>INTERSECT</code> on ids, then get the names.</p></li>
+    <li><p><strong>Q9.</strong> Every enrollment that did not earn an A: the student's name, the <code>course_id</code>, and the grade. A course with no grade yet counts as "not an A", and its grade must show as the text <code>in progress</code>.</p></li>
+    <li><p><strong>Q10.</strong> The names of students who took a section taught by their own advisor, each name once. A section is one course in one semester of one year.</p></li>
+  </ol>
+  <div class="callout">
+    <span class="mark" aria-hidden="true">§</span>
+    <p>Check yourself: Q1 returns 4 rows, Q6 returns 12 and Q7 returns 1. If Q9 returns 14 rows, the three courses with no grade yet have gone missing; slide 21 says why. If Q10 returns more than 7, your join is matching the course but not the semester and year.</p>
+  </div>
+  <p>When every query works, run the whole file in your own PostgreSQL:</p>
+<pre>psql -d university -e -f lab2.sql &gt; lab2_output.txt 2&gt;&amp;1</pre>
+  <p>The <code>-e</code> prints each query above its result, so the grader can match them.</p>
+</section>
+
+<section id="c" aria-labelledby="c-h">
+  <h2 id="c-h">Part C: two short answers</h2>
+  <p>Answer in <code>lab2_answers.txt</code>, two to four sentences each. Run the queries first; the counts are part of the answer.</p>
+  <ol class="qs">
+    <li><p><strong>W1.</strong> This query is meant to list every student who is not in a department housed in Hale. It returns 7 rows, but Emery Walsh is missing, and Emery Walsh is not in a Hale department either. Explain why, using what <code>NOT IN</code> does when it meets a NULL.</p>
+<pre>SELECT name FROM student
+WHERE dept_name NOT IN (SELECT dept_name FROM department WHERE building = 'Hale');</pre></li>
+    <li><p><strong>W2.</strong> Run both queries and give each count. Explain in your own words why moving <code>t.year = 2027</code> from <code>ON</code> to <code>WHERE</code> changes the answer.</p>
+<pre>SELECT s.name, t.course_id
+FROM student s LEFT JOIN takes t ON t.id = s.id AND t.year = 2027;
+
+SELECT s.name, t.course_id
+FROM student s LEFT JOIN takes t ON t.id = s.id
+WHERE t.year = 2027;</pre></li>
+  </ol>
+</section>
+
+<section id="d" aria-labelledby="d-h">
+  <h2 id="d-h">Part D: CS 5200 only</h2>
+  <p>CS 4600 students may skip this part. Put these queries at the end of <code>lab2.sql</code>.</p>
+  <ol class="qs">
+    <li><p><strong>Q11.</strong> Every pair of different students who were in the same section, each pair listed once: the <code>course_id</code>, semester, year and both names. Slide 12's self join is the pattern; think about how to keep each pair from appearing twice.</p></li>
+    <li><p><strong>Q12.</strong> Q7 again, this time with <code>EXCEPT</code> and no outer join. In <code>lab2_answers.txt</code>, say in one or two sentences why <code>WHERE id NOT IN (SELECT id FROM takes)</code> would also give the right answer here, when the <code>NOT IN</code> in W1 did not.</p></li>
+  </ol>
+</section>
+
+<section id="submit" aria-labelledby="sub-h">
+  <h2 id="sub-h">What to submit and how it is graded</h2>
+  <p>Upload <strong>one zip file</strong> to the Lab 2 assignment in Brightspace. Name it <code>lab2_lastname_firstname.zip</code>, for example <code>lab2_rivera_jamie.zip</code>, and put these three files in it:</p>
+  <ul>
+    <li><code>lab2_answers.txt</code>: your name, the row count for every question, and your answers to W1 and W2 (and Q12, for CS 5200).</li>
+    <li><code>lab2.sql</code>: your queries.</li>
+    <li><code>lab2_output.txt</code>: what psql printed when you ran it.</li>
+  </ul>
+  <p>Save <code>lab2_answers.txt</code> as plain text: in TextEdit choose <strong>Format › Make Plain Text</strong> first; Notepad and VS Code save plain text already. To make the zip, put the three files in one folder and select them, then:</p>
+  <ul>
+    <li><strong>Windows:</strong> right-click and choose <strong>Compress to ZIP file</strong> (on Windows 10, <strong>Send to › Compressed (zipped) folder</strong>), then rename the zip.</li>
+    <li><strong>macOS:</strong> right-click, choose <strong>Compress 3 Items</strong>, and rename <code>Archive.zip</code>.</li>
+    <li><strong>Linux or Colab:</strong> run the line below. In Colab, start it with <code>!</code>, then right-click the zip in the file panel and choose <strong>Download</strong>.</li>
+  </ul>
+<pre>zip lab2_lastname_firstname.zip lab2_answers.txt lab2.sql lab2_output.txt</pre>
+  <p>Before you upload, open the zip and check that all three files are inside and that <code>lab2_output.txt</code> shows a result under every query. Upload a new zip if you need to change anything before the deadline; the latest one is graded.</p>
+  <div class="fig-scroll" tabindex="0" role="region" aria-label="Lab 2 rubric, 10 points">
+  <table class="tbl">
+    <caption>Lab 2 rubric, 10 points</caption>
+    <thead><tr><th scope="col">Item</th><th scope="col">What earns full credit</th><th scope="col" class="num">Points</th></tr></thead>
+    <tbody>
+      <tr><td>Queries Q1–Q9</td><td>Each query runs and returns exactly the rows and columns asked for, with the count in the answers file.</td><td class="num">6</td></tr>
+      <tr><td>Output</td><td><code>lab2_output.txt</code> shows every query with its result and no errors.</td><td class="num">1</td></tr>
+      <tr><td>Written (W1, W2)</td><td>W1 names the unknown comparison; W2 gives both counts and explains matching versus filtering.</td><td class="num">1</td></tr>
+      <tr><td>Q10 and Part D</td><td>CS 4600: Q10 correct, 2 points. CS 5200: Q10, 1 point; Q11 and Q12, 1 point.</td><td class="num">2</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Late work loses 10% per day for up to three days and is not accepted after that. Under the course's limited-use AI policy, you may ask an AI tool to explain an error message or a keyword, but the queries and answers must be your own, and you should be ready to explain any of them. Say how you used AI at the end of the answers file.</p>
+</section>
+
+<section id="help" aria-labelledby="help-h">
+  <h2 id="help-h">If something goes wrong</h2>
+  <ul>
+    <li><strong>"relation "teaches" does not exist"</strong>: your database is still the week 1 version. Reload <code>university.sql</code> from this page.</li>
+    <li><strong>"column reference "id" is ambiguous"</strong>: two joined tables both have <code>id</code>. Give each table an alias and write <code>s.id</code> or <code>t.id</code>.</li>
+    <li><strong>"column … does not exist"</strong> for a name you made with <code>AS</code>: WHERE runs before SELECT (slide 4), so repeat the expression in WHERE.</li>
+    <li><strong>More rows than you expect</strong>: a join condition is missing, or a student matches several rows. Check every join has an <code>ON</code> that uses the key, and add <code>DISTINCT</code> where the question says "each once".</li>
+    <li><strong>A row you need has disappeared</strong> after a LEFT JOIN: a WHERE condition on the right-hand table removed the padded rows (slide 18).</li>
+    <li><strong>Anything else</strong>: copy the exact message and bring it to office hours, Tuesday and Wednesday 12:00–3:00 p.m., MIC room D159, or post it in the week 3 discussion in Brightspace.</li>
+  </ul>
+</section>
+</main>
+
+<footer>
+  <p>CS 4600/5200 · Database Theory and Applications · University of Central Missouri · Dr. Gorkem Kar · Spring 2027</p>
+</footer>
+</div>
+</body>
+</html>

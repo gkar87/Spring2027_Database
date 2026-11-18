@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Week 12 — Query Optimization · CS 4600/5200</title>
+<meta name="description" content="CS 4600/5200 week 12: how the optimizer chooses a plan. Equivalence rules and pushing selections down; the statistics PostgreSQL keeps; estimating selections from most common values and histograms; the independence and uniformity assumptions and extended statistics; join size estimates; join order by dynamic programming; subquery rewrites, views and materialized views; and what to do when an estimate is wrong.">
+<link rel="stylesheet" href="../../assets/course.css">
+<link rel="stylesheet" href="../../assets/db.css">
+</head>
+<body>
+<a class="skip-link" href="#s1">Skip to the first slide</a>
+
+<div class="deck-stage">
+<main class="deck" aria-label="Week 12 lecture slides: query optimization">
+
+<!-- 1 ─────────────────────────────────────────────────────────── title -->
+<section class="slide slide--title" id="s1">
+  <p class="course-line">CS 4600/5200 · Database Theory and Applications · Week 12 of 15</p>
+  <h1>Query Optimization</h1>
+  <p class="subtitle">
+    Last week, the algorithms a plan is made of. This week, how PostgreSQL picks one plan out of
+    thousands without running any of them: by rewriting the query, guessing how many rows each step
+    will produce, and searching join orders cleverly. And what happens when a guess is wrong.
+  </p>
+  <p class="byline">
+    Dr. Gorkem Kar
+    <span>University of Central Missouri</span>
+    <span>School of Computer Science and Cybersecurity</span>
+  </p>
+  <div class="title-art">
+<svg viewBox="0 0 380 330" aria-hidden="true" focusable="false" style="--dg-k:1">
+<g class="v-in" style="--d:0.10s"><rect class="dg-box-t" x="8" y="270" width="64" height="34" rx="4"/></g>
+<g class="v-in" style="--d:0.20s"><rect class="dg-box-t" x="98" y="270" width="64" height="34" rx="4"/></g>
+<g class="v-in" style="--d:0.30s"><rect class="dg-box" x="188" y="270" width="64" height="34" rx="4"/></g>
+<g class="v-in" style="--d:0.40s"><rect class="dg-box" x="278" y="270" width="64" height="34" rx="4"/></g>
+<g class="v-in" style="--d:0.50s"><rect class="dg-box-t" x="53" y="190" width="64" height="34" rx="4"/></g>
+<g class="v-in" style="--d:0.60s"><rect class="dg-box" x="143" y="190" width="64" height="34" rx="4"/></g>
+<g class="v-in" style="--d:0.70s"><rect class="dg-box" x="233" y="190" width="64" height="34" rx="4"/></g>
+<g class="v-in" style="--d:0.80s"><rect class="dg-box-t" x="98" y="110" width="64" height="34" rx="4"/></g>
+<g class="v-in" style="--d:0.90s"><rect class="dg-box" x="188" y="110" width="64" height="34" rx="4"/></g>
+<g class="v-in" style="--d:1.00s"><rect class="dg-box-t" x="143" y="30" width="64" height="34" rx="4"/></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.40s" d="M40 270 L85 224"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.55s" d="M130 270 L85 224"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.70s" d="M85 190 L130 144"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.85s" d="M220 270 L130 144"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:2.00s" d="M130 110 L175 64"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:2.15s" d="M310 270 L175 64"/>
+</svg>
+  </div>
+  
+</section>
+
+<!-- 2 ─────────────────────────────────────────────── where we are -->
+<section class="slide" id="s2">
+  <h2>Where we are</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div>
+        <h3>Last week</h3>
+        <ul>
+          <li>Each plan step is an algorithm with a cost in pages.</li>
+          <li>The same join: 812 pages by hashing, 7 million by a plain nested loop.</li>
+          <li>Which one is best depends on how many rows go in.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>This week</h3>
+        <ul>
+          <li>Equivalent ways to write the same query.</li>
+          <li>Guessing row counts from statistics, before running anything.</li>
+          <li>Choosing the join order, and the rewrites PostgreSQL makes for you.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="callout">
+      <span class="mark" aria-hidden="true">→</span>
+      <p>The optimizer is only as good as its guesses. Most slow queries you will meet come down to one bad row estimate.</p>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 3 ─────────────────────────────────────────────── one query, two plans -->
+<section class="slide" id="s3">
+  <h2>One query, very different amounts of work</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:1000px">
+<svg style="--dg-k:1" viewBox="0 0 1000 400" role="img" aria-labelledby="tpt tpd">
+<title id="tpt">Two join orders for the same query, and the rows each join produces</title>
+<desc id="tpd">Two plan trees for the query that lists the courses taken by students in the department housed in Kirk. Both are left-deep: each join takes the result so far and one more table. Left, the order PostgreSQL chose: department, filtered to the one Kirk department, joined with big_student gives 1,000 rows; joined with big_takes, 10,000 rows; joined with course, 10,000 rows. The joins produce 21,000 rows in all. Right, the order the query was written in, forced with join_collapse_limit set to 1: big_takes joined with course gives 100,000 rows; joined with big_student, 100,000 rows; joined with department, 10,000 rows. The joins produce 210,000 rows in all, ten times as many, for the same 10,000-row answer.</desc>
+<g class="v-in" style="--d:0.10s"><text class="dg-sm-b" x="220" y="24" text-anchor="middle">PostgreSQL&#x27;s order</text></g>
+<g class="v-in" style="--d:0.20s"><rect class="dg-box" x="-15.0" y="340" width="150" height="34" rx="4"/><text class="dg-xs" x="60" y="362" text-anchor="middle">department (Kirk)</text></g>
+<g class="v-in" style="--d:0.30s"><rect class="dg-box" x="145.0" y="340" width="150" height="34" rx="4"/><text class="dg-xs" x="220" y="362" text-anchor="middle">big_student</text></g>
+<g class="v-in" style="--d:0.50s"><rect class="dg-box-t" x="100.0" y="260" width="80" height="34" rx="4"/><text class="dg-xs" x="140" y="282" text-anchor="middle">⋈</text></g>
+<g class="v-in" style="--d:1.00s"><rect class="dg-box-t" x="180.0" y="170" width="80" height="34" rx="4"/><text class="dg-xs" x="220" y="192" text-anchor="middle">⋈</text></g>
+<g class="v-in" style="--d:0.90s"><rect class="dg-box" x="225.0" y="260" width="150" height="34" rx="4"/><text class="dg-xs" x="300" y="282" text-anchor="middle">big_takes</text></g>
+<g class="v-in" style="--d:1.50s"><rect class="dg-box-t" x="260.0" y="80" width="80" height="34" rx="4"/><text class="dg-xs" x="300" y="102" text-anchor="middle">⋈</text></g>
+<g class="v-in" style="--d:1.40s"><rect class="dg-box" x="305.0" y="170" width="150" height="34" rx="4"/><text class="dg-xs" x="380" y="192" text-anchor="middle">course</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:0.60s" d="M60 340 L120 294"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:0.60s" d="M220 340 L160 294"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.20s" d="M140 260 L200 204"/><g class="v-in" style="--d:1.30s"><text class="dg-xs dg-val" x="28" y="252">1,000 rows</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.20s" d="M300 260 L240 204"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.70s" d="M220 170 L280 114"/><g class="v-in" style="--d:1.80s"><text class="dg-xs dg-val" x="108" y="162">10,000 rows</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.70s" d="M380 170 L320 114"/>
+<g class="v-in" style="--d:2.00s"><text class="dg-xs dg-val" x="300" y="68" text-anchor="middle">10,000 rows</text></g>
+<g class="v-in" style="--d:2.20s"><text class="dg-sm-b" x="220" y="394" text-anchor="middle">joins produce 21,000 rows</text></g>
+<path class="dg-line-q" d="M500 40 V380"/>
+<g class="v-in" style="--d:2.40s"><text class="dg-sm-b" x="760" y="24" text-anchor="middle">The written order, forced</text></g>
+<g class="v-in" style="--d:2.50s"><rect class="dg-box" x="525.0" y="340" width="150" height="34" rx="4"/><text class="dg-xs" x="600" y="362" text-anchor="middle">big_takes</text></g>
+<g class="v-in" style="--d:2.60s"><rect class="dg-box" x="685.0" y="340" width="150" height="34" rx="4"/><text class="dg-xs" x="760" y="362" text-anchor="middle">course</text></g>
+<g class="v-in" style="--d:2.80s"><rect class="dg-warn" x="640.0" y="260" width="80" height="34" rx="4"/><text class="dg-xs" x="680" y="282" text-anchor="middle">⋈</text></g>
+<g class="v-in" style="--d:3.30s"><rect class="dg-warn" x="720.0" y="170" width="80" height="34" rx="4"/><text class="dg-xs" x="760" y="192" text-anchor="middle">⋈</text></g>
+<g class="v-in" style="--d:3.20s"><rect class="dg-box" x="765.0" y="260" width="150" height="34" rx="4"/><text class="dg-xs" x="840" y="282" text-anchor="middle">big_student</text></g>
+<g class="v-in" style="--d:3.80s"><rect class="dg-warn" x="800.0" y="80" width="80" height="34" rx="4"/><text class="dg-xs" x="840" y="102" text-anchor="middle">⋈</text></g>
+<g class="v-in" style="--d:3.70s"><rect class="dg-box" x="845.0" y="170" width="150" height="34" rx="4"/><text class="dg-xs" x="920" y="192" text-anchor="middle">department (Kirk)</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:2.90s" d="M600 340 L660 294"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:2.90s" d="M760 340 L700 294"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:3.50s" d="M680 260 L740 204"/><g class="v-in" style="--d:3.60s"><text class="dg-xs dg-val" x="568" y="252">100,000 rows</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:3.50s" d="M840 260 L780 204"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:4.00s" d="M760 170 L820 114"/><g class="v-in" style="--d:4.10s"><text class="dg-xs dg-val" x="648" y="162">100,000 rows</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:4.00s" d="M920 170 L860 114"/>
+<g class="v-in" style="--d:4.30s"><text class="dg-xs dg-val" x="840" y="68" text-anchor="middle">10,000 rows</text></g>
+<g class="v-in" style="--d:4.50s"><text class="dg-sm-b" x="760" y="394" text-anchor="middle">joins produce 210,000 rows</text></g>
+</svg>
+      <figcaption><strong>Figure 12.1.</strong> The <strong>Kirk query</strong>: the courses taken by students in the department housed in Kirk, joining department, big_student, big_takes and course. Both orders return the same 10,000 rows; joining the one Kirk department to its students first keeps every result small.</figcaption>
+    </figure>
+    <p><a class="try" href="playground.html#order">Playground example 4.1</a></p>
+  </div>
+  
+</section>
+
+<!-- 4 ─────────────────────────────────────────────── section -->
+<section class="slide slide--section" id="s4">
+  <h2>Equivalent expressions</h2>
+  <p>Many ways to write the same answer.</p>
+  
+</section>
+
+<!-- 5 ─────────────────────────────────────────────── equivalence rules -->
+<section class="slide" id="s5">
+  <h2>Rules that never change the answer</h2>
+  <div class="slide-main">
+    <div class="fig-scroll" tabindex="0" role="region" aria-label="Equivalence rules">
+    <table class="tbl tbl--compact">
+      <caption>Some equivalence rules from the textbook, and what each one lets the optimizer do</caption>
+      <thead><tr><th scope="col">Rule</th><th scope="col">In algebra</th><th scope="col">What it buys</th></tr></thead>
+      <tbody>
+        <tr><td>Split a selection</td><td>σ<sub>θ1 ∧ θ2</sub>(E) ≡ σ<sub>θ1</sub>(σ<sub>θ2</sub>(E))</td><td>Each condition can move on its own.</td></tr>
+        <tr><td>Joins commute</td><td>E<sub>1</sub> ⋈ E<sub>2</sub> ≡ E<sub>2</sub> ⋈ E<sub>1</sub></td><td>Either input can be the hash table or the outer loop.</td></tr>
+        <tr><td>Joins associate</td><td>(E<sub>1</sub> ⋈ E<sub>2</sub>) ⋈ E<sub>3</sub> ≡ E<sub>1</sub> ⋈ (E<sub>2</sub> ⋈ E<sub>3</sub>)</td><td>Any join order.</td></tr>
+        <tr><td>Selection through a join</td><td>σ<sub>θ</sub>(E<sub>1</sub> ⋈ E<sub>2</sub>) ≡ σ<sub>θ</sub>(E<sub>1</sub>) ⋈ E<sub>2</sub>, if θ uses only E<sub>1</sub></td><td>Filter before joining.</td></tr>
+        <tr><td>Projection through a join</td><td>keep only the columns used above</td><td>Narrower rows, fewer pages to hash or sort.</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <ul>
+      <li>The optimizer applies rules like these to generate alternatives, then costs them. It never changes what the query means.</li>
+    </ul>
+  </div>
+  
+</section>
+
+<!-- 6 ─────────────────────────────────────────────── push down -->
+<section class="slide" id="s6">
+  <h2>Filter early: push selections down</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:1000px">
+<svg style="--dg-k:1" viewBox="0 0 1000 330" role="img" aria-labelledby="pdt pdd">
+<title id="pdt">Pushing a selection below a join</title>
+<desc id="pdd">Two equivalent expression trees. Left: department is joined with big_student first, producing 10,000 rows, and only then the selection building = &#x27;Kirk&#x27; keeps the 1,000 rows of Physics students. Right, after the rule that moves a selection to the input it is about: the selection is applied to department first, keeping 1 of its 7 rows, and the join then produces only the 1,000 rows wanted. Both trees give the same result; the right one never builds the 10,000-row intermediate result.</desc>
+<defs><marker id="pda" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#0e5a6b"/></marker></defs>
+<g class="v-in" style="--d:0.10s"><text class="dg-sm-b" x="230" y="24" text-anchor="middle">As written</text></g>
+<g class="v-in" style="--d:0.20s"><rect class="dg-box-t" x="125.0" y="50" width="210" height="34" rx="4"/><text class="dg-xs" x="230" y="72" text-anchor="middle">σ building = &#x27;Kirk&#x27;</text></g>
+<g class="v-in" style="--d:0.40s"><rect class="dg-box" x="190.0" y="150" width="80" height="34" rx="4"/><text class="dg-xs" x="230" y="172" text-anchor="middle">⋈</text></g>
+<g class="v-in" style="--d:0.60s"><rect class="dg-box" x="55.0" y="260" width="150" height="44" rx="4"/><text class="dg-xs" x="130" y="282" text-anchor="middle">department</text><text class="dg-xs" x="130" y="298" text-anchor="middle">7 rows</text></g>
+<g class="v-in" style="--d:0.70s"><rect class="dg-box" x="255.0" y="260" width="150" height="44" rx="4"/><text class="dg-xs" x="330" y="282" text-anchor="middle">big_student</text><text class="dg-xs" x="330" y="298" text-anchor="middle">10,000 rows</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:0.80s" d="M230 150 L230 84"/><g class="v-in" style="--d:0.90s"><text class="dg-xs dg-val" x="242" y="124">10,000 rows</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:0.90s" d="M130 260 L210 184"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:0.90s" d="M330 260 L250 184"/>
+<g class="v-in" style="--d:1.10s"><text class="dg-xs dg-val" x="230" y="40" text-anchor="middle">1,000 rows</text></g>
+<path class="dg-line v-draw" pathLength="1" style="--d:1.50s" d="M440 170 H540" marker-end="url(#pda)"/>
+<g class="v-in" style="--d:1.60s"><text class="dg-xs" x="490" y="158" text-anchor="middle">push down</text></g>
+<g class="v-in" style="--d:1.90s"><text class="dg-sm-b" x="760" y="24" text-anchor="middle">After the rewrite</text></g>
+<g class="v-in" style="--d:2.00s"><rect class="dg-box" x="720.0" y="60" width="80" height="34" rx="4"/><text class="dg-xs" x="760" y="82" text-anchor="middle">⋈</text></g>
+<g class="v-in" style="--d:2.20s"><rect class="dg-box-t" x="555.0" y="150" width="210" height="34" rx="4"/><text class="dg-xs" x="660" y="172" text-anchor="middle">σ building = &#x27;Kirk&#x27;</text></g>
+<g class="v-in" style="--d:2.40s"><rect class="dg-box" x="585.0" y="260" width="150" height="44" rx="4"/><text class="dg-xs" x="660" y="282" text-anchor="middle">department</text><text class="dg-xs" x="660" y="298" text-anchor="middle">7 rows</text></g>
+<g class="v-in" style="--d:2.50s"><rect class="dg-box" x="785.0" y="260" width="150" height="44" rx="4"/><text class="dg-xs" x="860" y="282" text-anchor="middle">big_student</text><text class="dg-xs" x="860" y="298" text-anchor="middle">10,000 rows</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:2.70s" d="M660 260 L660 184"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:2.90s" d="M660 150 L740 94"/><g class="v-in" style="--d:3.00s"><text class="dg-xs dg-val" x="600" y="122">1 row</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:2.90s" d="M860 260 L780 94"/>
+<g class="v-in" style="--d:3.20s"><text class="dg-xs dg-val" x="760" y="50" text-anchor="middle">1,000 rows</text></g>
+</svg>
+      <figcaption><strong>Figure 12.2.</strong> The same result, without the 10,000-row join in the middle.</figcaption>
+    </figure>
+    <ul>
+      <li>A heuristic the textbook gives: <strong>perform selections as early as possible</strong>, then projections.</li>
+      <li>PostgreSQL always does this. You never have to write the filter in a subquery yourself.</li>
+    </ul>
+  </div>
+  
+</section>
+
+<!-- 7 ─────────────────────────────────────────────── section -->
+<section class="slide slide--section" id="s7">
+  <h2>Estimating sizes</h2>
+  <p>Guessing the rows, before running anything.</p>
+  
+</section>
+
+<!-- 8 ─────────────────────────────────────────────── catalog -->
+<section class="slide" id="s8">
+  <h2>What the catalog knows</h2>
+  <div class="slide-main">
+    <div class="fig-scroll" tabindex="0" role="region" aria-label="Statistics in the textbook and in PostgreSQL">
+    <table class="tbl tbl--compact">
+      <caption>The textbook's statistics and where PostgreSQL keeps them, with big_takes's values</caption>
+      <thead><tr><th scope="col">Textbook</th><th scope="col">Meaning</th><th scope="col">PostgreSQL</th><th scope="col">big_takes</th></tr></thead>
+      <tbody>
+        <tr><td><em>n</em><sub>r</sub></td><td>rows</td><td><code>pg_class.reltuples</code></td><td>100,000</td></tr>
+        <tr><td><em>b</em><sub>r</sub></td><td>pages</td><td><code>pg_class.relpages</code></td><td>736</td></tr>
+        <tr><td>V(A, r)</td><td>distinct values of A</td><td><code>pg_stats.n_distinct</code></td><td>course_id: 10</td></tr>
+        <tr><td>(not in the book)</td><td>share of NULLs</td><td><code>null_frac</code></td><td>grade: 0.037</td></tr>
+        <tr><td>(not in the book)</td><td>most common values and their shares</td><td><code>most_common_vals</code>, <code>_freqs</code></td><td>CS-101: 0.214</td></tr>
+        <tr><td>histogram</td><td>bucket boundaries</td><td><code>histogram_bounds</code></td><td>reg_id: 400 buckets</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <ul>
+      <li><code>ANALYZE</code> collects them, from a sample of 30,000 rows by default. Autovacuum runs it after enough rows change.</li>
+    </ul>
+    <p><a class="try" href="playground.html#stats">Playground examples 1.1 and 1.2</a></p>
+  </div>
+  
+</section>
+
+<!-- 9 ─────────────────────────────────────────────── one condition -->
+<section class="slide" id="s9">
+  <h2>Estimating one condition</h2>
+  <div class="slide-main">
+    <div class="fig-scroll" tabindex="0" role="region" aria-label="Selectivity of one condition">
+    <table class="tbl tbl--compact">
+      <caption>Selectivity: the share of rows a condition keeps. Estimate = selectivity × n<sub>r</sub>.</caption>
+      <thead><tr><th scope="col">Condition</th><th scope="col">Textbook</th><th scope="col">PostgreSQL, on big_takes</th><th scope="col" class="num">Estimate</th><th scope="col" class="num">Actual</th></tr></thead>
+      <tbody>
+        <tr><td>A = v</td><td>1 / V(A, r)</td><td>v in the common-values list: its share. <code>course_id = 'CS-101'</code>: 0.21428</td><td class="num">21,428</td><td class="num">21,428</td></tr>
+        <tr><td>A &lt; v</td><td>(v − min) / (max − min)</td><td>the histogram: <code>reg_id &lt; 12345</code></td><td class="num">12,344</td><td class="num">12,344</td></tr>
+        <tr><td>A IS NULL</td><td>–</td><td><code>null_frac</code>: <code>grade IS NULL</code>, 0.03704</td><td class="num">3,704</td><td class="num">3,704</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <ul>
+      <li>The textbook's 1 / V(A, r) assumes every value is equally common: the <strong>uniformity assumption</strong>. Common-value lists fix it for the values they hold; any other value gets an even share of the rows left over.</li>
+    </ul>
+    <p><a class="try" href="playground.html#stats">Playground example 1.3</a></p>
+  </div>
+  
+</section>
+
+<!-- 10 ────────────────────────────────────────────── histogram -->
+<section class="slide" id="s10">
+  <h2>Ranges: equi-depth histograms</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:1000px">
+<svg style="--dg-k:1" viewBox="0 0 1000 300" role="img" aria-labelledby="hgt hgd">
+<title id="hgt">Estimating reg_id &lt; 12345 from an equi-depth histogram</title>
+<desc id="hgd">The histogram for big_takes.reg_id has 400 buckets, each holding the same number of rows, 250. The figure shows the first three buckets, from 1 to 250, 250 to 500 and 500 to 750, then 45 more buckets, then the buckets around 12,345: 12,000 to 12,250, which lies wholly below it, and 12,250 to 12,500, which 12,345 cuts 38% of the way along. The estimate counts 49 whole buckets, 12,250 rows, plus 38% of the 50th, about 95 rows: about 12,345 rows. PostgreSQL&#x27;s estimate is 12,344, and the true count is 12,344.</desc>
+<g class="v-in" style="--d:0.10s"><rect class="dg-box-t" x="40" y="70" width="116" height="120" rx="2"/><text class="dg-xs" x="98.0" y="135.0" text-anchor="middle">250 rows</text><text class="dg-xs" x="40" y="212">1</text></g>
+<g class="v-in" style="--d:0.30s"><rect class="dg-box-t" x="160" y="70" width="116" height="120" rx="2"/><text class="dg-xs" x="218.0" y="135.0" text-anchor="middle">250 rows</text><text class="dg-xs" x="160" y="212">250</text></g>
+<g class="v-in" style="--d:0.50s"><rect class="dg-box-t" x="280" y="70" width="116" height="120" rx="2"/><text class="dg-xs" x="338.0" y="135.0" text-anchor="middle">250 rows</text><text class="dg-xs" x="280" y="212">500</text></g>
+<g class="v-in" style="--d:0.80s"><text class="dg-sm" x="490" y="135.0" text-anchor="middle">… 45 more …</text></g>
+<g class="v-in" style="--d:1.10s"><rect class="dg-box-t" x="580" y="70" width="116" height="120" rx="2"/><text class="dg-xs" x="638.0" y="135.0" text-anchor="middle">250 rows</text><text class="dg-xs" x="580" y="212">12,000</text></g>
+<g class="v-in" style="--d:1.40s"><rect class="dg-box" x="700" y="70" width="116" height="120" rx="2"/><rect class="dg-box-t" x="700" y="70" width="44" height="120" rx="2"/><text class="dg-xs" x="700" y="212">12,250</text><text class="dg-xs" x="820" y="212">12,500</text></g>
+<path class="dg-line-a v-draw" pathLength="1" style="--d:1.80s" d="M744 40 V194"/>
+<g class="v-in" style="--d:1.90s"><text class="dg-xs dg-mono" x="744.08" y="32" text-anchor="middle">reg_id &lt; 12345</text></g>
+<g class="v-in" style="--d:2.00s"><text class="dg-xs" x="840" y="110">38% of</text><text class="dg-xs" x="840" y="128">this bucket:</text><text class="dg-xs" x="840" y="146">about 95 rows</text></g>
+<g class="v-in" style="--d:2.40s"><text class="dg-sm" x="40" y="268">49 whole buckets × 250 = 12,250, plus about 95: about 12,345 rows. The planner says 12,344; there are 12,344.</text><text class="dg-xs" x="40" y="292">Equal-depth buckets: every bar holds 250 rows, so a bucket is narrow where values crowd together.</text></g>
+</svg>
+      <figcaption><strong>Figure 12.3.</strong> Count the whole buckets below the value, then the share of the bucket it falls in.</figcaption>
+    </figure>
+    <ul>
+      <li>The textbook draws equal-width buckets with different counts; PostgreSQL uses <strong>equal counts</strong> with different widths, which stays accurate where values bunch up.</li>
+    </ul>
+    <p><a class="try" href="playground.html#stats">Playground example 1.4</a></p>
+  </div>
+  
+</section>
+
+<!-- 11 ────────────────────────────────────────────── combining -->
+<section class="slide" id="s11">
+  <h2>Two conditions: assume they are independent</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div>
+        <h3>The rules</h3>
+        <ul>
+          <li><strong>AND</strong>: s<sub>1</sub> × s<sub>2</sub></li>
+          <li><strong>OR</strong>: s<sub>1</sub> + s<sub>2</sub> − s<sub>1</sub> × s<sub>2</sub></li>
+          <li><strong>NOT</strong>: 1 − s</li>
+        </ul>
+      </div>
+      <div>
+        <h3>On big_takes</h3>
+        <ul>
+          <li><code>course_id = 'CS-101' AND semester = 'Summer'</code>: 0.21428 × 0.2 → <strong>4,286</strong> expected.</li>
+          <li><code>course_id = 'CS-101' OR semester = 'Summer'</code>: 0.21428 + 0.2 − 0.04286 → <strong>37,142</strong> expected, 37,141 found.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="callout">
+      <span class="mark" aria-hidden="true">→</span>
+      <p>Multiplying is right only when knowing one condition tells you nothing about the other. Course and semester are unrelated here, so the guesses land.</p>
+    </div>
+    <p><a class="try" href="playground.html#combine">Playground example 2.1</a></p>
+  </div>
+  
+</section>
+
+<!-- 12 ────────────────────────────────────────────── correlation -->
+<section class="slide" id="s12">
+  <h2>When columns are related</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div>
+        <pre class="code"><span class="k">SELECT</span> * <span class="k">FROM</span> big_takes
+<span class="k">WHERE</span> year = 2027 <span class="k">AND</span> grade <span class="k">IS</span> <span class="k">NULL</span>;
+<span class="c">-- expected 137, found 3,704</span>
+
+<span class="k">CREATE</span> STATISTICS takes_year_grade (mcv)
+  <span class="k">ON</span> year, grade <span class="k">FROM</span> big_takes;
+<span class="k">ANALYZE</span> big_takes;
+<span class="c">-- expected 3,704, found 3,704</span></pre>
+      </div>
+      <ul>
+        <li>1/27 of rows are from 2027, 3.7% have no grade: 100,000 × 1/27 × 0.037 = 137.</li>
+        <li>But the two are the <em>same</em> rows: 2027 courses are still in progress.</li>
+        <li>An estimate 27 times too low can turn a hash join into a nested loop that runs thousands of times.</li>
+        <li><code>CREATE STATISTICS</code> collects the most common <em>pairs</em>. Also: <code>dependencies</code> and <code>ndistinct</code>.</li>
+      </ul>
+    </div>
+    <p><a class="try" href="playground.html#combine">Playground examples 2.2 and 2.3</a></p>
+  </div>
+  
+</section>
+
+<!-- 13 ────────────────────────────────────────────── join size -->
+<section class="slide" id="s13">
+  <h2>Estimating a join</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <ul>
+        <li>Joining on a key of s, a foreign key of r: at most <strong>n<sub>r</sub></strong> rows. <code>big_takes ⋈ big_student</code>: 100,000.</li>
+        <li>Otherwise: n<sub>r</sub> × n<sub>s</sub> / max(V(A, r), V(A, s)).</li>
+        <li>Department in Kirk ⋈ big_student: 1 × 10,000 / 7 = <strong>1,429</strong> expected, <strong>1,000</strong> found. Departments are not all the same size.</li>
+      </ul>
+      <div class="fig-scroll" tabindex="0" role="region" aria-label="The Kirk query's estimates">
+      <table class="tbl tbl--compact">
+        <caption>The Kirk query: estimate at the top step</caption>
+        <thead><tr><th scope="col">department and course</th><th scope="col" class="num">Expected</th><th scope="col" class="num">Found</th></tr></thead>
+        <tbody>
+          <tr><td>never analyzed</td><td class="num">560</td><td class="num">10,000</td></tr>
+          <tr><td>after <code>ANALYZE</code></td><td class="num">14,290</td><td class="num">10,000</td></tr>
+        </tbody>
+      </table>
+      </div>
+    </div>
+    <div class="callout">
+      <span class="mark" aria-hidden="true">→</span>
+      <p>Estimates are built bottom up, so one error near the leaves is multiplied by every join above it.</p>
+    </div>
+    <p><a class="try" href="playground.html#joinsize">Playground examples 3.1 and 3.2</a></p>
+  </div>
+  
+</section>
+
+<!-- 14 ────────────────────────────────────────────── section -->
+<section class="slide slide--section" id="s14">
+  <h2>Choosing the join order</h2>
+  <p>Searching smartly instead of trying everything.</p>
+  
+</section>
+
+<!-- 15 ────────────────────────────────────────────── how many orders -->
+<section class="slide" id="s15">
+  <h2>Too many orders to try</h2>
+  <div class="slide-main">
+    <div class="fig-scroll" tabindex="0" role="region" aria-label="Number of join orders">
+    <table class="tbl tbl--compact">
+      <caption>Ways to join n tables, and the sets of tables dynamic programming visits instead</caption>
+      <thead><tr><th scope="col" class="num">Tables, n</th><th scope="col" class="num">Left-deep orders, n!</th><th scope="col" class="num">All join trees, (2(n − 1))! / (n − 1)!</th><th scope="col" class="num">Sets of tables, 2<sup>n</sup></th></tr></thead>
+      <tbody>
+        <tr><td class="num">3</td><td class="num">6</td><td class="num">12</td><td class="num">8</td></tr>
+        <tr><td class="num">5</td><td class="num">120</td><td class="num">1,680</td><td class="num">32</td></tr>
+        <tr><td class="num">10</td><td class="num">3,628,800</td><td class="num">17,643,225,600</td><td class="num">1,024</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <ul>
+      <li>A <strong>left-deep</strong> tree joins the result so far with one stored table at a time, so each join can pipeline into the next.</li>
+      <li>The key idea: the best way to join {department, big_student, big_takes} doesn't depend on what is joined after it. Work it out once, reuse it.</li>
+    </ul>
+  </div>
+  
+</section>
+
+<!-- 16 ────────────────────────────────────────────── dp -->
+<section class="slide" id="s16">
+  <h2>Dynamic programming, one set size at a time</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:1000px">
+<svg style="--dg-k:1" viewBox="0 0 1000 400" role="img" aria-labelledby="dpt dpd">
+<title id="dpt">Dynamic programming over sets of tables for the Kirk query</title>
+<desc id="dpd">Four rows of boxes, one row per number of tables, smallest at the bottom. Size 1: department, big_student, big_takes and course, each costing nothing yet. Size 2: department with big_student, 1,000 rows; big_student with big_takes, 100,000; big_takes with course, 100,000. Three other pairs, department with big_takes, department with course and big_student with course, have no join condition and are skipped as cross products. Size 3: department, big_student and big_takes, best cost 11,000, built from the department and big_student pair; big_student, big_takes and course, best cost 200,000. Two other sets of three are skipped. Size 4: all four tables, best cost 21,000, built from the best set of three plus course. The winning path is highlighted: department and big_student, then big_takes, then course.</desc>
+<defs><marker id="dpa" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#0e5a6b"/></marker></defs>
+<g class="v-in" style="--d:0.10s"><text class="dg-sm-b" x="20" y="360">size 1</text></g>
+<g class="v-in" style="--d:0.20s"><rect class="dg-box-t" x="175.0" y="330" width="150" height="50" rx="4"/><text class="dg-xs" x="250.0" y="351" text-anchor="middle">department</text><text class="dg-xs dg-val" x="250.0" y="371" text-anchor="middle">cost 0</text></g>
+<g class="v-in" style="--d:0.30s"><rect class="dg-box-t" x="355.0" y="330" width="150" height="50" rx="4"/><text class="dg-xs" x="430.0" y="351" text-anchor="middle">big_student</text><text class="dg-xs dg-val" x="430.0" y="371" text-anchor="middle">cost 0</text></g>
+<g class="v-in" style="--d:0.40s"><rect class="dg-box" x="535.0" y="330" width="150" height="50" rx="4"/><text class="dg-xs" x="610.0" y="351" text-anchor="middle">big_takes</text><text class="dg-xs dg-val" x="610.0" y="371" text-anchor="middle">cost 0</text></g>
+<g class="v-in" style="--d:0.50s"><rect class="dg-box" x="715.0" y="330" width="150" height="50" rx="4"/><text class="dg-xs" x="790.0" y="351" text-anchor="middle">course</text><text class="dg-xs dg-val" x="790.0" y="371" text-anchor="middle">cost 0</text></g>
+<g class="v-in" style="--d:1.00s"><text class="dg-sm-b" x="20" y="260">size 2</text></g>
+<g class="v-in" style="--d:1.10s"><rect class="dg-box-t" x="235.0" y="230" width="170" height="50" rx="4"/><text class="dg-xs" x="320.0" y="251" text-anchor="middle">dept + student</text><text class="dg-xs dg-val" x="320.0" y="271" text-anchor="middle">cost 1,000</text></g>
+<g class="v-in" style="--d:1.20s"><rect class="dg-box" x="435.0" y="230" width="170" height="50" rx="4"/><text class="dg-xs" x="520.0" y="251" text-anchor="middle">student + takes</text><text class="dg-xs dg-val" x="520.0" y="271" text-anchor="middle">cost 100,000</text></g>
+<g class="v-in" style="--d:1.30s"><rect class="dg-box" x="635.0" y="230" width="170" height="50" rx="4"/><text class="dg-xs" x="720.0" y="251" text-anchor="middle">takes + course</text><text class="dg-xs dg-val" x="720.0" y="271" text-anchor="middle">cost 100,000</text></g>
+<g class="v-in" style="--d:1.40s"><text class="dg-xs" x="990" y="250" text-anchor="end">3 pairs skipped:</text><text class="dg-xs" x="990" y="270" text-anchor="end">cross products</text></g>
+<g class="v-in" style="--d:1.90s"><text class="dg-sm-b" x="20" y="160">size 3</text></g>
+<g class="v-in" style="--d:2.00s"><rect class="dg-box-t" x="285.0" y="130" width="220" height="50" rx="4"/><text class="dg-xs" x="395.0" y="151" text-anchor="middle">dept + student + takes</text><text class="dg-xs dg-val" x="395.0" y="171" text-anchor="middle">cost 11,000</text></g>
+<g class="v-in" style="--d:2.10s"><rect class="dg-box" x="535.0" y="130" width="220" height="50" rx="4"/><text class="dg-xs" x="645.0" y="151" text-anchor="middle">student + takes + course</text><text class="dg-xs dg-val" x="645.0" y="171" text-anchor="middle">cost 200,000</text></g>
+<g class="v-in" style="--d:2.30s"><text class="dg-xs" x="990" y="150" text-anchor="end">2 sets skipped:</text><text class="dg-xs" x="990" y="170" text-anchor="end">cross products</text></g>
+<g class="v-in" style="--d:2.80s"><text class="dg-sm-b" x="20" y="60">size 4</text></g>
+<g class="v-in" style="--d:2.90s"><rect class="dg-box-t" x="420.0" y="30" width="200" height="50" rx="4"/><text class="dg-xs" x="520.0" y="51" text-anchor="middle">all four</text><text class="dg-xs dg-val" x="520.0" y="71" text-anchor="middle">cost 21,000</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:0.80s" d="M250 330 L320 282" marker-end="url(#dpa)"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:0.90s" d="M430 330 L320 282" marker-end="url(#dpa)"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.70s" d="M320 230 L395 182" marker-end="url(#dpa)"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:2.70s" d="M395 130 L520 82" marker-end="url(#dpa)"/>
+</svg>
+      <figcaption><strong>Figure 12.4.</strong> Cost is the rows the joins produce. Each set keeps only its best plan; sets with no join condition are skipped.</figcaption>
+    </figure>
+    <p><a class="try" href="playground.html#order">Try the join order explorer</a></p>
+  </div>
+  
+</section>
+
+<!-- 17 ────────────────────────────────────────────── PG specifics -->
+<section class="slide" id="s17">
+  <h2>What PostgreSQL does</h2>
+  <div class="slide-main">
+    <ul>
+      <li>Dynamic programming over sets, with bushy trees allowed, for up to <code>join_collapse_limit</code> tables in one FROM: <strong>8</strong> by default.</li>
+      <li>Beyond 8, it plans the query in pieces, keeping the order you wrote between them.</li>
+      <li>At 12 or more tables (<code>geqo_threshold</code>), it switches to a <strong>genetic</strong> search: good plans, not guaranteed best.</li>
+      <li>Cross products are left until no join condition remains.</li>
+      <li><code>SET join_collapse_limit = 1</code> makes it follow your written order: useful for experiments, rarely in production.</li>
+    </ul>
+    <p><a class="try" href="playground.html#order">Playground example 4.1 and exercise 6</a></p>
+  </div>
+  
+</section>
+
+<!-- 18 ────────────────────────────────────────────── section -->
+<section class="slide slide--section" id="s18">
+  <h2>Rewrites and stored results</h2>
+  <p>What the optimizer changes before it plans, and what it can't.</p>
+  
+</section>
+
+<!-- 19 ────────────────────────────────────────────── subqueries -->
+<section class="slide" id="s19">
+  <h2>Subqueries become joins</h2>
+  <div class="slide-main">
+    <div class="fig-scroll" tabindex="0" role="region" aria-label="How subqueries are planned">
+    <table class="tbl tbl--compact">
+      <caption>Students who took MU-199, and who never did, written four ways</caption>
+      <thead><tr><th scope="col">Written as</th><th scope="col">Planned as</th></tr></thead>
+      <tbody>
+        <tr><td><code>student_no IN (SELECT …)</code></td><td>Hash Right Semi Join</td></tr>
+        <tr><td><code>EXISTS (SELECT … WHERE t.student_no = s.student_no)</code></td><td>Hash Right Semi Join, the same plan</td></tr>
+        <tr><td><code>NOT EXISTS (…)</code></td><td>Hash Right Anti Join</td></tr>
+        <tr><td><code>student_no NOT IN (SELECT …)</code></td><td>a scan with a <strong>subplan</strong> in its filter</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <ul>
+      <li>Turning a correlated subquery into a join is <strong>decorrelation</strong>: it can then use any join algorithm and any order.</li>
+      <li><code>NOT IN</code> is never true if the subquery returns a NULL (week 3), so it isn't an anti join. Prefer <code>NOT EXISTS</code>.</li>
+    </ul>
+    <p><a class="try" href="playground.html#rewrite">Playground examples 5.1 and 5.2</a></p>
+  </div>
+  
+</section>
+
+<!-- 20 ────────────────────────────────────────────── views -->
+<section class="slide" id="s20">
+  <h2>Views and materialized views</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div>
+        <h3>A view</h3>
+        <ul>
+          <li>Replaced by its definition, then optimized with the rest of the query.</li>
+          <li><code>WHERE student_no = 42</code> on a GROUP BY view is pushed below the grouping: 10 rows counted, not 100,000.</li>
+          <li><code>WHERE n_courses &gt; 10</code> can't be: every group must be counted first.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>A materialized view</h3>
+        <pre class="code"><span class="k">CREATE</span> <span class="k">MATERIALIZED</span> <span class="k">VIEW</span> course_counts <span class="k">AS</span>
+  <span class="k">SELECT</span> course_id, count(*) <span class="k">AS</span> n
+  <span class="k">FROM</span> big_takes <span class="k">GROUP</span> <span class="k">BY</span> course_id;
+
+<span class="k">REFRESH</span> <span class="k">MATERIALIZED</span> <span class="k">VIEW</span> course_counts;</pre>
+        <ul>
+          <li>Stores the result: reading it is 1 page, not 736.</li>
+          <li>PostgreSQL does not keep it current; you refresh it.</li>
+        </ul>
+      </div>
+    </div>
+    <p><a class="try" href="playground.html#rewrite">Playground examples 5.3 and 5.4</a></p>
+  </div>
+  
+</section>
+
+<!-- 21 ────────────────────────────────────────────── when the plan is bad -->
+<section class="slide" id="s21">
+  <h2>When a plan is slow</h2>
+  <div class="slide-main">
+    <ol class="steps">
+      <li><span class="n" aria-hidden="true">1</span><div><strong>Run EXPLAIN ANALYZE.</strong><p>Find the lowest step where expected and actual rows differ ten times or more.</p></div></li>
+      <li><span class="n" aria-hidden="true">2</span><div><strong>Stale or missing statistics?</strong><p>Run <code>ANALYZE</code> on the tables under it.</p></div></li>
+      <li><span class="n" aria-hidden="true">3</span><div><strong>Related columns?</strong><p><code>CREATE STATISTICS</code> on them, then ANALYZE.</p></div></li>
+      <li><span class="n" aria-hidden="true">4</span><div><strong>A value the sample missed?</strong><p>Raise the column's statistics target: <code>ALTER TABLE … ALTER COLUMN … SET STATISTICS 500</code>.</p></div></li>
+      <li><span class="n" aria-hidden="true">5</span><div><strong>Still wrong?</strong><p>Rewrite the query (NOT EXISTS for NOT IN), or add the index the plan needs. Turning <code>enable_</code> settings off is for experiments only.</p></div></li>
+    </ol>
+  </div>
+  
+</section>
+
+<!-- 22 ────────────────────────────────────────────── takeaways -->
+<section class="slide" id="s22">
+  <h2>Takeaways</h2>
+  <div class="slide-main">
+    <ol class="steps">
+      <li><span class="n" aria-hidden="true">1</span><div><strong>Same answer, many expressions.</strong><p>Equivalence rules let the optimizer filter early and reorder joins.</p></div></li>
+      <li><span class="n" aria-hidden="true">2</span><div><strong>Plans are chosen by estimates.</strong><p>Rows are guessed from statistics: common values, histograms, distinct counts.</p></div></li>
+      <li><span class="n" aria-hidden="true">3</span><div><strong>Two assumptions can fail.</strong><p>Uniformity and independence. Common-value lists and CREATE STATISTICS fix them.</p></div></li>
+      <li><span class="n" aria-hidden="true">4</span><div><strong>Join order by dynamic programming.</strong><p>Best plan per set of tables, smallest sets first.</p></div></li>
+      <li><span class="n" aria-hidden="true">5</span><div><strong>Write what you mean.</strong><p>IN and EXISTS plan the same; NOT EXISTS beats NOT IN; materialized views need refreshing.</p></div></li>
+    </ol>
+  </div>
+  
+</section>
+
+<!-- 23 ────────────────────────────────────────────── this week -->
+<section class="slide" id="s23">
+  <h2>This week's work</h2>
+  <div class="slide-main">
+    <div class="week-work">
+      <div>
+        <h3>Read</h3>
+        <ul>
+          <li>Chapter 16 (query optimization), sections 16.1 to 16.5.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Do</h3>
+        <ul>
+          <li>The <a href="playground.html">week 12 playground</a>: the join order explorer and 8 exercises.</li>
+          <li>Quiz 12 in Brightspace.</li>
+          <li>No new lab this week.</li>
+          <li>Using Colab? Install PostgreSQL on your own computer (<a href="../week01/lab0.html">Lab 0</a>, Path 1) before next week's Lab 8.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Due</h3>
+        <ul>
+          <li><span class="due">Sunday, April 11, 11:59 p.m. CT</span>: <a href="../week11/lab7.html">Lab 7</a>.</li>
+          <li><span class="due">Sunday, April 25, 11:59 p.m. CT</span>: <a href="../../project/milestone4.html">project milestone 4</a>. Start choosing the query whose plan you will explain.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="callout" style="margin-top:auto">
+      <span class="mark" aria-hidden="true">→</span>
+      <p><strong>Next week:</strong> transactions. What happens when two people change the same rows at the same moment, and how the database keeps them from getting in each other's way.</p>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 24 ────────────────────────────────────────────── resources -->
+<section class="slide" id="s24">
+  <h2>Free resources</h2>
+  <div class="slide-main">
+    <ul class="resources">
+      <li><a href="https://www.postgresql.org/docs/current/planner-stats.html">Statistics used by the planner</a><span class="src">PostgreSQL documentation</span><p>What ANALYZE collects, pg_stats, and extended statistics.</p></li>
+      <li><a href="https://www.postgresql.org/docs/current/row-estimation-examples.html">Row estimation examples</a><span class="src">PostgreSQL documentation</span><p>The planner's arithmetic for equality, ranges, histograms and joins, step by step.</p></li>
+      <li><a href="https://www.postgresql.org/docs/current/sql-createstatistics.html">CREATE STATISTICS</a><span class="src">PostgreSQL documentation</span><p>The three kinds of extended statistics, with examples.</p></li>
+      <li><a href="https://www.postgresql.org/docs/current/explicit-joins.html">Controlling the planner with explicit JOIN clauses</a><span class="src">PostgreSQL documentation</span><p>join_collapse_limit and how the written order can matter.</p></li>
+      <li><a href="playground.html">Week 12 playground</a><span class="src">this course</span><p>Every estimate on these slides, next to the truth, in your browser.</p></li>
+    </ul>
+  </div>
+  
+</section>
+
+</main>
+</div>
+<script src="../../assets/deck.js"></script>
+</body>
+</html>

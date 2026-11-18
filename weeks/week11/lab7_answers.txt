@@ -1,0 +1,93 @@
+CS 4600/5200 Lab 7: answers
+===========================
+
+Name:
+Student ID:
+Course (CS 4600 or CS 5200):
+Section (online or face to face):
+
+Save this file as plain text. Your statements go in lab7.sql. Here, write
+the numbers each question asks for, and answer the written questions in your
+own words. Leave the headings as they are. "Pages" means the shared hit and
+read numbers that EXPLAIN prints on a step's Buffers line, added together.
+
+
+Part A: the join explorer (playground)
+--------------------------------------
+
+             comparisons    page reads
+Nested loop:
+Block nested loop:
+Merge join:
+Hash join:
+
+
+Part B: predictions, before you run anything
+--------------------------------------------
+
+Use b_r = 76, n_r = 10,000 (big_student), b_s = 736, n_s = 100,000
+(big_takes), and c = 3 pages for one lookup in a primary key index. Show
+the arithmetic.
+
+P1 hash join, the hash table fits in memory:
+P2 merge join, not counting the sort:
+P3 indexed nested loop, big_takes outside, looking up big_student_pkey:
+P4 block nested loop, big_student outside, one page of it at a time:
+
+
+Part B: what you measured
+-------------------------
+
+Q1  pages of big_student:      big_takes:      big_student_pkey:      big_takes_pkey:
+Q2  join method:                 pages at the top step:
+Q3  join method:                 pages at the top step:
+    how big_student arrived in student_no order (Sort, or an index scan?):
+Q4  join method:                 pages at the top step:
+    how many times the inner step ran (loops):
+Q5  sort method:                 temp read:        temp written:
+Q6  sort method without LIMIT:          with LIMIT 10:
+    pages read with LIMIT 10:
+Q7  pages read by (a):        (b):        (c):
+Q8  the department with the most F grades, and how many:
+    the step that groups (its name in the plan):
+Q9  pages before the index:          after:
+Q10 Music students with no course in 2027:
+    the join step in the plan:
+
+
+Part C: three short answers
+---------------------------
+
+W1. Compare your predictions P1 to P4 with Q2 to Q4. Which matched, which
+    did not, and why? Then say why PostgreSQL chose its plan for Q2 but a
+    different one for Q9, using the number of outer rows.
+
+
+
+W2. Compute the textbook's cost for Q5's sort: b = 736 pages, M = 8 pages
+    (64 kB), b × (2 × ceil(log_{M-1}(b / M)) + 1). Compare it with temp
+    read + temp written from Q5. Give one reason they differ.
+
+
+
+W3. In Q7, which query read the most pages, and why, when all three return
+    five rows? Which step blocks the pipeline there?
+
+
+
+Part D (CS 5200 only)
+---------------------
+
+D1. Block nested loop with M pages of memory costs
+    ceil(b_r / (M - 2)) × b_s + b_r. Compute it for M = 3, M = 10 and
+    M = 78, with b_r = 76 and b_s = 736.
+
+    M = 3:          M = 10:          M = 78:
+
+D2. join method:      pages at the top step:      execution time (ms):
+    The pages match a hash join's, yet the time does not. Explain why, using
+    the "Rows Removed by Join Filter" line.
+
+
+
+AI use (one line: what you used and for what, or "none"):

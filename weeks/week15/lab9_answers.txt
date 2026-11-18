@@ -1,0 +1,76 @@
+CS 5200 Lab 9: answers
+======================
+
+Name:
+Student ID:
+Section (online or face to face):
+
+Save this file as plain text. Your statements go in lab9.sql. Here, write
+the numbers each question asks for, and answer the written questions in your
+own words. Leave the headings as they are. "Buffers" means the shared hit and
+read numbers on the top line of a plan, added together.
+
+
+Part A: querying documents
+--------------------------
+
+Q3  in person:        online only:        hybrid:
+Q6  overbooked events:
+Q7  ids with no title:
+    ids whose capacity is not a number, and what it is instead:
+Q8  count:
+    Suppose an April event stored its capacity as the string "250", like the
+    events in Q7. Would your Q8 count it? Why or why not? Would Q6 read its
+    capacity correctly?
+
+
+
+Part B: indexes
+---------------
+
+                 plan step (top line)        buffers
+Q9  before:
+Q9  after:
+Q10 before:
+Q10 after:
+
+Q10: why can't event_doc, your GIN index from Q9, help Q10?
+
+
+Q11 sizes:  event:         event_doc:         event_starts:         event_pkey:
+
+
+Part C: back to tables
+----------------------
+
+Q12: four events have no title. What did your tables do with them, and why?
+
+
+Q13: do the six counts match? If not, what is missing?
+
+
+
+Written answers (a few sentences each)
+--------------------------------------
+
+W1. The app shows each event with its RSVPs, and each student's page lists
+the events they are going to. Should RSVPs stay embedded in the event
+documents, as they are now, or be documents of their own that reference the
+event? Use Q9 and Part C in your answer.
+
+
+
+W2. The events are to be split over four machines. Would you shard by event
+id, by host or by start date? Name one query from this lab that would go to
+a single shard and one that would go to all four.
+
+
+
+W3. Each event's RSVPs are kept on three replicas. Saying "going" must not
+overbook an event. Which R and W would you choose for the RSVP list, and
+what happens to RSVPs when one replica is down? When two are?
+
+
+
+How I used AI tools, if at all:
+

@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lab 5 — Normalizing a Sign-in Sheet · CS 4600/5200</title>
+<meta name="description" content="CS 4600/5200 Lab 5: test functional dependencies on a tutoring center's sign-in sheet with GROUP BY, fix the rows that break them, decompose the sheet into BCNF tables, copy the data in and prove the decomposition is lossless, plus three short written answers.">
+<link rel="stylesheet" href="../../assets/course.css">
+<link rel="stylesheet" href="../../assets/db.css">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to the lab</a>
+
+<div class="doc">
+<header class="doc-masthead">
+  <p class="inst"><span>CS 4600/5200 · Database Theory and Applications</span><span>Week 7</span><span><a href="../../index.html">Course home</a></span></p>
+  <h1>Lab 5: Normalizing a sign-in sheet</h1>
+  <p class="tagline">The campus tutoring center has kept one spreadsheet of every session since January. It has started to disagree with itself. In this lab you test the rules its data should follow, fix the rows that break them, and split the sheet into tables that store each fact once, without losing a single session.</p>
+</header>
+
+<dl class="facts">
+  <div><dt>Due</dt><dd>Sunday, February 28, 11:59 p.m. CT</dd></div>
+  <div><dt>Time</dt><dd>About 2 hours, half of it in class</dd></div>
+  <div><dt>Submit</dt><dd>One zip file, uploaded to Brightspace</dd></div>
+  <div><dt>Worth</dt><dd>One of the labs (labs are 25% of the grade)</dd></div>
+</dl>
+
+<nav class="toc" aria-labelledby="toc-h">
+  <h2 id="toc-h">On this page</h2>
+  <ol>
+    <li><a href="#files">Files for this lab</a></li>
+    <li><a href="#sheet">The sign-in sheet and its rules</a></li>
+    <li><a href="#a">Part A: warm up in the playground</a></li>
+    <li><a href="#b">Part B: ten questions in SQL</a></li>
+    <li><a href="#c">Part C: three short answers</a></li>
+    <li><a href="#d">Part D: CS 5200 only</a></li>
+    <li><a href="#submit">What to submit and how it is graded</a></li>
+    <li><a href="#help">If something goes wrong</a></li>
+  </ol>
+</nav>
+
+<main id="main">
+
+<section id="files" aria-labelledby="files-h">
+  <h2 id="files-h">Files for this lab</h2>
+  <p>Put all three files in one folder, for example <code>Documents/cs5200/lab5</code>:</p>
+  <ul>
+    <li><a href="tutoring.sql" download>tutoring.sql</a>: the sign-in sheet, as one table called <code>tutoring</code>.</li>
+    <li><a href="lab5.sql" download>lab5.sql</a>: the starter file for your SQL.</li>
+    <li><a href="lab5_answers.txt" download>lab5_answers.txt</a>: the starter file for your name, your results and your written answers.</li>
+  </ul>
+  <p>The first lines of <code>lab5.sql</code> reload <code>tutoring.sql</code> from the same folder every time you run it. The reload also drops every table this lab creates, so a run always starts from the same data. The university tables are not touched; you can use the same <code>university</code> database as before.</p>
+  <p>Run the whole file, never one question alone: Q5 expects the fixes from Q4, Q8 expects the tables from Q7, and so on.</p>
+<pre>psql -d university -e -f lab5.sql &gt; lab5_output.txt 2&gt;&amp;1</pre>
+  <p>On Windows, add <code>-U postgres</code> after <code>psql</code>. In Colab, start the line with <code>!</code>. The <code>-e</code> prints each statement above its result, so the grader can match them.</p>
+</section>
+
+<section id="sheet" aria-labelledby="sheet-h">
+  <h2 id="sheet-h">The sign-in sheet and its rules</h2>
+  <p>Each row of <code>tutoring</code> is one session: a student met a tutor on a day for some minutes. There are 24 rows.</p>
+  <div class="fig-scroll" tabindex="0" role="region" aria-label="The columns of the tutoring table">
+  <table class="tbl tbl--compact">
+    <caption>The columns of <code>tutoring</code></caption>
+    <thead><tr><th scope="col">Column</th><th scope="col">Type</th><th scope="col">Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>student_id</code></td><td>char(3)</td><td>The student, like S01</td></tr>
+      <tr><td><code>student_name</code>, <code>student_email</code></td><td>varchar(30), varchar(40)</td><td>The student's name and email</td></tr>
+      <tr><td><code>tutor_id</code></td><td>char(2)</td><td>The tutor, like T1</td></tr>
+      <tr><td><code>tutor_name</code></td><td>varchar(30)</td><td>The tutor's name</td></tr>
+      <tr><td><code>subject</code></td><td>varchar(20)</td><td>What the tutor tutors</td></tr>
+      <tr><td><code>center</code>, <code>center_room</code></td><td>varchar(20), varchar(20)</td><td>Where that subject is tutored, and the room</td></tr>
+      <tr><td><code>session_date</code></td><td>date</td><td>The day of the session</td></tr>
+      <tr><td><code>minutes</code></td><td>integer</td><td>How long it lasted</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>The center's director confirmed these five rules. Your job is to check whether the data obeys them, and then to design tables in which it has to.</p>
+  <ul>
+    <li><strong>F1:</strong> <code>student_id → student_name, student_email</code>. A student has one name and one email.</li>
+    <li><strong>F2:</strong> <code>tutor_id → tutor_name, subject</code>. A tutor has one name and tutors one subject.</li>
+    <li><strong>F3:</strong> <code>subject → center</code>. Each subject is tutored in one center.</li>
+    <li><strong>F4:</strong> <code>center → center_room</code>. Each center is in one room.</li>
+    <li><strong>F5:</strong> <code>student_id, tutor_id, session_date → minutes</code>. A student meets a tutor at most once a day.</li>
+  </ul>
+</section>
+
+<section id="a" aria-labelledby="a-h">
+  <h2 id="a-h">Part A: warm up in the playground (20 minutes)</h2>
+  <p>Open the <a href="playground.html">week 7 playground</a> and solve exercises 1 to 7; exercise 8 is the same work as Q7 to Q9 on a smaller table. They are not graded. Then open the explorer in section 2, choose "my own", and type the attributes of <code>tutoring</code> and the rules F1 to F5. Its closures are a good check on your answer to W2, but write out the steps yourself.</p>
+</section>
+
+<section id="b" aria-labelledby="b-h">
+  <h2 id="b-h">Part B: ten questions in SQL</h2>
+  <p>The <code>tutoring</code> table is also in the playground's <a href="playground.html#scratch">scratch pad</a>. Try each statement there first, then copy it into <code>lab5.sql</code> under its comment. Write the results each question asks for in <code>lab5_answers.txt</code>. Show exactly the columns asked for, in the order asked, and name a column the way the question does.</p>
+  <ol class="qs">
+    <li><p><strong>Q1.</strong> Show, in one row, the number of sessions as <code>sessions</code>, the number of different students as <code>students</code>, and the number of different tutors as <code>tutors</code>.</p></li>
+    <li><p><strong>Q2.</strong> Test the email part of F1: show each <code>student_id</code> that has more than one different email in the sheet, with the number of different emails as <code>emails</code>. Use GROUP BY and HAVING, as on slide 9.</p></li>
+    <li><p><strong>Q3.</strong> Test the name part of F2 the same way: each <code>tutor_id</code> with more than one different name, and the number as <code>names</code>.</p></li>
+    <li><p><strong>Q4.</strong> Q2 and Q3 each find one typo. Look at the rows involved (in the scratch pad, not in your file), decide which spelling is right, and fix each typo with one UPDATE that sets the right value on every row of that student or tutor. psql prints how many rows each UPDATE changed; write both numbers in the answers file.</p></li>
+    <li><p><strong>Q5.</strong> Now test all five rules in one query that returns five rows: <code>fd</code> (the text <code>F1</code> to <code>F5</code>) and <code>violations</code>, the number of left-side values that break that rule. For F1 and F2, a value breaks the rule if either attribute on the right has more than one different value. Join the five counts with UNION ALL. After Q4, every count should be 0.</p></li>
+    <li><p><strong>Q6.</strong> Is the left side of F5 a key of the sheet? Show, in one row: the number of rows as <code>rows</code>, the number of different <code>(student_id, tutor_id, session_date)</code> values as <code>key_values</code>, and the number of different <code>(student_id, session_date)</code> values as <code>student_date_values</code>. Hint: <code>count(DISTINCT (a, b))</code> counts different pairs.</p></li>
+    <li><p><strong>Q7.</strong> Decompose the sheet into BCNF. Create these five tables, with the names, columns and types given, a primary key on each, NOT NULL on every column that a rule says must have a value, and a foreign key wherever a column refers to another of these tables:</p>
+      <ul>
+        <li><code>center(center, center_room)</code>, from F4.</li>
+        <li><code>subject_center(subject, center)</code>, from F3.</li>
+        <li><code>tutor(tutor_id, tutor_name, subject)</code>, from F2.</li>
+        <li><code>tutee(student_id, student_name, student_email)</code>, from F1. (The university already has a <code>student</code> table.)</li>
+        <li><code>tutor_session(student_id, tutor_id, session_date, minutes)</code>, from F5.</li>
+      </ul>
+      <p>Use the same types as <code>tutoring</code>. Create them in an order in which each foreign key refers to a table that already exists.</p></li>
+    <li><p><strong>Q8.</strong> Fill the five tables from <code>tutoring</code> with <code>INSERT INTO … SELECT</code>, one statement per table. Then show, in one query, each table's name as <code>table_name</code> and its number of rows as <code>rows</code>, in the order listed in Q7.</p></li>
+    <li><p><strong>Q9.</strong> Create a view <code>rejoined</code> that joins the five tables back together, with the same ten columns as <code>tutoring</code>, in the same order. Then show, in one row, the number of rows of <code>tutoring</code> missing from the view as <code>missing</code>, and the number of rows in the view that <code>tutoring</code> does not have as <code>extra</code>. Use EXCEPT both ways, as in playground example 3.1.</p></li>
+    <li><p><strong>Q10.</strong> Using only the new tables, not <code>tutoring</code>, show each center's <code>center</code>, <code>center_room</code>, the total minutes of its sessions as <code>total_minutes</code>, and the number of sessions as <code>sessions</code>, most minutes first.</p></li>
+  </ol>
+  <div class="callout">
+    <span class="mark" aria-hidden="true">§</span>
+    <p>Check yourself: Q1 shows 24 sessions. The two UPDATEs in Q4 change 3 rows and 5 rows. In Q8, <code>tutor_session</code> has 24 rows; if it has fewer, an INSERT used DISTINCT where it should not, and if Q8 fails with a duplicate key, Q4's fixes did not happen. In Q9, both numbers are 0. If Q9 fails with "each EXCEPT query must have the same number of columns", count the view's columns.</p>
+  </div>
+</section>
+
+<section id="c" aria-labelledby="c-h">
+  <h2 id="c-h">Part C: three short answers</h2>
+  <p>Answer in <code>lab5_answers.txt</code>.</p>
+  <ol class="qs">
+    <li><p><strong>W1.</strong> Give one update, one insert and one delete anomaly that the original <code>tutoring</code> table allows, each with a concrete example from its rows: a name, a center or a session. Q2 and Q3 have already shown you what one of them looks like in practice.</p></li>
+    <li><p><strong>W2.</strong> Compute these three closures under F1 to F5, showing which rule adds what at each step, as on slide 13. Say whether each set is a superkey of <code>tutoring</code>.</p>
+      <ul>
+        <li><code>{tutor_id}</code><sup>+</sup></li>
+        <li><code>{student_id, tutor_id}</code><sup>+</sup></li>
+        <li><code>{student_id, tutor_id, session_date}</code><sup>+</sup></li>
+      </ul></li>
+    <li><p><strong>W3.</strong> Q6 shows that <code>(student_id, session_date)</code> is also unique in this data. Should it be the key of <code>tutor_session</code> instead? Say why or why not, and what you would ask the tutoring center before deciding. Two to four sentences.</p></li>
+  </ol>
+</section>
+
+<section id="d" aria-labelledby="d-h">
+  <h2 id="d-h">Part D: CS 5200 only</h2>
+  <p>CS 4600 students may skip this part. Put these at the end of <code>lab5.sql</code>, after Q10.</p>
+  <p>The director adds a sixth rule, in two parts: a student who is tutored in a subject always sees the same tutor for it, and, by F2, each tutor tutors one subject. That is <code>student_id, subject → tutor_id</code> together with <code>tutor_id → subject</code>: the same shape as <code>dept_advisor</code> on slide 21.</p>
+  <ol class="qs">
+    <li><p><strong>Q11.</strong> Test the new rule on <code>tutoring</code>: show the number of <code>(student_id, subject)</code> values with more than one different tutor, as <code>violations</code>.</p></li>
+    <li><p><strong>Q12.</strong> Create a table <code>advises(student_id, subject, tutor_id)</code> that records each student's tutor for each subject, with types as in <code>tutoring</code>, foreign keys to <code>tutee</code>, <code>subject_center</code> and <code>tutor</code>, <code>tutor_id</code> NOT NULL, a primary key that enforces the new rule, and a UNIQUE constraint on <code>(student_id, tutor_id)</code>. Fill it from <code>tutoring</code> with one <code>INSERT … SELECT DISTINCT</code>, and show its number of rows as <code>rows</code>. Then run this INSERT, which should be refused:</p>
+<pre>INSERT INTO advises VALUES ('S01', 'Calculus', 'T4');</pre>
+    <p>In the answers file, give the count and the name of the constraint that refused the INSERT.</p></li>
+    <li><p><strong>D1.</strong> In the answers file: what are the candidate keys of <code>advises</code>? Is it in BCNF? Is it in 3NF? Would you keep it as one table or split it, and what would each choice cost? Three to five sentences.</p></li>
+  </ol>
+</section>
+
+<section id="submit" aria-labelledby="sub-h">
+  <h2 id="sub-h">What to submit and how it is graded</h2>
+  <p>Upload <strong>one zip file</strong> to the Lab 5 assignment in Brightspace. Name it <code>lab5_lastname_firstname.zip</code>, for example <code>lab5_rivera_jamie.zip</code>, and put these three files in it:</p>
+  <ul>
+    <li><code>lab5_answers.txt</code>: your name, your results, and your answers to W1 to W3 (and Q11, Q12 and D1, for CS 5200).</li>
+    <li><code>lab5.sql</code>: your statements.</li>
+    <li><code>lab5_output.txt</code>: what psql printed when you ran the whole file.</li>
+  </ul>
+  <p>Save <code>lab5_answers.txt</code> as plain text: in TextEdit choose <strong>Format › Make Plain Text</strong> first; Notepad and VS Code save plain text already. To make the zip, put the three files in one folder and select them, then:</p>
+  <ul>
+    <li><strong>Windows:</strong> right-click and choose <strong>Compress to ZIP file</strong> (on Windows 10, <strong>Send to › Compressed (zipped) folder</strong>), then rename the zip.</li>
+    <li><strong>macOS:</strong> right-click, choose <strong>Compress 3 Items</strong>, and rename <code>Archive.zip</code>.</li>
+    <li><strong>Linux or Colab:</strong> run the line below. In Colab, start it with <code>!</code>, then right-click the zip in the file panel and choose <strong>Download</strong>.</li>
+  </ul>
+<pre>zip lab5_lastname_firstname.zip lab5_answers.txt lab5.sql lab5_output.txt</pre>
+  <p>Before you upload, open the zip and check that all three files are inside and that <code>lab5_output.txt</code> shows a result under every question. For CS 4600 there should be no errors; for CS 5200 the one expected error is the last INSERT of Q12. Upload a new zip if you need to change anything before the deadline; the latest one is graded.</p>
+  <div class="fig-scroll" tabindex="0" role="region" aria-label="Lab 5 rubric, 10 points">
+  <table class="tbl">
+    <caption>Lab 5 rubric, 10 points</caption>
+    <thead><tr><th scope="col">Item</th><th scope="col">What earns full credit</th><th scope="col" class="num">Points</th></tr></thead>
+    <tbody>
+      <tr><td>Questions Q1–Q9</td><td>Each statement runs and does what was asked: the tests find the typos, the fixes change the right rows, the five tables have their keys and foreign keys, and the rejoin shows 0 and 0.</td><td class="num">6</td></tr>
+      <tr><td>Output</td><td><code>lab5_output.txt</code> shows the whole file running from the reload, with only the expected error.</td><td class="num">1</td></tr>
+      <tr><td>Written (W1–W3)</td><td>Three anomalies with real examples, three closures with their steps, and a reasoned answer to W3.</td><td class="num">1</td></tr>
+      <tr><td>Q10 and Part D</td><td>CS 4600: Q10 correct, 2 points. CS 5200: Q10, 1 point; Q11, Q12 and D1, 1 point.</td><td class="num">2</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Late work loses 10% per day for up to three days and is not accepted after that. Under the course's limited-use AI policy, you may ask an AI tool to explain an error message or a keyword, but the statements and answers must be your own, and you should be ready to explain any of them. Say how you used AI at the end of the answers file.</p>
+</section>
+
+<section id="help" aria-labelledby="help-h">
+  <h2 id="help-h">If something goes wrong</h2>
+  <ul>
+    <li><strong>"tutoring.sql: No such file or directory"</strong>: <code>lab5.sql</code> and <code>tutoring.sql</code> are not in the same folder. Move them together and run again.</li>
+    <li><strong>"relation … already exists"</strong>: you ran part of the file on its own, outside the reload. Run the whole file; the reload drops every table the lab creates.</li>
+    <li><strong>"relation "tutor" does not exist"</strong> in Q7: a foreign key refers to a table created further down. Create the tables in the order listed.</li>
+    <li><strong>"duplicate key value violates unique constraint"</strong> in Q8: a table got two rows for one key. Either Q4 missed a typo, or the INSERT is missing DISTINCT.</li>
+    <li><strong>"insert or update on table … violates foreign key constraint"</strong> in Q8: fill the tables in the same order you created them.</li>
+    <li><strong>Q9 shows numbers other than 0</strong>: compare the view's column order with <code>tutoring</code>'s, using <code>\d tutoring</code> and <code>\d rejoined</code>.</li>
+    <li><strong>Anything else</strong>: copy the exact message and bring it to office hours, Tuesday and Wednesday 12:00–3:00 p.m., MIC room D159, or post it in the week 7 discussion in Brightspace.</li>
+  </ul>
+</section>
+</main>
+
+<footer>
+  <p>CS 4600/5200 · Database Theory and Applications · University of Central Missouri · Dr. Gorkem Kar · Spring 2027</p>
+</footer>
+</div>
+</body>
+</html>

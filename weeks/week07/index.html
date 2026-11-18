@@ -1,0 +1,887 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Week 7 — Relational Design: Functional Dependencies and Normal Forms · CS 4600/5200</title>
+<meta name="description" content="CS 4600/5200 week 7: update, insert and delete anomalies, lossless and lossy decomposition, functional dependencies and how to test them in SQL, Armstrong's axioms, attribute closure, canonical cover, 1NF, BCNF, dependency preservation, 3NF, 4NF and denormalization. Lab 5.">
+<link rel="stylesheet" href="../../assets/course.css">
+<link rel="stylesheet" href="../../assets/db.css">
+</head>
+<body>
+<a class="skip-link" href="#s1">Skip to the first slide</a>
+
+<div class="deck-stage">
+<main class="deck" aria-label="Week 7 lecture slides: relational design, functional dependencies and normal forms">
+
+<!-- 1 ─────────────────────────────────────────────────────────── title -->
+<section class="slide slide--title" id="s1">
+  <p class="course-line">CS 4600/5200 · Database Theory and Applications · Week 7 of 15</p>
+  <h1>Relational Design: Functional Dependencies and Normal Forms</h1>
+  <p class="subtitle">
+    Last week's diagram gave us tables. Today we test them: find the facts a table stores more than once,
+    name the rule behind each, and split the table so every fact has one home.
+  </p>
+  <p class="byline">
+    Dr. Gorkem Kar
+    <span>University of Central Missouri</span>
+    <span>School of Computer Science and Cybersecurity</span>
+  </p>
+  <div class="title-art">
+<svg viewBox="0 0 380 330" aria-hidden="true" focusable="false" style="--dg-k:1">
+<g class="v-in" style="--d:0.10s"><rect class="dg-box" x="10" y="20" width="360" height="110"/><rect class="dg-box-m" x="10" y="20" width="360" height="26"/></g>
+<path class="dg-line-q" d="M70 20 V130"/>
+<path class="dg-line-q" d="M130 20 V130"/>
+<path class="dg-line-q" d="M190 20 V130"/>
+<path class="dg-line-q" d="M250 20 V130"/>
+<path class="dg-line-q" d="M310 20 V130"/>
+<path class="dg-line-q" d="M10 67 H370"/>
+<path class="dg-line-q" d="M10 88 H370"/>
+<path class="dg-line-q" d="M10 109 H370"/>
+<rect class="dg-hl v-in" style="--d:0.60s" x="252" y="47" width="117" height="82"/>
+<path class="dg-line v-draw" pathLength="1" style="--d:1.10s" d="M120 140 L80 196"/>
+<path class="dg-line v-draw" pathLength="1" style="--d:1.20s" d="M260 140 L300 196"/>
+<g class="v-in" style="--d:1.50s"><rect class="dg-box-t" x="10" y="200" width="200" height="90"/><rect class="dg-box-m" x="10" y="200" width="200" height="24"/><path class="dg-line-q" d="M70 200 V290 M130 200 V290"/></g>
+<g class="v-in" style="--d:1.70s"><rect class="dg-box-t" x="250" y="200" width="120" height="60"/><rect class="dg-box-m" x="250" y="200" width="120" height="24"/><path class="dg-line-q" d="M310 200 V260"/></g>
+<g class="v-in" style="--d:2.20s"><text class="dg-sm dg-teal" x="10" y="318">each fact stored once</text></g>
+</svg>
+  </div>
+  
+</section>
+
+<!-- 2 ─────────────────────────────────────────────── last week -->
+<section class="slide" id="s2">
+  <h2>Last week, in four lines</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <ol class="steps">
+        <li><span class="n" aria-hidden="true">1</span><div><strong>Requirements first, then an E-R diagram.</strong><p>Entity sets, attributes and relationship sets.</p></div></li>
+        <li><span class="n" aria-hidden="true">2</span><div><strong>Cardinality and participation are business rules.</strong><p>Arrows mean one; double lines mean every.</p></div></li>
+        <li><span class="n" aria-hidden="true">3</span><div><strong>Weak entities borrow their owner's key.</strong><p>Owner's key plus a discriminator.</p></div></li>
+        <li><span class="n" aria-hidden="true">4</span><div><strong>The diagram maps to tables almost mechanically.</strong><p>Entities become tables; relationships become keys.</p></div></li>
+      </ol>
+      <div class="fill" style="gap:16px">
+        <div class="panel panel--key">
+          <h3>Today: is this a good table?</h3>
+          <p>A diagram can still put two kinds of fact in one table. Today gives a test that finds them, and an algorithm that splits the table without losing anything.</p>
+        </div>
+        <div class="panel">
+          <h3>Your project</h3>
+          <p>Milestone 2, due March 7, maps your milestone 1 diagram to tables and argues each one is in BCNF or 3NF. Today is how you argue it.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 3 ─────────────────────────────────────────────── section -->
+<section class="slide slide--section" id="s3">
+  <h2>What goes wrong in a wide table</h2>
+  <p>One table that holds two kinds of fact stores some of them many times, and then the copies drift apart.</p>
+  
+</section>
+
+<!-- 4 ─────────────────────────────────────────────── inst_dept -->
+<section class="slide" id="s4">
+  <h2>inst_dept stores each department once per instructor</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:1000px">
+<svg style="--dg-k:1" viewBox="0 0 1000 300" role="img" aria-labelledby="ant and">
+<title id="ant">Six rows of inst_dept and the three anomalies they cause</title>
+<desc id="and">A table with columns name, dept_name, building and budget. Rows: Avery Chen, Jordan Patel and Priya Raman, all Comp. Sci., Hale, 120000; Maria Lopez and Noor Haddad, Mathematics, Hale, 90000; Diego Torres, Music, Linden, 60000. The three Comp. Sci. rows are shaded and marked times three: Comp. Sci.&#x27;s building and budget are stored three times. Diego Torres&#x27;s row is marked as the only Music row. Notes on the right. Update anomaly: moving Comp. Sci. means changing three rows, and missing one leaves the table disagreeing with itself. Insert anomaly: a new department with no instructors has no row to go in, because every row needs an instructor&#x27;s id. Delete anomaly: deleting Diego Torres also deletes everything known about Music.</desc>
+<defs><marker id="ana" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#1d232b"/></marker></defs>
+<text class="dg-sm-b" x="10" y="30">inst_dept (6 of 11 rows)</text>
+<rect class="dg-box" x="10" y="40" width="470" height="210"/>
+<rect class="dg-box-m" x="10" y="40" width="470" height="30"/>
+<text class="dg-xs" font-weight="700" x="18" y="60">name</text>
+<text class="dg-xs" font-weight="700" x="158" y="60">dept_name</text>
+<text class="dg-xs" font-weight="700" x="288" y="60">building</text>
+<text class="dg-xs" font-weight="700" x="388" y="60">budget</text>
+<rect class="dg-hl-t v-in" style="--d:0.40s" x="11" y="71" width="468" height="28"/>
+<g>
+<text class="dg-xs" x="18" y="90">Avery Chen</text>
+<text class="dg-xs" x="158" y="90">Comp. Sci.</text>
+<text class="dg-xs" x="288" y="90">Hale</text>
+<text class="dg-xs" x="388" y="90">120000</text>
+</g>
+<rect class="dg-hl-t v-in" style="--d:0.55s" x="11" y="101" width="468" height="28"/>
+<path class="dg-line-q" d="M10 100 H480"/>
+<g>
+<text class="dg-xs" x="18" y="120">Jordan Patel</text>
+<text class="dg-xs" x="158" y="120">Comp. Sci.</text>
+<text class="dg-xs" x="288" y="120">Hale</text>
+<text class="dg-xs" x="388" y="120">120000</text>
+</g>
+<rect class="dg-hl-t v-in" style="--d:0.70s" x="11" y="131" width="468" height="28"/>
+<path class="dg-line-q" d="M10 130 H480"/>
+<g>
+<text class="dg-xs" x="18" y="150">Priya Raman</text>
+<text class="dg-xs" x="158" y="150">Comp. Sci.</text>
+<text class="dg-xs" x="288" y="150">Hale</text>
+<text class="dg-xs" x="388" y="150">120000</text>
+</g>
+<path class="dg-line-q" d="M10 160 H480"/>
+<g>
+<text class="dg-xs" x="18" y="180">Maria Lopez</text>
+<text class="dg-xs" x="158" y="180">Mathematics</text>
+<text class="dg-xs" x="288" y="180">Hale</text>
+<text class="dg-xs" x="388" y="180">90000</text>
+</g>
+<path class="dg-line-q" d="M10 190 H480"/>
+<g>
+<text class="dg-xs" x="18" y="210">Noor Haddad</text>
+<text class="dg-xs" x="158" y="210">Mathematics</text>
+<text class="dg-xs" x="288" y="210">Hale</text>
+<text class="dg-xs" x="388" y="210">90000</text>
+</g>
+<rect class="dg-hl v-in" style="--d:1.20s" x="11" y="221" width="468" height="28"/>
+<path class="dg-line-q" d="M10 220 H480"/>
+<g>
+<text class="dg-xs" x="18" y="240">Diego Torres</text>
+<text class="dg-xs" x="158" y="240">Music</text>
+<text class="dg-xs" x="288" y="240">Linden</text>
+<text class="dg-xs" x="388" y="240">60000</text>
+</g>
+<g class="v-in" style="--d:1.00s"><text class="dg-sm-b dg-teal" x="492" y="121">×3</text></g>
+<g class="v-in" style="--d:1.30s"><text class="dg-sm-b dg-card" x="492" y="241">only one</text></g>
+<g class="v-in" style="--d:1.60s"><rect class="dg-wash" x="590" y="40" width="400" height="74" rx="6"/><text class="dg-sm-b" x="604" y="62">Update anomaly</text><text class="dg-sm" x="604" y="84">Move Comp. Sci.: three rows must change.</text><text class="dg-sm" x="604" y="104">Miss one and the table disagrees with itself.</text></g>
+<g class="v-in" style="--d:2.20s"><rect class="dg-wash" x="590" y="126" width="400" height="74" rx="6"/><text class="dg-sm-b" x="604" y="148">Insert anomaly</text><text class="dg-sm" x="604" y="170">A new department with no instructors</text><text class="dg-sm" x="604" y="190">has no row: every row needs an id.</text></g>
+<g class="v-in" style="--d:2.80s"><rect class="dg-wash" x="590" y="212" width="400" height="74" rx="6"/><text class="dg-sm-b" x="604" y="234">Delete anomaly</text><text class="dg-sm" x="604" y="256">Delete Diego Torres, and Music&#x27;s</text><text class="dg-sm" x="604" y="276">building and budget are gone too.</text></g>
+</svg>
+      <figcaption><strong>Figure 7.1.</strong> <code>inst_dept</code> is <code>instructor</code> joined with <code>department</code>. Comp. Sci.'s building and budget are stored three times. <a class="try" href="playground.html#anomalies">See it, playground section 1</a></figcaption>
+    </figure>
+    <p>Repeating a fact is not just wasted space. Every copy is a chance for the copies to disagree.</p>
+  </div>
+  
+</section>
+
+<!-- 5 ─────────────────────────────────────────────── three anomalies -->
+<section class="slide" id="s5">
+  <h2>Three anomalies, one cause</h2>
+  <div class="slide-main">
+    <div class="cols-3">
+      <div class="panel">
+        <h3>Update</h3>
+        <pre class="code"><span class="k">UPDATE</span> inst_dept
+<span class="k">SET</span> building = <span class="s">'Watson'</span>
+<span class="k">WHERE</span> id = <span class="s">'10101'</span>;</pre>
+        <p>One row says Watson, two say Hale. Which is right? The table cannot say.</p>
+      </div>
+      <div class="panel">
+        <h3>Insert</h3>
+        <pre class="code"><span class="k">INSERT</span> <span class="k">INTO</span> inst_dept
+  (dept_name, building)
+<span class="k">VALUES</span> (<span class="s">'Art'</span>, <span class="s">'Morrow'</span>);</pre>
+        <p>Refused: <code>id</code> is the key and cannot be NULL. A department with no instructors cannot exist.</p>
+      </div>
+      <div class="panel">
+        <h3>Delete</h3>
+        <pre class="code"><span class="k">DELETE</span> <span class="k">FROM</span> inst_dept
+<span class="k">WHERE</span> name = <span class="s">'Diego Torres'</span>;</pre>
+        <p>Music's building and budget go with the only Music instructor.</p>
+      </div>
+    </div>
+    <div class="callout">
+      <span class="mark" aria-hidden="true">→</span>
+      <p>The cause is the same each time: <strong>department facts depend on <code>dept_name</code>, which is not the table's key.</strong> <a class="try" href="playground.html#anomalies">Run all three, examples 1.2 to 1.4</a></p>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 6 ─────────────────────────────────────────────── decomposition -->
+<section class="slide" id="s6">
+  <h2>Splitting a table: lossless or lossy</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:1000px">
+<svg style="--dg-k:1" viewBox="0 0 1000 290" role="img" aria-labelledby="lot lod">
+<title id="lot">Splitting inst_dept on building loses information</title>
+<desc id="lod">Left, the part ib with columns name and building: Avery Chen, Hale; Maria Lopez, Hale. Middle, the part bd with columns building and dept_name: Hale, Comp. Sci.; Hale, Mathematics. Right, their natural join on building has four rows: Avery Chen, Comp. Sci., marked true; Avery Chen, Mathematics, marked not a fact; Maria Lopez, Comp. Sci., marked not a fact; Maria Lopez, Mathematics, marked true. Building is not a key of either part, so the join pairs every Hale instructor with every Hale department. The extra rows are wrong facts, and the join can no longer tell which department each instructor is in.</desc>
+<defs><marker id="loa" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#1d232b"/></marker></defs>
+<text class="dg-sm-b" x="10" y="40">ib</text>
+<rect class="dg-box" x="10" y="50" width="220" height="90"/>
+<rect class="dg-box-m" x="10" y="50" width="220" height="30"/>
+<text class="dg-xs" font-weight="700" x="18" y="70">name</text>
+<text class="dg-xs" font-weight="700" x="148" y="70">building</text>
+<g>
+<text class="dg-xs" x="18" y="100">Avery Chen</text>
+<text class="dg-xs" x="148" y="100">Hale</text>
+</g>
+<path class="dg-line-q" d="M10 110 H230"/>
+<g>
+<text class="dg-xs" x="18" y="130">Maria Lopez</text>
+<text class="dg-xs" x="148" y="130">Hale</text>
+</g>
+<text class="dg-sm-b" x="260" y="40">bd</text>
+<rect class="dg-box" x="260" y="50" width="220" height="90"/>
+<rect class="dg-box-m" x="260" y="50" width="220" height="30"/>
+<text class="dg-xs" font-weight="700" x="268" y="70">building</text>
+<text class="dg-xs" font-weight="700" x="358" y="70">dept_name</text>
+<g>
+<text class="dg-xs" x="268" y="100">Hale</text>
+<text class="dg-xs" x="358" y="100">Comp. Sci.</text>
+</g>
+<path class="dg-line-q" d="M260 110 H480"/>
+<g>
+<text class="dg-xs" x="268" y="130">Hale</text>
+<text class="dg-xs" x="358" y="130">Mathematics</text>
+</g>
+<g class="v-in" style="--d:0.90s"><text class="dg-sm-b" x="240" y="98" text-anchor="middle">⋈</text><text class="dg-xs" x="240" y="168" text-anchor="middle">join on building</text></g>
+<path class="dg-line v-draw" pathLength="1" style="--d:1.00s" d="M490 95 H540" marker-end="url(#loa)"/>
+<text class="dg-sm-b" x="560" y="40">ib ⋈ bd</text>
+<rect class="dg-box" x="560" y="50" width="420" height="150"/>
+<rect class="dg-box-m" x="560" y="50" width="420" height="30"/>
+<text class="dg-xs" font-weight="700" x="568" y="70">name</text>
+<text class="dg-xs" font-weight="700" x="708" y="70">dept_name</text>
+<text class="dg-xs" font-weight="700" x="838" y="70"></text>
+<g>
+<text class="dg-xs" x="568" y="100">Avery Chen</text>
+<text class="dg-xs" x="708" y="100">Comp. Sci.</text>
+<text class="dg-xs dg-txt-ok" x="838" y="100">✓ true</text>
+</g>
+<rect class="dg-hl v-in" style="--d:1.65s" x="561" y="111" width="418" height="28"/>
+<path class="dg-line-q" d="M560 110 H980"/>
+<g>
+<text class="dg-xs" x="568" y="130">Avery Chen</text>
+<text class="dg-xs" x="708" y="130">Mathematics</text>
+<text class="dg-xs dg-txt-bad" x="838" y="130">✗ not a fact</text>
+</g>
+<rect class="dg-hl v-in" style="--d:2.00s" x="561" y="141" width="418" height="28"/>
+<path class="dg-line-q" d="M560 140 H980"/>
+<g>
+<text class="dg-xs" x="568" y="160">Maria Lopez</text>
+<text class="dg-xs" x="708" y="160">Comp. Sci.</text>
+<text class="dg-xs dg-txt-bad" x="838" y="160">✗ not a fact</text>
+</g>
+<path class="dg-line-q" d="M560 170 H980"/>
+<g>
+<text class="dg-xs" x="568" y="190">Maria Lopez</text>
+<text class="dg-xs" x="708" y="190">Mathematics</text>
+<text class="dg-xs dg-txt-ok" x="838" y="190">✓ true</text>
+</g>
+<g class="v-in" style="--d:3.00s"><text class="dg-sm-b" x="560" y="230">Two rows in, four rows out.</text><text class="dg-sm" x="560" y="254">More rows, less information: this split is lossy.</text></g>
+</svg>
+      <figcaption><strong>Figure 7.2.</strong> Split on <code>building</code>, and the join invents rows. <a class="try" href="playground.html#decompose">Both splits, playground section 3</a></figcaption>
+    </figure>
+    <div class="cols-2">
+      <p><strong>Lossless:</strong> split on <code>dept_name</code>, a key of the department part. Joining the parts gives back exactly the 11 rows.</p>
+      <p><strong>Lossy:</strong> split on <code>building</code>, a key of neither part. The join returns 19 rows; 8 of them are false.</p>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 7 ─────────────────────────────────────────────── section -->
+<section class="slide slide--section" id="s7">
+  <h2>Functional dependencies</h2>
+  <p>The rules that say which facts belong together.</p>
+  
+</section>
+
+<!-- 8 ─────────────────────────────────────────────── definition -->
+<section class="slide" id="s8">
+  <h2>A functional dependency says one value fixes another</h2>
+  <div class="slide-main">
+    <div class="panel panel--definition">
+      <span class="term">Functional dependency</span>
+      <p><var>α</var> → <var>β</var> holds on a schema when any two rows that agree on the attributes in <var>α</var> also agree on the attributes in <var>β</var>. Read it as "<var>α</var> determines <var>β</var>".</p>
+    </div>
+    <figure class="fig" style="max-width:1000px">
+<svg style="--dg-k:1" viewBox="0 0 1000 270" role="img" aria-labelledby="fpt fpd">
+<title id="fpt">Testing two dependencies on pairs of rows</title>
+<desc id="fpd">Left panel, dept_name determines building, holds. Two rows: Avery Chen, Comp. Sci., Hale and Jordan Patel, Comp. Sci., Hale. They agree on dept_name and also agree on building, as every such pair in the table does. Right panel, building determines dept_name, fails. Two rows: Avery Chen, Comp. Sci., Hale and Maria Lopez, Mathematics, Hale. They agree on building but differ on dept_name, so one pair is enough to break the dependency.</desc>
+<g class="v-in" style="--d:0.20s"><rect class="dg-wash" x="10" y="10" width="470" height="250" rx="8"/><text class="dg-sm-b" x="26" y="40">dept_name → building</text></g>
+<rect class="dg-box" x="26" y="60" width="330" height="90"/>
+<rect class="dg-box-m" x="26" y="60" width="330" height="30"/>
+<text class="dg-xs" font-weight="700" x="34" y="80">name</text>
+<text class="dg-xs" font-weight="700" x="154" y="80">dept_name</text>
+<text class="dg-xs" font-weight="700" x="274" y="80">building</text>
+<g>
+<text class="dg-xs" x="34" y="110">Avery Chen</text>
+<text class="dg-xs" x="154" y="110">Comp. Sci.</text>
+<text class="dg-xs" x="274" y="110">Hale</text>
+</g>
+<path class="dg-line-q" d="M26 120 H356"/>
+<g>
+<text class="dg-xs" x="34" y="140">Jordan Patel</text>
+<text class="dg-xs" x="154" y="140">Comp. Sci.</text>
+<text class="dg-xs" x="274" y="140">Hale</text>
+</g>
+<rect class="dg-hl-t v-in" style="--d:0.80s" x="148" y="92" width="116" height="56" rx="4"/>
+<rect class="dg-hl-t v-in" style="--d:1.10s" x="268" y="92" width="86" height="56" rx="4"/>
+<g class="v-in" style="--d:1.30s"><text class="dg-sm-b dg-txt-ok" x="26" y="190">✓ Same dept_name, same building: holds.</text><text class="dg-xs" x="26" y="216">agree on the left side</text><text class="dg-xs" x="26" y="238">must agree on the right side</text></g>
+<g class="v-in" style="--d:1.60s"><rect class="dg-wash" x="510" y="10" width="470" height="250" rx="8"/><text class="dg-sm-b" x="526" y="40">building → dept_name</text></g>
+<rect class="dg-box" x="526" y="60" width="330" height="90"/>
+<rect class="dg-box-m" x="526" y="60" width="330" height="30"/>
+<text class="dg-xs" font-weight="700" x="534" y="80">name</text>
+<text class="dg-xs" font-weight="700" x="654" y="80">dept_name</text>
+<text class="dg-xs" font-weight="700" x="774" y="80">building</text>
+<g>
+<text class="dg-xs" x="534" y="110">Avery Chen</text>
+<text class="dg-xs" x="654" y="110">Comp. Sci.</text>
+<text class="dg-xs" x="774" y="110">Hale</text>
+</g>
+<path class="dg-line-q" d="M526 120 H856"/>
+<g>
+<text class="dg-xs" x="534" y="140">Maria Lopez</text>
+<text class="dg-xs" x="654" y="140">Mathematics</text>
+<text class="dg-xs" x="774" y="140">Hale</text>
+</g>
+<rect class="dg-hl-t v-in" style="--d:2.20s" x="768" y="92" width="86" height="56" rx="4"/>
+<rect class="dg-hl v-in" style="--d:2.50s" x="648" y="92" width="116" height="56" rx="4"/>
+<g class="v-in" style="--d:2.70s"><text class="dg-sm-b dg-txt-bad" x="526" y="190">✗ Same building, different dept_name: fails.</text><text class="dg-xs" x="526" y="216">one such pair breaks it</text><text class="dg-xs" x="526" y="238">for the whole table</text></g>
+</svg>
+      <figcaption><strong>Figure 7.3.</strong> One pair of rows is enough to break a dependency; no number of rows can prove one.</figcaption>
+    </figure>
+  </div>
+  
+</section>
+
+<!-- 9 ─────────────────────────────────────────────── testing in SQL -->
+<section class="slide" id="s9">
+  <h2>Data can disprove a dependency, never prove one</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <pre class="code"><span class="c">-- groups that break dept_name → building</span>
+<span class="k">SELECT</span> dept_name,
+       count(<span class="k">DISTINCT</span> building) <span class="k">AS</span> buildings
+<span class="k">FROM</span> inst_dept
+<span class="k">GROUP</span> <span class="k">BY</span> dept_name
+<span class="k">HAVING</span> count(<span class="k">DISTINCT</span> building) &gt; 1;
+<span class="c">-- no rows: this data obeys it</span></pre>
+      <ul>
+        <li>Group by the left side, count the distinct values of the right side. Any group above 1 is a counterexample.</li>
+        <li><code>name → salary</code> passes today only because no two instructors share a name. The next hire could break it.</li>
+        <li>So the rules come from the people who use the data, like cardinality last week. The query checks that the data obeys them.</li>
+      </ul>
+    </div>
+    <div class="callout">
+      <span class="mark" aria-hidden="true">→</span>
+      <p>Lab 5 uses this query to find the typos in a tutoring sign-in sheet. <a class="try" href="playground.html#fds">Examples 2.1 to 2.3</a></p>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 10 ────────────────────────────────────────────── keys and trivial -->
+<section class="slide" id="s10">
+  <h2>Keys are dependencies too</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div class="panel">
+        <h3>Superkey and candidate key</h3>
+        <p><var>K</var> is a <strong>superkey</strong> of <var>R</var> when <var>K</var> → <var>R</var>: it determines every attribute.</p>
+        <p>A <strong>candidate key</strong> is a superkey with no smaller superkey inside it. In <code>inst_dept</code>, <code>id</code> is the only one.</p>
+      </div>
+      <div class="panel">
+        <h3>Trivial dependencies</h3>
+        <p><var>α</var> → <var>β</var> is <strong>trivial</strong> when <var>β</var> ⊆ <var>α</var>, like <code>id, name → name</code>. It holds in every table and never causes trouble.</p>
+        <p>The dependencies that matter are the non-trivial ones whose left side is <em>not</em> a superkey, like <code>dept_name → building</code>.</p>
+      </div>
+    </div>
+    <p>We write <var>F</var> for the dependencies we are given, and <var>F</var><sup>+</sup> for every dependency they imply.</p>
+  </div>
+  
+</section>
+
+<!-- 11 ────────────────────────────────────────────── Armstrong -->
+<section class="slide" id="s11">
+  <h2>Armstrong's axioms derive every implied dependency</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div>
+        <h3>The three axioms</h3>
+        <ul>
+          <li><strong>Reflexivity:</strong> if <var>β</var> ⊆ <var>α</var>, then <var>α</var> → <var>β</var>.</li>
+          <li><strong>Augmentation:</strong> if <var>α</var> → <var>β</var>, then <var>γα</var> → <var>γβ</var>.</li>
+          <li><strong>Transitivity:</strong> if <var>α</var> → <var>β</var> and <var>β</var> → <var>γ</var>, then <var>α</var> → <var>γ</var>.</li>
+        </ul>
+        <h3>Rules that follow from them</h3>
+        <ul>
+          <li><strong>Union:</strong> <var>α</var> → <var>β</var> and <var>α</var> → <var>γ</var> give <var>α</var> → <var>βγ</var>.</li>
+          <li><strong>Decomposition:</strong> <var>α</var> → <var>βγ</var> gives <var>α</var> → <var>β</var>.</li>
+          <li><strong>Pseudotransitivity:</strong> <var>α</var> → <var>β</var> and <var>γβ</var> → <var>δ</var> give <var>αγ</var> → <var>δ</var>.</li>
+        </ul>
+      </div>
+      <div class="panel">
+        <h3>Example: R(A, B, C, G, H, I)</h3>
+        <p><var>F</var> = { A → B, A → C, CG → H, CG → I, B → H }</p>
+        <ol>
+          <li>A → B and B → H give <strong>A → H</strong> (transitivity).</li>
+          <li>CG → H and CG → I give <strong>CG → HI</strong> (union).</li>
+          <li>A → C and CG → I give <strong>AG → I</strong> (pseudotransitivity).</li>
+        </ol>
+        <p>The axioms are sound (they derive only true dependencies) and complete (they derive all of them).</p>
+      </div>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 12 ────────────────────────────────────────────── closure algorithm -->
+<section class="slide" id="s12">
+  <h2>Attribute closure: everything a set of attributes determines</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <pre class="code">result := α
+repeat
+  for each β → γ in F:
+    if β ⊆ result:
+      result := result ∪ γ
+until result does not change
+return result        -- this is α+</pre>
+      <ul>
+        <li><var>α</var><sup>+</sup> is the set of attributes that <var>α</var> determines under <var>F</var>.</li>
+        <li>Each pass adds what some dependency's left side already covers. It stops when a pass adds nothing.</li>
+        <li>It never needs <var>F</var><sup>+</sup>: it runs in time about quadratic in the size of <var>F</var>.</li>
+      </ul>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 13 ────────────────────────────────────────────── closure example -->
+<section class="slide" id="s13">
+  <h2>Closure answers three questions</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:1000px">
+<svg style="--dg-k:1" viewBox="0 0 1000 330" role="img" aria-labelledby="clt cld">
+<title id="clt">Computing the closure of A G, one dependency at a time</title>
+<desc id="cld">The textbook&#x27;s schema R with attributes A, B, C, G, H and I, and dependencies A determines B, A determines C, C G determines H, C G determines I, and B determines H. Five rows show the closure growing. Start: A and G. Using A determines B, add B. Using A determines C, add C. Using C G determines H, add H. Using C G determines I, add I. Now all six attributes are in the closure, so A G is a superkey of R. Each row marks the newly added attribute with a plus sign.</desc>
+<text class="dg-sm-b" x="358" y="30" text-anchor="middle">A</text>
+<text class="dg-sm-b" x="428" y="30" text-anchor="middle">B</text>
+<text class="dg-sm-b" x="498" y="30" text-anchor="middle">C</text>
+<text class="dg-sm-b" x="568" y="30" text-anchor="middle">G</text>
+<text class="dg-sm-b" x="638" y="30" text-anchor="middle">H</text>
+<text class="dg-sm-b" x="708" y="30" text-anchor="middle">I</text>
+<g class="v-in" style="--d:0.20s"><text class="dg-sm" x="300" y="69" text-anchor="end">start</text>
+<rect class="dg-box-t" x="330" y="46" width="56" height="34" rx="6"/><text class="dg-sm" x="358" y="69" text-anchor="middle">A</text>
+<rect class="dg-box" x="400" y="46" width="56" height="34" rx="6" stroke-dasharray="4 4"/>
+<rect class="dg-box" x="470" y="46" width="56" height="34" rx="6" stroke-dasharray="4 4"/>
+<rect class="dg-box-t" x="540" y="46" width="56" height="34" rx="6"/><text class="dg-sm" x="568" y="69" text-anchor="middle">G</text>
+<rect class="dg-box" x="610" y="46" width="56" height="34" rx="6" stroke-dasharray="4 4"/>
+<rect class="dg-box" x="680" y="46" width="56" height="34" rx="6" stroke-dasharray="4 4"/>
+</g>
+<g class="v-in" style="--d:0.90s"><text class="dg-sm" x="300" y="121" text-anchor="end">A → B</text>
+<rect class="dg-box-t" x="330" y="98" width="56" height="34" rx="6"/><text class="dg-sm" x="358" y="121" text-anchor="middle">A</text>
+<rect class="dg-box-a" x="400" y="98" width="56" height="34" rx="6"/><text class="dg-sm-b" x="428" y="121" text-anchor="middle">+B</text>
+<rect class="dg-box" x="470" y="98" width="56" height="34" rx="6" stroke-dasharray="4 4"/>
+<rect class="dg-box-t" x="540" y="98" width="56" height="34" rx="6"/><text class="dg-sm" x="568" y="121" text-anchor="middle">G</text>
+<rect class="dg-box" x="610" y="98" width="56" height="34" rx="6" stroke-dasharray="4 4"/>
+<rect class="dg-box" x="680" y="98" width="56" height="34" rx="6" stroke-dasharray="4 4"/>
+</g>
+<g class="v-in" style="--d:1.60s"><text class="dg-sm" x="300" y="173" text-anchor="end">A → C</text>
+<rect class="dg-box-t" x="330" y="150" width="56" height="34" rx="6"/><text class="dg-sm" x="358" y="173" text-anchor="middle">A</text>
+<rect class="dg-box-t" x="400" y="150" width="56" height="34" rx="6"/><text class="dg-sm" x="428" y="173" text-anchor="middle">B</text>
+<rect class="dg-box-a" x="470" y="150" width="56" height="34" rx="6"/><text class="dg-sm-b" x="498" y="173" text-anchor="middle">+C</text>
+<rect class="dg-box-t" x="540" y="150" width="56" height="34" rx="6"/><text class="dg-sm" x="568" y="173" text-anchor="middle">G</text>
+<rect class="dg-box" x="610" y="150" width="56" height="34" rx="6" stroke-dasharray="4 4"/>
+<rect class="dg-box" x="680" y="150" width="56" height="34" rx="6" stroke-dasharray="4 4"/>
+</g>
+<g class="v-in" style="--d:2.30s"><text class="dg-sm" x="300" y="225" text-anchor="end">C, G → H</text>
+<rect class="dg-box-t" x="330" y="202" width="56" height="34" rx="6"/><text class="dg-sm" x="358" y="225" text-anchor="middle">A</text>
+<rect class="dg-box-t" x="400" y="202" width="56" height="34" rx="6"/><text class="dg-sm" x="428" y="225" text-anchor="middle">B</text>
+<rect class="dg-box-t" x="470" y="202" width="56" height="34" rx="6"/><text class="dg-sm" x="498" y="225" text-anchor="middle">C</text>
+<rect class="dg-box-t" x="540" y="202" width="56" height="34" rx="6"/><text class="dg-sm" x="568" y="225" text-anchor="middle">G</text>
+<rect class="dg-box-a" x="610" y="202" width="56" height="34" rx="6"/><text class="dg-sm-b" x="638" y="225" text-anchor="middle">+H</text>
+<rect class="dg-box" x="680" y="202" width="56" height="34" rx="6" stroke-dasharray="4 4"/>
+</g>
+<g class="v-in" style="--d:3.00s"><text class="dg-sm" x="300" y="277" text-anchor="end">C, G → I</text>
+<rect class="dg-box-t" x="330" y="254" width="56" height="34" rx="6"/><text class="dg-sm" x="358" y="277" text-anchor="middle">A</text>
+<rect class="dg-box-t" x="400" y="254" width="56" height="34" rx="6"/><text class="dg-sm" x="428" y="277" text-anchor="middle">B</text>
+<rect class="dg-box-t" x="470" y="254" width="56" height="34" rx="6"/><text class="dg-sm" x="498" y="277" text-anchor="middle">C</text>
+<rect class="dg-box-t" x="540" y="254" width="56" height="34" rx="6"/><text class="dg-sm" x="568" y="277" text-anchor="middle">G</text>
+<rect class="dg-box-t" x="610" y="254" width="56" height="34" rx="6"/><text class="dg-sm" x="638" y="277" text-anchor="middle">H</text>
+<rect class="dg-box-a" x="680" y="254" width="56" height="34" rx="6"/><text class="dg-sm-b" x="708" y="277" text-anchor="middle">+I</text>
+</g>
+<g class="v-in" style="--d:3.80s"><text class="dg-sm-b" x="330" y="318">{A, G}+ = {A, B, C, G, H, I}: every attribute, so A G is a superkey.</text></g>
+</svg>
+      <figcaption><strong>Figure 7.4.</strong> {A, G}<sup>+</sup> in the textbook's R, one dependency at a time. <a class="try" href="playground.html#explorer">Run it in the explorer</a></figcaption>
+    </figure>
+    <div class="cols-3">
+      <p><strong>Is <var>α</var> a superkey?</strong> Yes, if <var>α</var><sup>+</sup> holds every attribute.</p>
+      <p><strong>Does <var>α</var> → <var>β</var> hold?</strong> Yes, if <var>β</var> ⊆ <var>α</var><sup>+</sup>.</p>
+      <p><strong>Is it a candidate key?</strong> Yes, if no smaller subset is a superkey. A and G alone are not.</p>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 14 ────────────────────────────────────────────── canonical cover -->
+<section class="slide" id="s14">
+  <h2>A canonical cover is F with nothing extra</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div>
+        <ul>
+          <li>An attribute is <strong>extraneous</strong> if removing it from a dependency leaves <var>F</var><sup>+</sup> unchanged.</li>
+          <li>A <strong>canonical cover</strong> <var>F</var><sub>c</sub> implies the same dependencies as <var>F</var>, has no extraneous attributes, and has each left side once.</li>
+          <li>To find one: merge dependencies with the same left side, remove an extraneous attribute, and repeat until nothing changes.</li>
+          <li>3NF synthesis, on slide 22, starts from <var>F</var><sub>c</sub>.</li>
+        </ul>
+      </div>
+      <div class="panel">
+        <h3>Example from the textbook</h3>
+        <p><var>F</var> = { A → BC, B → C, A → B, AB → C }</p>
+        <ol>
+          <li>Merge A → BC and A → B into A → BC.</li>
+          <li>In AB → C, A is extraneous: B → C already holds. Drop it; B → C is now listed twice.</li>
+          <li>In A → BC, C is extraneous: A → B and B → C imply it.</li>
+        </ol>
+        <p><var>F</var><sub>c</sub> = { A → B, B → C }</p>
+      </div>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 15 ────────────────────────────────────────────── section -->
+<section class="slide slide--section" id="s15">
+  <h2>Normal forms</h2>
+  <p>Tests a schema passes when it stores each fact once, and algorithms that make it pass.</p>
+  
+</section>
+
+<!-- 16 ────────────────────────────────────────────── 1NF -->
+<section class="slide" id="s16">
+  <h2>First normal form: one value per cell</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div>
+        <p>A schema is in <strong>1NF</strong> when every attribute's domain is atomic: the database never has to take a value apart to answer a query.</p>
+        <table class="tbl tbl--compact">
+          <caption>Two columns that break 1NF</caption>
+          <thead><tr><th scope="col">id</th><th scope="col">phones</th><th scope="col">course_code</th></tr></thead>
+          <tbody>
+            <tr><td>10101</td><td>816-555-0101, 816-555-0199</td><td>CS-347-F25</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <ul>
+        <li><strong>phones</strong> holds a list. Finding who has a given number means parsing every cell. Fix: a table <code>inst_phone(id, phone)</code>, as last week's multivalued attributes.</li>
+        <li><strong>course_code</strong> packs a department, a number and a semester. A query for "every CS course" has to cut strings. Fix: one column per part.</li>
+        <li>Atomic depends on use: a date is atomic until you need its month.</li>
+      </ul>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 17 ────────────────────────────────────────────── BCNF -->
+<section class="slide" id="s17">
+  <h2>Boyce-Codd normal form</h2>
+  <div class="slide-main">
+    <div class="panel panel--definition">
+      <span class="term">BCNF</span>
+      <p><var>R</var> is in BCNF when, for every dependency <var>α</var> → <var>β</var> in <var>F</var><sup>+</sup> on <var>R</var>, either it is trivial or <var>α</var> is a superkey of <var>R</var>.</p>
+    </div>
+    <div class="cols-2">
+      <div>
+        <h3>inst_dept is not in BCNF</h3>
+        <p><code>dept_name → building, budget</code> is non-trivial, and <code>dept_name</code><sup>+</sup> = {dept_name, building, budget}, not every attribute. That one dependency is behind all three anomalies.</p>
+      </div>
+      <div>
+        <h3>instructor and department are</h3>
+        <p>In <code>instructor(id, name, salary, dept_name)</code> the only left side is <code>id</code>, a key. In <code>department(dept_name, building, budget)</code> it is <code>dept_name</code>, its key.</p>
+      </div>
+    </div>
+    <p>In practice: check the dependencies in <var>F</var>. If each one's left side is a superkey of the table, the table is in BCNF.</p>
+  </div>
+  
+</section>
+
+<!-- 18 ────────────────────────────────────────────── BCNF decomposition -->
+<section class="slide" id="s18">
+  <h2>Decomposing into BCNF</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:1000px">
+<svg style="--dg-k:1" viewBox="0 0 1000 380" role="img" aria-labelledby="btt btd">
+<title id="btt">Decomposing takes_flat into BCNF in two splits</title>
+<desc id="btd">At the top, takes_flat with id, name, dept_name, course_id, title, credits, semester, year and grade. It breaks BCNF on id determines name, dept_name, because id is not a superkey. First split: the student part (id, name, dept_name), key id, which is in BCNF, and the rest (id, course_id, title, credits, semester, year, grade). The rest breaks BCNF on course_id determines title, credits. Second split: the course part (course_id, title, credits), key course_id, and the enrollment part (id, course_id, semester, year, grade), key id, course_id, semester, year. The three leaves, outlined in teal and marked BCNF, are the result.</desc>
+<defs><marker id="bta" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#1d232b"/></marker></defs>
+<g class="v-in" style="--d:0.10s"><rect class="dg-box" x="120" y="10" width="760" height="58" rx="6"/><text class="dg-xs dg-mono" x="132" y="34">takes_flat(id, name, dept_name, course_id, title, credits, semester, year, grade)</text><text class="dg-xs dg-card" x="132" y="57">✗ id → name, dept_name breaks BCNF: id is not a superkey</text></g>
+<path class="dg-line v-draw" pathLength="1" style="--d:0.70s" d="M330 70 L190 132" marker-end="url(#bta)"/>
+<path class="dg-line v-draw" pathLength="1" style="--d:0.70s" d="M640 70 L700 132" marker-end="url(#bta)"/>
+<g class="v-in" style="--d:0.90s"><text class="dg-xs" x="200" y="100" text-anchor="end">split on id</text></g>
+<g class="v-in" style="--d:1.10s"><rect class="dg-box-t" x="10" y="136" width="330" height="58" rx="6"/><text class="dg-xs dg-mono" x="22" y="160">(id, name, dept_name)</text><text class="dg-xs dg-teal" x="22" y="183">✓ BCNF, key id</text></g>
+<g class="v-in" style="--d:1.40s"><rect class="dg-box" x="400" y="136" width="590" height="58" rx="6"/><text class="dg-xs dg-mono" x="412" y="160">(id, course_id, title, credits, semester, year, grade)</text><text class="dg-xs dg-card" x="412" y="183">✗ course_id → title, credits breaks BCNF</text></g>
+<path class="dg-line v-draw" pathLength="1" style="--d:2.00s" d="M600 196 L480 258" marker-end="url(#bta)"/>
+<path class="dg-line v-draw" pathLength="1" style="--d:2.00s" d="M800 196 L840 258" marker-end="url(#bta)"/>
+<g class="v-in" style="--d:2.20s"><text class="dg-xs" x="515" y="222" text-anchor="end">split on course_id</text></g>
+<g class="v-in" style="--d:2.40s"><rect class="dg-box-t" x="300" y="262" width="330" height="58" rx="6"/><text class="dg-xs dg-mono" x="312" y="286">(course_id, title, credits)</text><text class="dg-xs dg-teal" x="312" y="309">✓ BCNF, key course_id</text></g>
+<g class="v-in" style="--d:2.70s"><rect class="dg-box-t" x="650" y="262" width="340" height="58" rx="6"/><text class="dg-xs dg-mono" x="662" y="286">(id, course_id, semester, year, grade)</text><text class="dg-xs dg-teal" x="662" y="309">✓ BCNF, key id, course_id, semester, year</text></g>
+</svg>
+      <figcaption><strong>Figure 7.5.</strong> <code>takes_flat</code> needs two splits. The three leaves are <code>student</code>, <code>course</code> and <code>takes</code> again.</figcaption>
+    </figure>
+    <p>While some table <var>R</var><sub>i</sub> breaks BCNF on <var>α</var> → <var>β</var>: replace it with (<var>α</var> ∪ <var>β</var>) and (<var>R</var><sub>i</sub> − (<var>β</var> − <var>α</var>)). <a class="try" href="playground.html#exercises">Do it in SQL, exercise 8</a></p>
+  </div>
+  
+</section>
+
+<!-- 19 ────────────────────────────────────────────── lossless test -->
+<section class="slide" id="s19">
+  <h2>A split is lossless when the shared columns are a key of one side</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div>
+        <div class="panel panel--key">
+          <p>Splitting <var>R</var> into <var>R</var><sub>1</sub> and <var>R</var><sub>2</sub> is lossless if <var>R</var><sub>1</sub> ∩ <var>R</var><sub>2</sub> → <var>R</var><sub>1</sub> or <var>R</var><sub>1</sub> ∩ <var>R</var><sub>2</sub> → <var>R</var><sub>2</sub>.</p>
+        </div>
+        <ul>
+          <li><code>dept_name</code> → (dept_name, building, budget): lossless.</li>
+          <li><code>building</code> determines neither part: lossy, as on slide 6.</li>
+        </ul>
+      </div>
+      <pre class="code"><span class="c">-- check it on the data: both counts 0</span>
+<span class="k">SELECT</span> count(*) <span class="k">AS</span> missing <span class="k">FROM</span> (
+  <span class="k">SELECT</span> * <span class="k">FROM</span> inst_dept
+  <span class="k">EXCEPT</span>
+  <span class="k">SELECT</span> id, name, salary, dept_name,
+         building, budget
+  <span class="k">FROM</span> inst_part <span class="k">NATURAL</span> <span class="k">JOIN</span> dept_part) m;
+<span class="c">-- and the same with EXCEPT the other way</span></pre>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 20 ────────────────────────────────────────────── preservation -->
+<section class="slide" id="s20">
+  <h2>Dependency preservation: can each rule be checked in one table?</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <ul>
+        <li>After a split, a dependency is <strong>preserved</strong> if the dependencies that fit inside single tables still imply it.</li>
+        <li>A preserved dependency is enforced by a key or a UNIQUE constraint on one table: cheap, on every insert.</li>
+        <li>A lost one can only be checked by joining the tables, on every change: in practice, a trigger, or nothing.</li>
+      </ul>
+      <div class="panel">
+        <h3>takes_flat: everything preserved</h3>
+        <p><code>id → name, dept_name</code> lives in the student part, <code>course_id → title, credits</code> in the course part, and the grade's dependency in the enrollment part.</p>
+        <p>BCNF does not always manage this. The next slide is the classic case where it cannot.</p>
+      </div>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 21 ────────────────────────────────────────────── dept_advisor -->
+<section class="slide" id="s21">
+  <h2>When BCNF loses a rule: dept_advisor</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:1000px">
+<svg style="--dg-k:1" viewBox="0 0 1000 330" role="img" aria-labelledby="pvt pvd">
+<title id="pvt">dept_advisor: BCNF loses a rule, 3NF keeps it</title>
+<desc id="pvd">The rules: i_id determines dept_name, each instructor advises for one department; and s_id, dept_name determines i_id, a student has one advisor per department. Left, the BCNF design: two tables, (i_id, dept_name) with key i_id and (s_id, i_id) with key s_id, i_id. The second rule mentions s_id and dept_name, which are now in different tables, so no key can enforce it; checking it needs a join. Marked with a cross. Right, the 3NF design: one table (s_id, i_id, dept_name) with key s_id, dept_name, which enforces the second rule. It breaks BCNF because i_id is not a superkey, so an instructor&#x27;s department repeats once per advisee. Marked with a check and a warning.</desc>
+<g class="v-in" style="--d:0.10s"><text class="dg-sm-b" x="26" y="26">Rules:</text><text class="dg-sm-b" x="100" y="26">i_id → dept_name</text><text class="dg-sm-b" x="320" y="26">s_id, dept_name → i_id</text></g>
+<g class="v-in" style="--d:0.40s"><rect class="dg-wash" x="10" y="44" width="470" height="276" rx="8"/><text class="dg-sm-b" x="26" y="74">BCNF: two tables</text></g>
+<g class="v-in" style="--d:0.70s"><rect class="dg-box-t" x="26" y="92" width="200" height="40" rx="6"/><text class="dg-sm" x="126.0" y="117.0" text-anchor="middle">(i_id, dept_name)</text></g>
+<g class="v-in" style="--d:0.90s"><rect class="dg-box-t" x="246" y="92" width="200" height="40" rx="6"/><text class="dg-sm" x="346.0" y="117.0" text-anchor="middle">(s_id, i_id)</text></g>
+<g class="v-in" style="--d:1.20s"><text class="dg-xs" x="26" y="160">key i_id</text><text class="dg-xs" x="246" y="160">key (s_id, i_id)</text></g>
+<g class="v-in" style="--d:1.60s"><text class="dg-sm-b dg-txt-bad" x="26" y="206">✗ s_id, dept_name → i_id spans both tables.</text><text class="dg-sm" x="26" y="232">No key can enforce it; only a join can check it.</text><text class="dg-sm" x="26" y="258">Riley Adams can get two Comp. Sci. advisors.</text></g>
+<g class="v-in" style="--d:2.20s"><rect class="dg-wash" x="520" y="44" width="470" height="276" rx="8"/><text class="dg-sm-b" x="536" y="74">3NF: one table</text></g>
+<g class="v-in" style="--d:2.50s"><rect class="dg-box-t" x="536" y="92" width="300" height="40" rx="6"/><text class="dg-sm" x="686.0" y="117.0" text-anchor="middle">(s_id, i_id, dept_name)</text></g>
+<g class="v-in" style="--d:2.70s"><text class="dg-xs" x="536" y="160">key (s_id, dept_name)</text></g>
+<g class="v-in" style="--d:3.10s"><text class="dg-sm-b dg-txt-ok" x="536" y="206">✓ The key enforces both rules.</text><text class="dg-sm dg-txt-warn" x="536" y="232">! Breaks BCNF: i_id is not a superkey, so an</text><text class="dg-sm dg-txt-warn" x="536" y="258">instructor&#x27;s department repeats per advisee.</text></g>
+</svg>
+      <figcaption><strong>Figure 7.6.</strong> A student has at most one advisor per department, and each instructor advises for one department. <a class="try" href="playground.html#preserve">Try both inserts, example 4.1</a></figcaption>
+    </figure>
+  </div>
+  
+</section>
+
+<!-- 22 ────────────────────────────────────────────── 3NF -->
+<section class="slide" id="s22">
+  <h2>Third normal form, and how to reach it</h2>
+  <div class="slide-main">
+    <div class="panel panel--definition">
+      <span class="term">3NF</span>
+      <p>For every <var>α</var> → <var>β</var> in <var>F</var><sup>+</sup>: it is trivial, or <var>α</var> is a superkey, or each attribute of <var>β</var> − <var>α</var> is part of some candidate key. The third case is the only difference from BCNF.</p>
+    </div>
+    <div class="cols-2">
+      <ol>
+        <li>Find a canonical cover <var>F</var><sub>c</sub>.</li>
+        <li>Make one table <var>α</var> ∪ <var>β</var> for each <var>α</var> → <var>β</var> in <var>F</var><sub>c</sub>.</li>
+        <li>If no table holds a candidate key of <var>R</var>, add one that does.</li>
+        <li>Drop any table contained in another.</li>
+      </ol>
+      <p>This <strong>3NF synthesis</strong> is always lossless and always preserves every dependency. The price: a little repetition can remain, like an instructor's department in <code>dept_advisor</code>.</p>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 23 ────────────────────────────────────────────── BCNF vs 3NF -->
+<section class="slide" id="s23">
+  <h2>BCNF or 3NF?</h2>
+  <div class="slide-main">
+    <table class="tbl">
+      <caption>BCNF and 3NF compared</caption>
+      <thead><tr><th scope="col">Property</th><th scope="col">BCNF decomposition</th><th scope="col">3NF synthesis</th></tr></thead>
+      <tbody>
+        <tr><td>Lossless join</td><td>Always</td><td>Always</td></tr>
+        <tr><td>Every dependency checkable in one table</td><td>Not always</td><td>Always</td></tr>
+        <tr><td>Repetition left over</td><td>None from dependencies</td><td>Possible, as in dept_advisor</td></tr>
+      </tbody>
+    </table>
+    <div class="callout">
+      <span class="mark" aria-hidden="true">→</span>
+      <p>Aim for BCNF. When BCNF would lose a rule you care about, choose 3NF for that table and say why. Milestone 2 asks for exactly that argument.</p>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 24 ────────────────────────────────────────────── worked example -->
+<section class="slide" id="s24">
+  <h2>Worked example: the tutoring sheet in Lab 5</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div>
+        <p>The tutoring center keeps one wide sign-in sheet:</p>
+        <p><code>tutoring(student_id, student_name, student_email, tutor_id, tutor_name, subject, center, center_room, session_date, minutes)</code></p>
+        <ol>
+          <li>Ask which column fixes which, and write the rules as dependencies.</li>
+          <li>Test each one in SQL: two rules fail, because of typos. Fix the data.</li>
+          <li>Compute closures to find the key, then split until every table is in BCNF.</li>
+          <li>Create the tables, copy the data in, and prove the rejoin is lossless.</li>
+        </ol>
+      </div>
+      <div class="panel">
+        <h3>Your turn, in pairs</h3>
+        <p>Without the lab: list the dependencies you expect from the column names alone, then mark any you would ask the tutoring center about.</p>
+        <p>You will check your guesses against the data in Lab 5, questions 2 to 5.</p>
+      </div>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 25 ────────────────────────────────────────────── ladder -->
+<section class="slide" id="s25">
+  <h2>The normal forms nest</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:960px">
+<svg style="--dg-k:1" viewBox="0 0 1000 420" role="img" aria-labelledby="nft nfd">
+<title id="nft">Each normal form is stricter than the one around it</title>
+<desc id="nfd">Five nested boxes. The outermost is 1NF: every value is atomic. Inside it, 2NF: no non-key attribute depends on part of a candidate key. Inside that, 3NF: for every dependency X determines A, X is a superkey or A is part of a candidate key. Inside that, BCNF: for every non-trivial dependency X determines Y, X is a superkey. Innermost, 4NF: the BCNF rule applied to multivalued dependencies too. A schema in an inner box is also in every box around it.</desc>
+<g class="v-in" style="--d:0.20s"><rect class="dg-box" x="10" y="10" width="980" height="380" rx="10"/><text class="dg-sm-b" x="26" y="37">1NF</text><text class="dg-sm" x="86" y="37">every value is atomic: no lists, no parts to parse</text></g>
+<g class="v-in" style="--d:0.70s"><rect class="dg-box" x="44" y="50" width="912" height="300" rx="10"/><text class="dg-sm-b" x="60" y="77">2NF</text><text class="dg-sm" x="120" y="77">no attribute depends on only part of a key</text></g>
+<g class="v-in" style="--d:1.20s"><rect class="dg-box-t" x="78" y="90" width="844" height="220" rx="10"/><text class="dg-sm-b" x="94" y="117">3NF</text><text class="dg-sm" x="154" y="117">X → A: X is a superkey, or A is part of a key</text></g>
+<g class="v-in" style="--d:1.70s"><rect class="dg-box-t" x="112" y="130" width="776" height="140" rx="10"/><text class="dg-sm-b" x="128" y="157">BCNF</text><text class="dg-sm" x="188" y="157">X → Y non-trivial: X is a superkey</text></g>
+<g class="v-in" style="--d:2.20s"><rect class="dg-box" x="146" y="170" width="708" height="60" rx="10"/><text class="dg-sm-b" x="162" y="197">4NF</text><text class="dg-sm" x="222" y="197">BCNF&#x27;s rule, for multivalued dependencies too</text></g>
+<g class="v-in" style="--d:2.80s"><text class="dg-xs dg-teal" x="500" y="412" text-anchor="middle">This course designs to BCNF, or 3NF when BCNF would lose a rule.</text></g>
+</svg>
+      <figcaption><strong>Figure 7.7.</strong> A table in BCNF is also in 3NF, 2NF and 1NF.</figcaption>
+    </figure>
+    <div class="cols-2">
+      <p><strong>2NF</strong> is mostly history: 3NF implies it, so we skip it.</p>
+      <p><strong>4NF</strong> handles independent lists in one table, like an instructor's children and phone numbers: every child is paired with every phone. Split them into two tables.</p>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 26 ────────────────────────────────────────────── denormalization -->
+<section class="slide" id="s26">
+  <h2>Repeating a fact on purpose</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <ul>
+        <li><strong>Denormalization</strong> stores a joined or computed result to make some read faster, accepting the copies.</li>
+        <li>Prefer a view when the join is cheap enough: nothing is copied.</li>
+        <li>A <strong>materialized view</strong> stores the result and is refreshed on demand: <code>REFRESH MATERIALIZED VIEW</code>.</li>
+        <li>Whatever repeats needs a plan to stay in step: a trigger, a refresh schedule, or a rule that the copy is read-only.</li>
+      </ul>
+      <div class="panel">
+        <h3>Normalize first, then measure</h3>
+        <p>Denormalize only for a query you have measured as too slow, and write down which copy is the master. Weeks 10 to 12 show how to measure.</p>
+      </div>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 27 ────────────────────────────────────────────── section -->
+<section class="slide slide--section" id="s27">
+  <h2>Putting it to work</h2>
+  <p>Lab 5 this week, and your own tables in milestone 2.</p>
+  
+</section>
+
+<!-- 28 ────────────────────────────────────────────── takeaways -->
+<section class="slide" id="s28">
+  <h2>What to take away</h2>
+  <div class="slide-main">
+    <ol class="steps">
+      <li><span class="n" aria-hidden="true">1</span><div><strong>A repeated fact is a dependency on a non-key.</strong><p>It causes update, insert and delete anomalies.</p></div></li>
+      <li><span class="n" aria-hidden="true">2</span><div><strong>Dependencies are rules; data only tests them.</strong><p>GROUP BY the left side and count the right side.</p></div></li>
+      <li><span class="n" aria-hidden="true">3</span><div><strong>Closure is the working tool.</strong><p>It finds keys and tests whether a dependency holds.</p></div></li>
+      <li><span class="n" aria-hidden="true">4</span><div><strong>Split on a key of one side, and nothing is lost.</strong><p>BCNF decomposition always splits that way.</p></div></li>
+      <li><span class="n" aria-hidden="true">5</span><div><strong>Choose 3NF when BCNF would lose a rule.</strong><p>And say why, in milestone 2.</p></div></li>
+    </ol>
+  </div>
+  
+</section>
+
+<!-- 29 ────────────────────────────────────────────── this week -->
+<section class="slide" id="s29">
+  <h2>This week's work</h2>
+  <div class="slide-main">
+    <div class="week-work">
+      <div>
+        <h3>Read</h3>
+        <ul>
+          <li>Silberschatz, Korth and Sudarshan, <em>Database System Concepts</em>, 7th ed., chapter 7, sections 7.1–7.6 and 7.8.</li>
+          <li>For the midterm: your notes from weeks 1 to 7.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Do</h3>
+        <ul>
+          <li><a href="lab5.html">Lab 5</a>: normalize the tutoring sign-in sheet.</li>
+          <li>Week 7 playground: the closure explorer and eight exercises. Not graded.</li>
+          <li>Start milestone 2: map your diagram to tables and list each table's dependencies.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Due</h3>
+        <ul>
+          <li><span class="due">Sunday, February 28, 11:59 p.m. CT</span>: Lab 5, one zip file in Brightspace.</li>
+          <li>Quiz 7: in class today; online section within 48 hours of the recording.</li>
+          <li>Milestone 2: Sunday, March 7.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="callout" style="margin-top:auto">
+      <span class="mark" aria-hidden="true">→</span>
+      <p><strong>Next week:</strong> review, then the midterm on weeks 1 to 7.</p>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 30 ────────────────────────────────────────────── resources -->
+<section class="slide" id="s30">
+  <h2>Free resources</h2>
+  <div class="slide-main">
+    <ul class="resources">
+      <li><a href="playground.html">Week 7 playground</a><span class="src">this course</span><p>The anomalies, dependency tests and splits from today as runnable SQL, a closure and normal form explorer, and eight checked exercises.</p></li>
+      <li><a href="lab5.html">Lab 5</a><span class="src">this course</span><p>The tutoring sign-in sheet, the questions, and how it is graded.</p></li>
+      <li><a href="../../project/index.html">The term project</a><span class="src">this course</span><p>All four milestones, dates and points.</p></li>
+      <li><a href="https://www.db-book.com/">Database System Concepts</a><span class="src">db-book.com</span><p>The textbook's site, with its slides for chapter 7.</p></li>
+    </ul>
+    <div class="callout" style="margin-top:20px">
+      <span class="mark" aria-hidden="true">→</span>
+      <p>Stuck on a closure? Office hours are Tuesday and Wednesday 12:00–3:00 p.m., MIC room D159, or post in the week 7 discussion in Brightspace.</p>
+    </div>
+  </div>
+  
+</section>
+
+</main>
+</div>
+<script src="../../assets/deck.js"></script>
+</body>
+</html>

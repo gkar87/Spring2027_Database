@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lab 9 — A Document Store of Campus Events · CS 5200</title>
+<meta name="description" content="CS 5200 Lab 9: 4,000 campus events stored as jsonb documents. Query inside them with containment, key tests, arrays and JSON paths; find the documents that are wrong; speed up lookups with a GIN index and an expression index; move the data back into three relational tables; and argue where RSVPs belong, how to shard events and how to replicate them.">
+<link rel="stylesheet" href="../../assets/course.css">
+<link rel="stylesheet" href="../../assets/db.css">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to the lab</a>
+
+<div class="doc">
+<header class="doc-masthead">
+  <p class="inst"><span>CS 5200 · Database Theory and Applications</span><span>Week 15</span><span><a href="../../index.html">Course home</a></span></p>
+  <h1>Lab 9: A document store of campus events</h1>
+  <p class="tagline">The campus events app kept every event as one JSON document: its host, its room, its tags and everyone who said they're coming. It was quick to build. Now the app is slow, some events are overbooked, and a few documents don't look right. You find out what the documents hold, make the slow lookups fast, and decide whether the data should have been tables all along.</p>
+</header>
+
+<dl class="facts">
+  <div><dt>Who</dt><dd>CS 5200 students only</dd></div>
+  <div><dt>Due</dt><dd>Sunday, May 2, 11:59 p.m. CT</dd></div>
+  <div><dt>Time</dt><dd>About 2 hours</dd></div>
+  <div><dt>Submit</dt><dd>One zip file, uploaded to Brightspace</dd></div>
+</dl>
+
+<nav class="toc" aria-labelledby="toc-h">
+  <h2 id="toc-h">On this page</h2>
+  <ol>
+    <li><a href="#files">Files for this lab</a></li>
+    <li><a href="#data">What a document looks like</a></li>
+    <li><a href="#a">Part A: querying documents, Q1 to Q8</a></li>
+    <li><a href="#b">Part B: indexes, Q9 to Q11</a></li>
+    <li><a href="#c">Part C: back to tables, Q12 to Q14</a></li>
+    <li><a href="#w">Part D: three short answers</a></li>
+    <li><a href="#submit">What to submit and how it is graded</a></li>
+    <li><a href="#help">If something goes wrong</a></li>
+  </ol>
+</nav>
+
+<main id="main">
+
+<section id="files" aria-labelledby="files-h">
+  <h2 id="files-h">Files for this lab</h2>
+  <p>Put all three files in one folder, for example <code>Documents/cs5200/lab9</code>:</p>
+  <ul>
+    <li><a href="lab9_events.sql" download>lab9_events.sql</a>: makes the table <code>event</code>, 4,000 campus events from January 11 to May 7, 2027, one <code>jsonb</code> document each. It never touches the university's own tables.</li>
+    <li><a href="lab9.sql" download>lab9.sql</a>: the starter file for your SQL, with one comment for each question.</li>
+    <li><a href="lab9_answers.txt" download>lab9_answers.txt</a>: the starter file for the numbers you find and your written answers.</li>
+  </ul>
+  <p>The first lines of <code>lab9.sql</code> reload the events, so every run starts from the same data with no extra indexes. Run the whole file each time:</p>
+<pre>psql -d university -e -f lab9.sql &gt; lab9_output.txt 2&gt;&amp;1</pre>
+  <p>On Windows, add <code>-U postgres</code> after <code>psql</code>. In Colab, start the line with <code>!</code>. Any database works, but the university database is the one you have. You need PostgreSQL 14 or newer, as in Lab 0.</p>
+  <p>Before you start, work through the <a href="playground.html">week 15 playground</a>'s sections 1 to 4. Every operator this lab needs is there, on the course reviews.</p>
+</section>
+
+<section id="data" aria-labelledby="data-h">
+  <h2 id="data-h">What a document looks like</h2>
+  <p>Event 2, laid out with <code>jsonb_pretty</code>, its list of 12 RSVPs shortened. It has no tags:</p>
+<pre>{
+    "host": {"dept": "Comp. Sci.", "name": "Robotics club"},
+    "kind": "club",
+    "room": {"room": 310, "building": "Hale"},
+    "rsvps": [
+        {"status": "going", "student": "S0176"},
+        {"status": "maybe", "student": "S0277"},
+        …
+    ],
+    "title": "Robotics club: Weekly meeting",
+    "starts": "2027-04-15T12:30",
+    "capacity": 60
+}</pre>
+  <ul>
+    <li><code>kind</code> is one of <code>talk</code>, <code>club</code>, <code>sports</code>, <code>career</code>, <code>concert</code> and <code>workshop</code>. <code>host</code> always has a <code>name</code>; a department's groups also have a <code>dept</code>.</li>
+    <li>An event has a <code>room</code>, an <code>online</code> platform such as <code>{"platform": "Zoom"}</code>, or both.</li>
+    <li><code>tags</code>, when present, is an array of strings. <code>rsvps</code> is an array, possibly empty, of objects with a <code>student</code> and a <code>status</code>, <code>going</code> or <code>maybe</code>.</li>
+    <li><code>starts</code> is text in the form <code>YYYY-MM-DDTHH:MI</code>, so comparing two of them as text puts them in time order.</li>
+  </ul>
+  <p>Look at a few yourself before writing anything: <code>SELECT jsonb_pretty(doc) FROM event WHERE id IN (1, 2, 3);</code></p>
+</section>
+
+<section id="a" aria-labelledby="a-h">
+  <h2 id="a-h">Part A: querying documents, Q1 to Q8</h2>
+  <p>Write each statement in <code>lab9.sql</code> under its comment, run the whole file, and copy the numbers the answers file asks for.</p>
+  <ol class="qs">
+    <li><p><strong>Q1.</strong> How many events of each kind? Two columns, <code>kind</code> and <code>events</code>, most first, ties by kind.</p></li>
+    <li><p><strong>Q2.</strong> Events hosted by a Comp. Sci. group and tagged <code>free food</code> that start on or after April 26, 2027: id, title and start, in order of start, ties by id. Use one <code>@&gt;</code> for both the department and the tag.</p></li>
+    <li><p><strong>Q3.</strong> How many events are in person only, online only, and hybrid? Use the <code>?</code> operator on <code>room</code> and <code>online</code>.</p></li>
+    <li><p><strong>Q4.</strong> Every tag and the number of events that carry it, most common first, ties by tag.</p></li>
+    <li><p><strong>Q5.</strong> The five events with the most <code>going</code> RSVPs: id, title and the number going, ties by id. <code>jsonb_array_elements</code> turns the RSVP array into rows.</p></li>
+    <li><p><strong>Q6.</strong> An event is <strong>overbooked</strong> when more students are going than its capacity. First, how many events are overbooked? Then the five most overbooked: id, kind, capacity and going, ordered by how far over they are, ties by id.</p></li>
+    <li><p><strong>Q7.</strong> Some documents are not quite right. Find those with no <code>title</code>, or whose <code>capacity</code> is not a JSON number (<code>jsonb_typeof</code> tells you). Show the id and, in words, what is wrong, ordered by id.</p></li>
+    <li><p><strong>Q8.</strong> With one JSON path and the <code>@?</code> operator, count the events that start in April 2027 and have a capacity over 100. JSON paths have a <code>starts with</code> test for strings and <code>&amp;&amp;</code> for "and".</p></li>
+  </ol>
+</section>
+
+<section id="b" aria-labelledby="b-h">
+  <h2 id="b-h">Part B: indexes, Q9 to Q11</h2>
+  <p>Every EXPLAIN in this lab uses the same options, so your output and the grader's can be compared:</p>
+<pre>EXPLAIN (ANALYZE, BUFFERS, COSTS OFF, TIMING OFF)
+SELECT …;</pre>
+  <p>A step's buffers are its <code>shared hit</code> plus its <code>read</code>, and they include the steps indented under it, so the top step's count is the whole query's. Leave out the <code>Buffers:</code> line under <code>Planning:</code>.</p>
+  <ol class="qs">
+    <li><p><strong>Q9.</strong> The events student <code>S0042</code> is going to: id and title, ordered by id. Write the condition with <code>@&gt;</code>, matching an element of <code>rsvps</code> that has both the student and the status. EXPLAIN it; create a GIN index on <code>doc</code> named <code>event_doc</code>, using <code>jsonb_path_ops</code>; EXPLAIN it again; then run it.</p></li>
+    <li><p><strong>Q10.</strong> The events on April 27, 2027, with <code>doc -&gt;&gt; 'starts'</code> from <code>'2027-04-27'</code> up to but not including <code>'2027-04-28'</code>: id and title. EXPLAIN it, create the index that helps, named <code>event_starts</code>, and EXPLAIN it again. In the answers file, say why <code>event_doc</code> can't help this query.</p></li>
+    <li><p><strong>Q11.</strong> The size of the table <code>event</code> and of each of its three indexes, largest first. <code>pg_relation_size</code> and <code>pg_size_pretty</code>, as in week 10.</p></li>
+  </ol>
+</section>
+
+<section id="c" aria-labelledby="c-h">
+  <h2 id="c-h">Part C: back to tables, Q12 to Q14</h2>
+  <ol class="qs">
+    <li><p><strong>Q12.</strong> Create three tables and load them from the documents with <code>INSERT … SELECT</code>:</p>
+      <ul>
+        <li><code>ev</code>: one row per event, with <code>id</code>, <code>title</code>, <code>kind</code>, <code>host</code> (the host's name), <code>starts</code> as a <code>timestamp</code> and <code>capacity</code> as an <code>integer</code>.</li>
+        <li><code>ev_tag</code>: one row per event and tag.</li>
+        <li><code>ev_rsvp</code>: one row per event and student, with the status.</li>
+      </ul>
+      <p>Give each table a primary key, the two smaller ones foreign keys to <code>ev</code>, and <code>ev_rsvp</code> a CHECK on its status. <code>jsonb_to_recordset</code> (playground Example 4.3) or <code>jsonb_array_elements</code> turns an array into rows. Q7's documents will get in your way: decide what to do about them, and say why in the answers file.</p></li>
+    <li><p><strong>Q13.</strong> Check the load with one query that returns one row of six counts: events, tags and RSVPs as counted in the documents, each beside the number of rows in your tables.</p></li>
+    <li><p><strong>Q14.</strong> Q5 again, on your tables. It must give the same five rows.</p></li>
+  </ol>
+</section>
+
+<section id="w" aria-labelledby="w-h">
+  <h2 id="w-h">Part D: three short answers</h2>
+  <p>In <code>lab9_answers.txt</code>, in your own words, a few sentences each. Slides 10 and 14 to 17 cover the ideas.</p>
+  <ol class="qs">
+    <li><p><strong>W1.</strong> The app shows each event with its RSVPs, and each student's page lists the events they are going to. Should RSVPs stay embedded in the event documents, or be documents of their own that reference the event? Use what Q9 and Part C showed you.</p></li>
+    <li><p><strong>W2.</strong> The events are to be split over four machines. Would you shard by event id, by host or by start date? Name one query from this lab that would go to a single shard under your choice, and one that would go to all four.</p></li>
+    <li><p><strong>W3.</strong> Each event's RSVPs are kept on three replicas, and saying "going" must never overbook an event. Which R and W would you choose for the RSVP list, and what happens to RSVPs when one replica is down? When two are?</p></li>
+  </ol>
+</section>
+
+<section id="submit" aria-labelledby="sub-h">
+  <h2 id="sub-h">What to submit and how it is graded</h2>
+  <p>Upload <strong>one zip file</strong> to the Lab 9 assignment in Brightspace. Name it <code>lab9_lastname_firstname.zip</code>, for example <code>lab9_rivera_jamie.zip</code>, and put these three files in it:</p>
+  <ul>
+    <li><code>lab9.sql</code>: your statements, under the question comments.</li>
+    <li><code>lab9_output.txt</code>: what psql printed when you ran the whole file.</li>
+    <li><code>lab9_answers.txt</code>: your numbers and written answers, saved as plain text, with one line at the end on how you used AI tools, if at all.</li>
+  </ul>
+  <p>To make the zip, put the three files in one folder and select them, then: on Windows, right-click and choose <strong>Compress to ZIP file</strong> (on Windows 10, <strong>Send to › Compressed (zipped) folder</strong>); on macOS, right-click and choose <strong>Compress 3 Items</strong>; on Linux or in Colab, run:</p>
+<pre>zip lab9_lastname_firstname.zip lab9.sql lab9_output.txt lab9_answers.txt</pre>
+  <p>Before you upload, open the zip and check that <code>lab9_output.txt</code> shows a result or a plan under every question, with no errors. The latest upload before the deadline is graded. Late work loses 10% per day, for up to three days.</p>
+  <div class="fig-scroll" tabindex="0" role="region" aria-label="Lab 9 rubric, 10 points">
+  <table class="tbl">
+    <caption>Lab 9 rubric, 10 points</caption>
+    <thead><tr><th scope="col">Item</th><th scope="col">What earns full credit</th><th scope="col" class="num">Points</th></tr></thead>
+    <tbody>
+      <tr><td>Part A, Q1–Q8</td><td>Each query runs, uses the operator the question names, and returns the right rows; the numbers and the Q8 answer are in the answers file.</td><td class="num">4</td></tr>
+      <tr><td>Part B, Q9–Q11</td><td>Both indexes created and named as asked, the four plans recorded with their buffers, and the Q10 question answered.</td><td class="num">2</td></tr>
+      <tr><td>Part C, Q12–Q14</td><td>Three tables with keys and checks, loaded from the documents; the counts in Q13 match or the gap is explained; Q14 agrees with Q5.</td><td class="num">2</td></tr>
+      <tr><td>Part D, W1–W3</td><td>Each answer makes a choice and argues it from this lab's numbers and the ideas on the slides.</td><td class="num">1</td></tr>
+      <tr><td>Output</td><td><code>lab9_output.txt</code> shows the whole file running from the reload, with no errors.</td><td class="num">1</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>As with every lab, you may be asked to walk through your file in office hours. You may use AI tools to explain an error message or a term, but the statements and the written answers must be your own.</p>
+</section>
+
+<section id="help" aria-labelledby="help-h">
+  <h2 id="help-h">If something goes wrong</h2>
+  <ul>
+    <li><strong>"lab9_events.sql: No such file or directory"</strong>: the three files are not in the same folder. Move them together and run again.</li>
+    <li><strong>"operator does not exist: jsonb @? unknown"</strong> or a syntax error at <code>@?</code>: your PostgreSQL is older than this lab needs. Check with <code>SELECT version();</code> and use the Lab 0 installation.</li>
+    <li><strong>"invalid input syntax for type integer"</strong>: something you cast with <code>::int</code> is not a number. Cast the text from <code>-&gt;&gt;</code>, not the JSON from <code>-&gt;</code>.</li>
+    <li><strong>A key violation while loading <code>ev_rsvp</code> or <code>ev_tag</code></strong>: check which columns your primary key names; each student RSVPs to an event at most once, and each tag appears once per event.</li>
+    <li><strong>"relation "event_doc" already exists"</strong>: you ran Q9 on its own after a full run. Run the whole file; the reload removes the index.</li>
+    <li><strong>Your buffer counts differ from a classmate's by a few</strong>: different versions and machines. Use your own numbers.</li>
+    <li><strong>Anything else</strong>: copy the exact message and bring it to office hours, Tuesday and Wednesday 12:00–3:00 p.m., MIC room D159, or post it in the week 15 discussion in Brightspace.</li>
+  </ul>
+</section>
+</main>
+
+<footer>
+  <p>CS 4600/5200 · Database Theory and Applications · University of Central Missouri · Dr. Gorkem Kar · Spring 2027</p>
+</footer>
+</div>
+</body>
+</html>

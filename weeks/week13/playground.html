@@ -1,0 +1,1239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Week 13 SQL Playground · CS 4600/5200</title>
+<meta name="description" content="CS 4600/5200 week 13 playground: transactions that keep all or nothing, schedules and conflict serializability worked out in SQL, a replay of two real sessions showing each isolation level's anomalies, locks, and row versions, with eight checked exercises.">
+<link rel="stylesheet" href="../../assets/course.css">
+<link rel="stylesheet" href="../../assets/db.css">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to the playground</a>
+
+<div class="doc">
+<header class="doc-masthead">
+  <p class="inst"><span>CS 4600/5200 · Database Theory and Applications</span><span>Week 13 · Tuesday, April 13, 2027</span><span><a href="../../index.html">Course home</a></span></p>
+  <h1>Week 13 playground: transactions and concurrency</h1>
+  <p class="tagline">A transaction is a group of statements that happen completely or not at all, and that behave as if nobody else were using the database. Here you make transactions succeed and fail, reason about interleaved schedules with SQL, watch two real sessions collide at each isolation level, and look at the locks and row versions PostgreSQL uses to keep them apart.</p>
+</header>
+
+<div class="pg-bar">
+  <p class="pg-status" id="pg-status" data-state="loading"><span class="dot" aria-hidden="true"></span><span class="txt">Loading PostgreSQL in your browser…</span></p>
+  <p class="pg-progress" id="pg-progress">Exercises solved: <strong>0 of 8</strong></p>
+  <button type="button" class="btn" id="pg-reset-db">Reset database</button>
+</div>
+
+<main id="main">
+
+<section id="how" aria-labelledby="how-h">
+  <h2 id="how-h">How to use this page</h2>
+  <ul>
+    <li>Each grey box is an editor. Press <strong>Run</strong>, or <kbd>Ctrl</kbd>+<kbd>Enter</kbd> (<kbd>Cmd</kbd>+<kbd>Enter</kbd> on a Mac). A box may hold several statements; each result is shown.</li>
+    <li>The database in your browser has <strong>one session</strong>: one user, one connection. Everything you run here happens one statement at a time, so nothing can collide. Section 3 replays two real sessions recorded on a PostgreSQL server; <a href="lab8.html">Lab 8</a> has you open two yourself.</li>
+    <li>A box without <code>BEGIN</code> runs as one unit: if any statement fails, the ones before it are undone too. A box that starts with <code>BEGIN;</code> should end with <code>COMMIT;</code> or <code>ROLLBACK;</code>. The examples end with <code>ROLLBACK;</code>, so nothing is kept. <strong>Reset database</strong>, at the top, puts the starting data back, whatever you changed.</li>
+    <li>Exercises have a <strong>Check answer</strong> button. It runs your statements inside a transaction and rolls them back, so your answer must not contain <code>BEGIN</code>, <code>COMMIT</code> or <code>ROLLBACK</code> of its own. Savepoints are fine. Your solved exercises are remembered in this browser only.</li>
+  </ul>
+</section>
+
+<section id="schema" aria-labelledby="schema-h">
+  <h2 id="schema-h">The sample database</h2>
+  <p>From week 5 the university has eight tables: week 3's seven, plus <code>prereq</code>, which says which course must be taken before which. Both of its attributes are course ids, so both are foreign keys to <code>course</code>. Week 3's gaps are still here: the Economics department has nobody in it, Noor Haddad has no salary yet, Emery Walsh has no department, and nobody teaches CS-319. <span class="pk">Underlined</span> attributes form the primary key; attributes marked <span class="fk">→</span> are foreign keys.</p>
+  <figure class="fig-anim schema-fig" data-schema-map data-peek="#peek">
+<svg style="--dg-k:1" viewBox="0 0 724 590" role="group" aria-label="Map of the eight tables. Each table is a button that shows its rows in the box below; its foreign keys light up when it has focus.">
+<defs><marker id="pm3" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#0e5a6b"/></marker></defs>
+<path class="fk-link" data-from="instructor" data-to="department" d="M268 99 H236 V213 H205" fill="none" stroke="#0e5a6b" stroke-width="1.8" marker-end="url(#pm3)"><title>instructor.dept_name references department</title></path>
+<path class="fk-link" data-from="student" data-to="department" d="M268 253 H236 V213 H205" fill="none" stroke="#0e5a6b" stroke-width="1.8" marker-end="url(#pm3)"><title>student.dept_name references department</title></path>
+<path class="fk-link" data-from="course" data-to="department" d="M268 407 H236 V213 H205" fill="none" stroke="#0e5a6b" stroke-width="1.8" marker-end="url(#pm3)"><title>course.dept_name references department</title></path>
+<path class="fk-link" data-from="advisor" data-to="student" d="M538 53 H506 V206 H464" fill="none" stroke="#0e5a6b" stroke-width="1.8" marker-end="url(#pm3)"><title>advisor.s_id references student</title></path>
+<path class="fk-link" data-from="advisor" data-to="instructor" d="M538 76 H492 V52 H464" fill="none" stroke="#0e5a6b" stroke-width="1.8" marker-end="url(#pm3)"><title>advisor.i_id references instructor</title></path>
+<path class="fk-link" data-from="takes" data-to="student" d="M538 161 H520 V222 H464" fill="none" stroke="#0e5a6b" stroke-width="1.8" marker-end="url(#pm3)"><title>takes.id references student</title></path>
+<path class="fk-link" data-from="takes" data-to="course" d="M538 184 H506 V366 H464" fill="none" stroke="#0e5a6b" stroke-width="1.8" marker-end="url(#pm3)"><title>takes.course_id references course</title></path>
+<path class="fk-link" data-from="teaches" data-to="instructor" d="M538 347 H478 V68 H464" fill="none" stroke="#0e5a6b" stroke-width="1.8" marker-end="url(#pm3)"><title>teaches.id references instructor</title></path>
+<path class="fk-link" data-from="teaches" data-to="course" d="M538 370 H492 V366 H464" fill="none" stroke="#0e5a6b" stroke-width="1.8" marker-end="url(#pm3)"><title>teaches.course_id references course</title></path>
+<path class="fk-link" data-from="prereq" data-to="course" d="M340 484 V452" fill="none" stroke="#0e5a6b" stroke-width="1.8" marker-end="url(#pm3)"><title>prereq.course_id references course</title></path>
+<path class="fk-link" data-from="prereq" data-to="course" d="M410 484 V452" fill="none" stroke="#0e5a6b" stroke-width="1.8" marker-end="url(#pm3)"><title>prereq.prereq_id references course</title></path>
+<g class="tbl-node" data-table="department" tabindex="0" role="button" aria-label="department: show its rows">
+<rect class="dg-box node-frame" x="10" y="160" width="190" height="111" rx="4"/>
+<rect class="dg-box-a" x="10" y="160" width="190" height="30" rx="4"/>
+<text class="dg-txt-b" x="22" y="181">department</text>
+<text class="dg-txt" x="22" y="214" text-decoration="underline">dept_name</text>
+<text class="dg-txt" x="22" y="237">building</text>
+<text class="dg-txt" x="22" y="260">budget</text>
+</g>
+<g class="tbl-node" data-table="instructor" tabindex="0" role="button" aria-label="instructor: show its rows">
+<rect class="dg-box node-frame" x="270" y="4" width="190" height="134" rx="4"/>
+<rect class="dg-box-a" x="270" y="4" width="190" height="30" rx="4"/>
+<text class="dg-txt-b" x="282" y="25">instructor</text>
+<text class="dg-txt" x="282" y="58" text-decoration="underline">id</text>
+<text class="dg-txt" x="282" y="81">name</text>
+<text class="dg-txt dg-teal" x="282" y="104">dept_name</text>
+<text class="dg-txt" x="282" y="127">salary</text>
+</g>
+<g class="tbl-node" data-table="student" tabindex="0" role="button" aria-label="student: show its rows">
+<rect class="dg-box node-frame" x="270" y="158" width="190" height="134" rx="4"/>
+<rect class="dg-box-a" x="270" y="158" width="190" height="30" rx="4"/>
+<text class="dg-txt-b" x="282" y="179">student</text>
+<text class="dg-txt" x="282" y="212" text-decoration="underline">id</text>
+<text class="dg-txt" x="282" y="235">name</text>
+<text class="dg-txt dg-teal" x="282" y="258">dept_name</text>
+<text class="dg-txt" x="282" y="281">tot_cred</text>
+</g>
+<g class="tbl-node" data-table="course" tabindex="0" role="button" aria-label="course: show its rows">
+<rect class="dg-box node-frame" x="270" y="312" width="190" height="134" rx="4"/>
+<rect class="dg-box-a" x="270" y="312" width="190" height="30" rx="4"/>
+<text class="dg-txt-b" x="282" y="333">course</text>
+<text class="dg-txt" x="282" y="366" text-decoration="underline">course_id</text>
+<text class="dg-txt" x="282" y="389">title</text>
+<text class="dg-txt dg-teal" x="282" y="412">dept_name</text>
+<text class="dg-txt" x="282" y="435">credits</text>
+</g>
+<g class="tbl-node" data-table="advisor" tabindex="0" role="button" aria-label="advisor: show its rows">
+<rect class="dg-box node-frame" x="540" y="4" width="176" height="88" rx="4"/>
+<rect class="dg-box-a" x="540" y="4" width="176" height="30" rx="4"/>
+<text class="dg-txt-b" x="552" y="25">advisor</text>
+<text class="dg-txt dg-teal" x="552" y="58" text-decoration="underline">s_id</text>
+<text class="dg-txt dg-teal" x="552" y="81">i_id</text>
+</g>
+<g class="tbl-node" data-table="takes" tabindex="0" role="button" aria-label="takes: show its rows">
+<rect class="dg-box node-frame" x="540" y="112" width="176" height="157" rx="4"/>
+<rect class="dg-box-a" x="540" y="112" width="176" height="30" rx="4"/>
+<text class="dg-txt-b" x="552" y="133">takes</text>
+<text class="dg-txt dg-teal" x="552" y="166" text-decoration="underline">id</text>
+<text class="dg-txt dg-teal" x="552" y="189" text-decoration="underline">course_id</text>
+<text class="dg-txt" x="552" y="212" text-decoration="underline">semester</text>
+<text class="dg-txt" x="552" y="235" text-decoration="underline">year</text>
+<text class="dg-txt" x="552" y="258">grade</text>
+</g>
+<g class="tbl-node" data-table="teaches" tabindex="0" role="button" aria-label="teaches: show its rows">
+<rect class="dg-box node-frame" x="540" y="298" width="176" height="134" rx="4"/>
+<rect class="dg-box-a" x="540" y="298" width="176" height="30" rx="4"/>
+<text class="dg-txt-b" x="552" y="319">teaches</text>
+<text class="dg-txt dg-teal" x="552" y="352" text-decoration="underline">id</text>
+<text class="dg-txt dg-teal" x="552" y="375" text-decoration="underline">course_id</text>
+<text class="dg-txt" x="552" y="398" text-decoration="underline">semester</text>
+<text class="dg-txt" x="552" y="421" text-decoration="underline">year</text>
+</g>
+<g class="tbl-node" data-table="prereq" tabindex="0" role="button" aria-label="prereq: show its rows">
+<rect class="dg-box node-frame" x="270" y="486" width="190" height="88" rx="4"/>
+<rect class="dg-box-a" x="270" y="486" width="190" height="30" rx="4"/>
+<text class="dg-txt-b" x="282" y="507">prereq</text>
+<text class="dg-txt dg-teal" x="282" y="540" text-decoration="underline">course_id</text>
+<text class="dg-txt dg-teal" x="282" y="563" text-decoration="underline">prereq_id</text>
+</g>
+</svg>
+    <figcaption>Select a table, with a click or with <kbd>Tab</kbd> and <kbd>Enter</kbd>, to see its rows in the box below. Its foreign keys light up while it has focus.</figcaption>
+  </figure>
+  <div class="cell" id="peek" data-cell data-label="Peek">
+    <div class="cell-head"><label for="c00">Peek at a table</label></div>
+    <textarea id="c00">SELECT * FROM prereq;</textarea>
+  </div>
+  <p>The same eight tables, with each attribute's type:</p>
+  <div class="schema">
+    <div class="schema-card"><h3>department</h3><ul>
+      <li><span class="pk">dept_name</span> <span class="ty">varchar(20)</span></li>
+      <li>building <span class="ty">varchar(15)</span></li>
+      <li>budget <span class="ty">numeric(12,2)</span></li></ul></div>
+    <div class="schema-card"><h3>instructor</h3><ul>
+      <li><span class="pk">id</span> <span class="ty">char(5)</span></li>
+      <li>name <span class="ty">varchar(30)</span></li>
+      <li><span class="fk">dept_name → department</span></li>
+      <li>salary <span class="ty">numeric(8,2), may be NULL</span></li></ul></div>
+    <div class="schema-card"><h3>student</h3><ul>
+      <li><span class="pk">id</span> <span class="ty">char(5)</span></li>
+      <li>name <span class="ty">varchar(30)</span></li>
+      <li><span class="fk">dept_name → department</span> <span class="ty">may be NULL</span></li>
+      <li>tot_cred <span class="ty">integer</span></li></ul></div>
+    <div class="schema-card"><h3>course</h3><ul>
+      <li><span class="pk">course_id</span> <span class="ty">varchar(8)</span></li>
+      <li>title <span class="ty">varchar(40)</span></li>
+      <li><span class="fk">dept_name → department</span></li>
+      <li>credits <span class="ty">integer</span></li></ul></div>
+    <div class="schema-card"><h3>takes</h3><ul>
+      <li><span class="pk"><span class="fk">id → student</span></span></li>
+      <li><span class="pk"><span class="fk">course_id → course</span></span></li>
+      <li><span class="pk">semester</span> <span class="ty">varchar(6)</span></li>
+      <li><span class="pk">year</span> <span class="ty">integer</span></li>
+      <li>grade <span class="ty">varchar(2), may be NULL</span></li></ul></div>
+    <div class="schema-card"><h3>teaches</h3><ul>
+      <li><span class="pk"><span class="fk">id → instructor</span></span></li>
+      <li><span class="pk"><span class="fk">course_id → course</span></span></li>
+      <li><span class="pk">semester</span> <span class="ty">varchar(6)</span></li>
+      <li><span class="pk">year</span> <span class="ty">integer</span></li></ul></div>
+    <div class="schema-card"><h3>advisor</h3><ul>
+      <li><span class="pk"><span class="fk">s_id → student</span></span></li>
+      <li><span class="fk">i_id → instructor</span></li></ul></div>
+    <div class="schema-card"><h3>prereq</h3><ul>
+      <li><span class="pk"><span class="fk">course_id → course</span></span></li>
+      <li><span class="pk"><span class="fk">prereq_id → course</span></span> <span class="ty">must be taken first</span></li></ul></div>
+  </div>
+  <p>To load this database in your own PostgreSQL, download <a href="university.sql">university.sql</a> from this week and run <code>psql -d university -f university.sql</code>. It replaces the earlier tables, so run it again whenever you want the starting data back.</p>
+</section>
+
+<section id="acid" aria-labelledby="acid-h">
+  <h2 id="acid-h">1. All or nothing</h2>
+  <p>Slides 3 to 7. Moving 5,000 of budget from Music to Physics takes two UPDATEs. If only the first one happened, 5,000 would vanish. Inside <code>BEGIN</code> … <code>COMMIT</code>, the two happen together or not at all: that is <strong>atomicity</strong>. <code>ROLLBACK</code> undoes everything since <code>BEGIN</code>.</p>
+  <div class="cell" data-cell data-label="Example 1.1">
+    <div class="cell-head"><label for="c11">Example 1.1 · a transfer, then a change of mind</label></div>
+    <textarea id="c11">BEGIN;
+UPDATE department SET budget = budget - 5000 WHERE dept_name = 'Music';
+UPDATE department SET budget = budget + 5000 WHERE dept_name = 'Physics';
+SELECT dept_name, budget FROM department WHERE dept_name IN ('Music', 'Physics');
+ROLLBACK;
+SELECT dept_name, budget FROM department WHERE dept_name IN ('Music', 'Physics');</textarea>
+  </div>
+  <p>Inside the transaction, the first SELECT sees its own changes: 55,000 and 90,000. After <code>ROLLBACK</code>, the second sees the budgets as they were.</p>
+  <p>When a statement fails, PostgreSQL does not keep the statements before it either. Department budgets must be above 0, so the second UPDATE here is refused, and the first is undone with it. Run it, then run Example 1.3 to see that Music still has 60,000.</p>
+  <div class="cell" data-cell data-label="Example 1.2">
+    <div class="cell-head"><label for="c12">Example 1.2 · one statement fails</label></div>
+    <textarea id="c12">UPDATE department SET budget = budget + 5000 WHERE dept_name = 'Music';
+UPDATE department SET budget = budget - 100000 WHERE dept_name = 'Physics';</textarea>
+  </div>
+  <div class="cell" data-cell data-label="Example 1.3">
+    <div class="cell-head"><label for="c13">Example 1.3 · nothing was kept</label></div>
+    <textarea id="c13">SELECT dept_name, budget FROM department WHERE dept_name IN ('Music', 'Physics');</textarea>
+  </div>
+  <p>A <strong>savepoint</strong> marks a point inside a transaction that you can go back to without losing everything. <code>ROLLBACK TO SAVEPOINT</code> undoes only what came after the mark; the transaction stays open. A program uses it to try one step, and recover if that step fails, without starting over.</p>
+  <div class="cell" data-cell data-label="Example 1.4">
+    <div class="cell-head"><label for="c14">Example 1.4 · undo part of a transaction</label></div>
+    <textarea id="c14">BEGIN;
+UPDATE instructor SET salary = salary * 1.1 WHERE dept_name = 'Physics';
+SAVEPOINT after_physics;
+UPDATE instructor SET salary = salary * 1.1 WHERE dept_name = 'Music';
+ROLLBACK TO SAVEPOINT after_physics;
+SELECT name, dept_name, salary FROM instructor
+WHERE dept_name IN ('Physics', 'Music') ORDER BY name;
+ROLLBACK;</textarea>
+  </div>
+  <p>The Physics raises are still there; Diego Torres in Music is back at 72,000. The last <code>ROLLBACK</code> then undoes the Physics raises too.</p>
+</section>
+
+<section id="sched" aria-labelledby="sched-h">
+  <h2 id="sched-h">2. Schedules, as data</h2>
+  <p>Slides 9 to 13. A <strong>schedule</strong> lists the operations of several transactions in the order they ran. This week's database has five, in a table you can query:</p>
+  <ul>
+    <li><code>sched(sched, step, tx, op, item)</code>: in schedule <code>sched</code>, at <code>step</code>, transaction <code>tx</code> does <code>op</code>: <code>R</code> reads <code>item</code>, <code>W</code> writes it, <code>C</code> commits, <code>A</code> aborts. The items are <code>A</code> and <code>B</code>; commits and aborts have no item.</li>
+    <li>S1 runs T1 and then T2. S2 interleaves the same operations. S3 is the lost update. S4 has three transactions. In S5, T2 reads what T1 wrote and commits, and then T1 aborts.</li>
+  </ul>
+  <p>A query can lay a schedule out the way the book draws it, one column for each transaction:</p>
+  <div class="cell" data-cell data-label="Example 2.1">
+    <div class="cell-head"><label for="c21">Example 2.1 · schedule S2, one column per transaction</label></div>
+    <textarea id="c21">SELECT step,
+       CASE WHEN tx = 1 THEN op || coalesce('(' || item || ')', '') END AS t1,
+       CASE WHEN tx = 2 THEN op || coalesce('(' || item || ')', '') END AS t2
+FROM sched WHERE sched = 'S2' ORDER BY step;</textarea>
+  </div>
+  <p>Two operations <strong>conflict</strong> when they belong to different transactions, touch the same item, and at least one of them writes. Their order matters: swap them and someone reads a different value, or a different write survives. Every other pair can be swapped freely. This self-join finds the conflicting pairs in S3, earlier step first:</p>
+  <div class="cell" data-cell data-label="Example 2.2">
+    <div class="cell-head"><label for="c22">Example 2.2 · conflicting pairs in S3</label></div>
+    <textarea id="c22">SELECT a.step AS first, a.tx || a.op || '(' || a.item || ')' AS first_op,
+       b.step AS second, b.tx || b.op || '(' || b.item || ')' AS second_op
+FROM sched a JOIN sched b
+  ON a.sched = b.sched AND a.item = b.item
+ AND a.tx <> b.tx AND a.step < b.step
+ AND 'W' IN (a.op, b.op)
+WHERE a.sched = 'S3'
+ORDER BY first, second;</textarea>
+  </div>
+  <p>Each conflicting pair says one transaction must come before the other in any equivalent serial order. Those are the edges of the <strong>precedence graph</strong>: T<sub>i</sub> → T<sub>j</sub> when an operation of T<sub>i</sub> conflicts with a later one of T<sub>j</sub>.</p>
+  <div class="cell" data-cell data-label="Example 2.3">
+    <div class="cell-head"><label for="c23">Example 2.3 · precedence graph edges, every schedule</label></div>
+    <textarea id="c23">SELECT DISTINCT a.sched, a.tx AS from_tx, b.tx AS to_tx
+FROM sched a JOIN sched b
+  ON a.sched = b.sched AND a.item = b.item
+ AND a.tx <> b.tx AND a.step < b.step
+ AND 'W' IN (a.op, b.op)
+ORDER BY 1, 2, 3;</textarea>
+  </div>
+  <p>S3 has an edge each way, T1 → T2 and T2 → T1: no serial order can put each before the other. A schedule is <strong>conflict serializable</strong> exactly when its precedence graph has no cycle. Week 4's <code>WITH RECURSIVE</code> finds every transaction reachable from each one; a transaction that can reach itself is on a cycle.</p>
+  <div class="cell" data-cell data-label="Example 2.4">
+    <div class="cell-head"><label for="c24">Example 2.4 · cycles in S3</label></div>
+    <textarea id="c24">WITH RECURSIVE edge AS (
+  SELECT DISTINCT a.sched, a.tx AS from_tx, b.tx AS to_tx
+  FROM sched a JOIN sched b
+    ON a.sched = b.sched AND a.item = b.item
+   AND a.tx <> b.tx AND a.step < b.step
+   AND 'W' IN (a.op, b.op)
+), reach(sched, start, at) AS (
+  SELECT sched, from_tx, to_tx FROM edge
+  UNION
+  SELECT r.sched, r.start, e.to_tx
+  FROM reach r JOIN edge e ON e.sched = r.sched AND e.from_tx = r.at
+)
+SELECT * FROM reach WHERE sched = 'S3' AND start = at;</textarea>
+  </div>
+  <p><code>UNION</code>, not <code>UNION ALL</code>, is what makes this stop: once no new (start, at) pair turns up, the recursion ends, even around a cycle.</p>
+  <p>Serializable is not the whole story. In S5, T2 reads the A that T1 wrote and commits; then T1 aborts. T2 has committed work based on a value that never officially existed, and committed work can't be undone. A schedule is <strong>recoverable</strong> if every transaction commits only after the ones it read from have committed, and <strong>cascadeless</strong> if no transaction reads a value whose writer has not yet committed. This finds every read of an uncommitted write:</p>
+  <div class="cell" data-cell data-label="Example 2.5">
+    <div class="cell-head"><label for="c25">Example 2.5 · reads of uncommitted data</label></div>
+    <textarea id="c25">SELECT r.sched, w.tx AS writer, r.tx AS reader, r.item, r.step
+FROM sched w JOIN sched r
+  ON r.sched = w.sched AND r.item = w.item
+ AND w.op = 'W' AND r.op = 'R'
+ AND r.tx <> w.tx AND w.step < r.step
+WHERE NOT EXISTS (SELECT 1 FROM sched e
+                  WHERE e.sched = w.sched AND e.tx = w.tx
+                    AND e.op IN ('C', 'A') AND e.step < r.step)
+ORDER BY 1, 5;</textarea>
+  </div>
+  <p>S2 and S4 are conflict serializable, yet not cascadeless: had T1 aborted in S2, T2 would have had to abort too. PostgreSQL never lets this happen, because a session never sees another session's uncommitted writes. Section 3 shows it.</p>
+</section>
+
+<section id="iso" aria-labelledby="iso-h">
+  <h2 id="iso-h">3. Two sessions at once</h2>
+  <p>Slides 15 to 19. Pick a scenario and step through it. Each one was run on a real PostgreSQL server by two psql sessions, A and B, starting from this week's data; what you see is what each session sent and what came back.</p>
+  <div class="txviz" data-txviz data-src="txdata" data-start="lost"></div>
+  <p>SQL names four isolation levels by the anomalies each one rules out. PostgreSQL accepts all four names, but treats Read Uncommitted as Read Committed, so you never get a dirty read:</p>
+  <div class="fig-scroll" tabindex="0" role="region" aria-label="Isolation levels and anomalies">
+  <table class="tbl">
+    <caption>What each isolation level allows in PostgreSQL</caption>
+    <thead><tr><th scope="col">Level</th><th scope="col">Dirty read</th><th scope="col">Non-repeatable read or phantom</th><th scope="col">Lost update</th><th scope="col">Write skew</th></tr></thead>
+    <tbody>
+      <tr><th scope="row">Read Committed (the default)</th><td>No</td><td>Yes</td><td>Yes, with read-then-write code</td><td>Yes</td></tr>
+      <tr><th scope="row">Repeatable Read</th><td>No</td><td>No</td><td>No: an error, retry</td><td>Yes</td></tr>
+      <tr><th scope="row">Serializable</th><td>No</td><td>No</td><td>No: an error, retry</td><td>No: an error, retry</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Each transaction can choose its own level. In this one session you can still check which level you are in:</p>
+  <div class="cell" data-cell data-label="Example 3.1">
+    <div class="cell-head"><label for="c31">Example 3.1 · choose a level</label></div>
+    <textarea id="c31">SHOW transaction_isolation;
+BEGIN ISOLATION LEVEL SERIALIZABLE;
+SHOW transaction_isolation;
+ROLLBACK;</textarea>
+  </div>
+</section>
+
+<section id="locks" aria-labelledby="locks-h">
+  <h2 id="locks-h">4. Locks</h2>
+  <p>Slides 21 and 22. Writers in PostgreSQL take locks: an UPDATE locks each row it changes until its transaction ends, so a second writer of the same row waits, as in the deadlock and lost update scenarios above. Holding every lock until commit is <strong>strict two-phase locking</strong>. Readers take no row locks, and never wait for writers. The view <code>pg_locks</code> lists the locks each session holds; <code>pg_backend_pid()</code> picks out yours.</p>
+  <div class="cell" data-cell data-label="Example 4.1">
+    <div class="cell-head"><label for="c41">Example 4.1 · the locks an UPDATE holds</label></div>
+    <textarea id="c41">BEGIN;
+UPDATE department SET budget = budget + 1000 WHERE dept_name = 'Music';
+SELECT locktype, relation::regclass AS relation, mode, granted
+FROM pg_locks WHERE pid = pg_backend_pid()
+ORDER BY 1, 2::text;
+ROLLBACK;</textarea>
+  </div>
+  <p>On the table and its index, <code>RowExclusiveLock</code>: "I am changing some rows here." It does not block other writers of other rows; it only blocks things like <code>DROP TABLE</code>. The locks on single rows are not listed: PostgreSQL marks them in the row itself, the <code>xmax</code> of section 5. The <code>transactionid</code> lock is what a waiting session waits on: when this transaction ends, the waiter wakes. The line for <code>pg_locks</code> is the SELECT reading the view.</p>
+  <p><code>SELECT … FOR UPDATE</code> locks the rows it reads as if it were about to change them. It is how read-then-write code avoids the lost update in Read Committed: the second session's FOR UPDATE waits until the first commits, and then reads the new value.</p>
+  <div class="cell" data-cell data-label="Example 4.2">
+    <div class="cell-head"><label for="c42">Example 4.2 · lock the rows you read</label></div>
+    <textarea id="c42">BEGIN;
+SELECT dept_name, budget FROM department WHERE dept_name = 'Music' FOR UPDATE;
+UPDATE department SET budget = 65000 WHERE dept_name = 'Music';
+SELECT relation::regclass AS relation, mode
+FROM pg_locks WHERE pid = pg_backend_pid() AND locktype = 'relation'
+ORDER BY 1::text;
+ROLLBACK;</textarea>
+  </div>
+</section>
+
+<section id="mvcc" aria-labelledby="mvcc-h">
+  <h2 id="mvcc-h">5. Versions, not overwrites</h2>
+  <p>Slides 23 and 24. PostgreSQL never changes a row in place. An UPDATE writes a <strong>new version</strong> of the row and marks the old one as replaced. Every row has hidden columns that say which version it is: <code>xmin</code>, the transaction that created it; <code>xmax</code>, the transaction that deleted or replaced it (0 if none); and <code>ctid</code>, its place on disk, (page, slot), as in week 10.</p>
+  <div class="cell" data-cell data-label="Example 5.1">
+    <div class="cell-head"><label for="c51">Example 5.1 · an UPDATE makes a new version</label></div>
+    <textarea id="c51">BEGIN;
+SELECT pg_current_xact_id() AS my_transaction;
+SELECT ctid, xmin, xmax, budget FROM department WHERE dept_name = 'Music';
+UPDATE department SET budget = 61000 WHERE dept_name = 'Music';
+SELECT ctid, xmin, xmax, budget FROM department WHERE dept_name = 'Music';
+ROLLBACK;</textarea>
+  </div>
+  <p>After the UPDATE, the row you see has a new <code>ctid</code> and your transaction's number as its <code>xmin</code>. The old version is still on the page. Another session, which can't see your uncommitted version, keeps reading that one: that is why readers never wait for writers.</p>
+  <div class="cell" data-cell data-label="Example 5.2">
+    <div class="cell-head"><label for="c52">Example 5.2 · after the rollback</label></div>
+    <textarea id="c52">SELECT ctid, xmin, xmax, budget FROM department WHERE dept_name = 'Music';</textarea>
+  </div>
+  <p>The old version is back, at its old <code>ctid</code>, and its <code>xmax</code> now holds the number of the transaction that rolled back. Rolling back wrote nothing: PostgreSQL keeps a record of which transactions committed and which aborted, and a version whose <code>xmax</code> aborted still counts as alive. The dead new version stays on the page until <code>VACUUM</code> clears it (week 14).</p>
+  <p>Which versions a statement sees is decided by its <strong>snapshot</strong>: the list of transactions that had committed when it was taken. Read Committed takes a new snapshot for each statement; Repeatable Read and Serializable take one at the first statement and keep it to the end. <code>pg_current_snapshot()</code> shows it as <em>xmin:xmax:running</em>: every transaction below the first number is finished, every one from the second on is in the future, and the list names those still running in between.</p>
+  <div class="cell" data-cell data-label="Example 5.3">
+    <div class="cell-head"><label for="c53">Example 5.3 · your snapshot</label></div>
+    <textarea id="c53">SELECT pg_current_snapshot();</textarea>
+  </div>
+</section>
+
+<section id="exercises" aria-labelledby="ex-h">
+  <h2 id="ex-h">Exercises</h2>
+  <p>The checker wraps your answer in its own transaction and rolls it back, so leave out <code>BEGIN</code>, <code>COMMIT</code> and <code>ROLLBACK</code>. <code>SAVEPOINT</code> and <code>ROLLBACK TO SAVEPOINT</code> are fine. The last statement's result is the one checked.</p>
+
+  <div class="cell cell--ex" data-cell data-ex="w13e1" data-ordered="true" data-label="Exercise 1">
+    <div class="cell-head"><label for="e1">Exercise 1</label><span class="solved-badge"></span></div>
+    <div class="cell-prompt"><p>History lends Biology 10,000 of its budget. Make the two changes, then show <code>dept_name</code> and <code>budget</code> of both departments, ordered by <code>dept_name</code>.</p></div>
+    <textarea id="e1"></textarea>
+    <script type="text/plain" class="solution">UPDATE department SET budget = budget - 10000 WHERE dept_name = 'History';
+UPDATE department SET budget = budget + 10000 WHERE dept_name = 'Biology';
+SELECT dept_name, budget FROM department WHERE dept_name IN ('History', 'Biology') ORDER BY dept_name;</script>
+    <details><summary>Hint</summary><p>Example 1.1, without its <code>BEGIN</code> and <code>ROLLBACK</code>, with the departments and the amount changed.</p></details>
+    <details><summary>Show a solution</summary><pre><code>UPDATE department SET budget = budget - 10000 WHERE dept_name = 'History';
+UPDATE department SET budget = budget + 10000 WHERE dept_name = 'Biology';
+SELECT dept_name, budget FROM department
+WHERE dept_name IN ('History', 'Biology') ORDER BY dept_name;</code></pre><p>Biology 105,000 and History 40,000. In a program, both UPDATEs go in one transaction, so a failure between them can't lose the 10,000.</p></details>
+  </div>
+
+  <div class="cell cell--ex" data-cell data-ex="w13e2" data-ordered="true" data-label="Exercise 2">
+    <div class="cell-head"><label for="e2">Exercise 2</label><span class="solved-badge"></span></div>
+    <div class="cell-prompt"><p>Give every Comp. Sci. instructor a raise of 5,000. Then set a savepoint named <strong>before_math</strong>, give every Mathematics instructor a raise of 5,000, and change your mind about Mathematics only. Show <code>name</code> and <code>salary</code> of the instructors in both departments, ordered by <code>name</code>.</p></div>
+    <textarea id="e2"></textarea>
+    <script type="text/plain" class="solution">UPDATE instructor SET salary = salary + 5000 WHERE dept_name = 'Comp. Sci.';
+SAVEPOINT before_math;
+UPDATE instructor SET salary = salary + 5000 WHERE dept_name = 'Mathematics';
+ROLLBACK TO SAVEPOINT before_math;
+SELECT name, salary FROM instructor WHERE dept_name IN ('Comp. Sci.', 'Mathematics') ORDER BY name;</script>
+    <details><summary>Hint</summary><p>Example 1.4 shows the pattern: <code>SAVEPOINT</code>, the change, <code>ROLLBACK TO SAVEPOINT</code>.</p></details>
+    <details><summary>Show a solution</summary><pre><code>UPDATE instructor SET salary = salary + 5000 WHERE dept_name = 'Comp. Sci.';
+SAVEPOINT before_math;
+UPDATE instructor SET salary = salary + 5000 WHERE dept_name = 'Mathematics';
+ROLLBACK TO SAVEPOINT before_math;
+SELECT name, salary FROM instructor
+WHERE dept_name IN ('Comp. Sci.', 'Mathematics') ORDER BY name;</code></pre><p>The Comp. Sci. raises stay; Maria Lopez is back at 87,000.</p></details>
+  </div>
+
+  <div class="cell cell--ex" data-cell data-ex="w13e3" data-ordered="true" data-label="Exercise 3">
+    <div class="cell-head"><label for="e3">Exercise 3</label><span class="solved-badge"></span></div>
+    <div class="cell-prompt"><p>List the conflicting pairs of operations in schedule <strong>S4</strong>: two columns, the earlier step and the later step, ordered by both. Before you run it, find them by hand in Example 2.1's layout (change S2 to S4 and add a <code>t3</code> column).</p></div>
+    <textarea id="e3"></textarea>
+    <script type="text/plain" class="solution">SELECT a.step, b.step FROM sched a JOIN sched b ON a.sched = b.sched AND a.item = b.item AND a.tx <> b.tx AND a.step < b.step AND 'W' IN (a.op, b.op) WHERE a.sched = 'S4' ORDER BY 1, 2;</script>
+    <details><summary>Hint</summary><p>Example 2.2, for S4, keeping only the two step columns.</p></details>
+    <details><summary>Show a solution</summary><pre><code>SELECT a.step AS first, b.step AS second
+FROM sched a JOIN sched b
+  ON a.sched = b.sched AND a.item = b.item
+ AND a.tx &lt;&gt; b.tx AND a.step &lt; b.step
+ AND 'W' IN (a.op, b.op)
+WHERE a.sched = 'S4'
+ORDER BY first, second;</code></pre><p>Four pairs: (1, 7) and (3, 7) on A, T1 before T2's write; (3, 4), T2 reading what T1 wrote; and (5, 6), T2 reading what T3 wrote. Steps 1 and 4 both read A, which is no conflict.</p></details>
+  </div>
+
+  <div class="cell cell--ex" data-cell data-ex="w13e4" data-label="Exercise 4">
+    <div class="cell-head"><label for="e4">Exercise 4</label><span class="solved-badge"></span></div>
+    <div class="cell-prompt"><p>For each schedule, show its name and <code>true</code> or <code>false</code>: is it conflict serializable? Include every schedule, even one with no edges at all.</p></div>
+    <textarea id="e4"></textarea>
+    <script type="text/plain" class="solution">WITH RECURSIVE edge AS (SELECT DISTINCT a.sched, a.tx AS from_tx, b.tx AS to_tx FROM sched a JOIN sched b ON a.sched = b.sched AND a.item = b.item AND a.tx <> b.tx AND a.step < b.step AND 'W' IN (a.op, b.op)),
+reach(sched, start, at) AS (SELECT sched, from_tx, to_tx FROM edge UNION SELECT r.sched, r.start, e.to_tx FROM reach r JOIN edge e ON e.sched = r.sched AND e.from_tx = r.at)
+SELECT s.sched, NOT EXISTS (SELECT 1 FROM reach r WHERE r.sched = s.sched AND r.start = r.at) FROM (SELECT DISTINCT sched FROM sched) s;</script>
+    <details><summary>Hint</summary><p>Keep Example 2.4's two CTEs. In the final query, go through the distinct schedule names and use <code>NOT EXISTS</code> to look for a row of <code>reach</code> with <code>start = at</code>.</p></details>
+    <details><summary>Show a solution</summary><pre><code>WITH RECURSIVE edge AS (
+  SELECT DISTINCT a.sched, a.tx AS from_tx, b.tx AS to_tx
+  FROM sched a JOIN sched b
+    ON a.sched = b.sched AND a.item = b.item
+   AND a.tx &lt;&gt; b.tx AND a.step &lt; b.step
+   AND 'W' IN (a.op, b.op)
+), reach(sched, start, at) AS (
+  SELECT sched, from_tx, to_tx FROM edge
+  UNION
+  SELECT r.sched, r.start, e.to_tx
+  FROM reach r JOIN edge e ON e.sched = r.sched AND e.from_tx = r.at
+)
+SELECT s.sched,
+       NOT EXISTS (SELECT 1 FROM reach r
+                   WHERE r.sched = s.sched AND r.start = r.at) AS serializable
+FROM (SELECT DISTINCT sched FROM sched) s
+ORDER BY s.sched;</code></pre><p>Only S3 is not. Starting from the list of schedules, not from <code>edge</code>, keeps a schedule with no conflicts at all in the answer.</p></details>
+  </div>
+
+  <div class="cell cell--ex" data-cell data-ex="w13e5" data-label="Exercise 5">
+    <div class="cell-head"><label for="e5">Exercise 5</label><span class="solved-badge"></span></div>
+    <div class="cell-prompt"><p>Which schedules are <strong>not recoverable</strong>? A schedule is not recoverable when some transaction reads an item written by another transaction that has not committed yet, and then commits before that writer commits (or the writer never commits). Show only the schedule names.</p></div>
+    <textarea id="e5"></textarea>
+    <script type="text/plain" class="solution">WITH rf AS (SELECT DISTINCT r.sched, w.tx AS writer, r.tx AS reader FROM sched w JOIN sched r ON r.sched = w.sched AND r.item = w.item AND w.op = 'W' AND r.op = 'R' AND r.tx <> w.tx AND w.step < r.step WHERE NOT EXISTS (SELECT 1 FROM sched e WHERE e.sched = w.sched AND e.tx = w.tx AND e.op IN ('C', 'A') AND e.step < r.step))
+SELECT DISTINCT rf.sched FROM rf JOIN sched rc ON rc.sched = rf.sched AND rc.tx = rf.reader AND rc.op = 'C' WHERE NOT EXISTS (SELECT 1 FROM sched wc WHERE wc.sched = rf.sched AND wc.tx = rf.writer AND wc.op = 'C' AND wc.step < rc.step);</script>
+    <details><summary>Hint</summary><p>Start from Example 2.5's reads of uncommitted data, as a CTE of (sched, writer, reader). Join each to the reader's commit, and keep it when no commit by the writer comes before that step.</p></details>
+    <details><summary>Show a solution</summary><pre><code>WITH rf AS (
+  SELECT DISTINCT r.sched, w.tx AS writer, r.tx AS reader
+  FROM sched w JOIN sched r
+    ON r.sched = w.sched AND r.item = w.item
+   AND w.op = 'W' AND r.op = 'R'
+   AND r.tx &lt;&gt; w.tx AND w.step &lt; r.step
+  WHERE NOT EXISTS (SELECT 1 FROM sched e
+                    WHERE e.sched = w.sched AND e.tx = w.tx
+                      AND e.op IN ('C', 'A') AND e.step &lt; r.step)
+)
+SELECT DISTINCT rf.sched
+FROM rf JOIN sched rc
+  ON rc.sched = rf.sched AND rc.tx = rf.reader AND rc.op = 'C'
+WHERE NOT EXISTS (SELECT 1 FROM sched wc
+                  WHERE wc.sched = rf.sched AND wc.tx = rf.writer
+                    AND wc.op = 'C' AND wc.step &lt; rc.step);</code></pre><p>Only S5. S2 and S4 also read uncommitted data, but each reader commits after its writers, so they are recoverable, though not cascadeless.</p></details>
+  </div>
+
+  <div class="cell cell--ex" data-cell data-ex="w13e6" data-label="Exercise 6">
+    <div class="cell-head"><label for="e6">Exercise 6</label><span class="solved-badge"></span></div>
+    <div class="cell-prompt"><p>Lock History's row with <code>SELECT … FOR UPDATE</code>, then list the <code>mode</code> of every lock your session holds on the <code>department</code> table itself (not its index), from <code>pg_locks</code>.</p></div>
+    <textarea id="e6"></textarea>
+    <script type="text/plain" class="solution">SELECT * FROM department WHERE dept_name = 'History' FOR UPDATE;
+SELECT mode FROM pg_locks WHERE pid = pg_backend_pid() AND relation = 'department'::regclass;</script>
+    <details><summary>Hint</summary><p>In <code>pg_locks</code>, <code>relation</code> is the table's internal number. <code>'department'::regclass</code> turns the name into that number.</p></details>
+    <details><summary>Show a solution</summary><pre><code>SELECT * FROM department WHERE dept_name = 'History' FOR UPDATE;
+SELECT mode FROM pg_locks
+WHERE pid = pg_backend_pid() AND relation = 'department'::regclass;</code></pre><p><code>RowShareLock</code>. Like <code>RowExclusiveLock</code>, it is a table lock that lets other sessions read and write the table's other rows; the lock on History's row itself is marked in the row.</p></details>
+  </div>
+
+  <div class="cell cell--ex" data-cell data-ex="w13e7" data-label="Exercise 7">
+    <div class="cell-head"><label for="e7">Exercise 7</label><span class="solved-badge"></span></div>
+    <div class="cell-prompt"><p>Change Biology's building to Hale. Then show one row with one column: <code>true</code> if the Biology row you now see was created by your own transaction. Compare its <code>xmin</code> with <code>pg_current_xact_id()</code>.</p></div>
+    <textarea id="e7"></textarea>
+    <script type="text/plain" class="solution">UPDATE department SET building = 'Hale' WHERE dept_name = 'Biology';
+SELECT xmin = pg_current_xact_id()::xid FROM department WHERE dept_name = 'Biology';</script>
+    <details><summary>Hint</summary><p><code>xmin</code> has type <code>xid</code> and <code>pg_current_xact_id()</code> has type <code>xid8</code>, a wider number. Cast the second: <code>pg_current_xact_id()::xid</code>.</p></details>
+    <details><summary>Show a solution</summary><pre><code>UPDATE department SET building = 'Hale' WHERE dept_name = 'Biology';
+SELECT xmin = pg_current_xact_id()::xid AS mine
+FROM department WHERE dept_name = 'Biology';</code></pre><p>True: the UPDATE wrote a new version, and its <code>xmin</code> is this transaction. Run the SELECT alone and you get false, because the version you see then was made by the transaction that loaded the data.</p></details>
+  </div>
+
+  <div class="cell cell--ex" data-cell data-ex="w13e8" data-label="Exercise 8">
+    <div class="cell-head"><label for="e8">Exercise 8</label><span class="solved-badge"></span></div>
+    <div class="cell-prompt"><p>Section 3's write skew scenario broke the rule that the two Hale departments keep at least 200,000 between them. Write the check a careful transaction would make <em>after</em> its own cut: lower Mathematics's budget by 10,000, then return one row, one column: <code>true</code> if the Hale departments still have at least 200,000 together.</p></div>
+    <textarea id="e8"></textarea>
+    <script type="text/plain" class="solution">UPDATE department SET budget = budget - 10000 WHERE dept_name = 'Mathematics';
+SELECT sum(budget) >= 200000 FROM department WHERE building = 'Hale';</script>
+    <details><summary>Hint</summary><p>An UPDATE, then a SELECT of <code>sum(budget) &gt;= 200000</code> over the departments in Hale.</p></details>
+    <details><summary>Show a solution</summary><pre><code>UPDATE department SET budget = budget - 10000 WHERE dept_name = 'Mathematics';
+SELECT sum(budget) &gt;= 200000 AS rule_kept
+FROM department WHERE building = 'Hale';</code></pre><p>True: 200,000, so this transaction may commit. The trouble in the scenario was that each session made the same check and saw only its own cut. Under Serializable, PostgreSQL notices that the two checks together depended on each other's writes and cancels one; under Repeatable Read nothing stops them.</p></details>
+  </div>
+</section>
+
+<section id="scratch" aria-labelledby="scratch-h">
+  <h2 id="scratch-h">Scratch pad</h2>
+  <p>Write a schedule of your own into <code>sched</code> as S6 and run Examples 2.3 to 2.5 on it, or look at the versions of a row after a few UPDATEs.</p>
+  <div class="cell" data-cell data-label="Scratch">
+    <div class="cell-head"><label for="cs1">Scratch pad</label></div>
+    <textarea id="cs1">SELECT * FROM sched WHERE sched = 'S5' ORDER BY step;</textarea>
+  </div>
+</section>
+
+<section id="next" aria-labelledby="next-h">
+  <h2 id="next-h">Next</h2>
+  <p>Next week: recovery, or how a committed transaction survives a crash, and the day-to-day care of a PostgreSQL server. <a href="lab8.html">Lab 8</a>, in which you run two sessions yourself, is due Sunday, April 18. <a href="../../project/milestone4.html">Milestone 4</a> is due Sunday, April 25.</p>
+</section>
+</main>
+
+<footer>
+  <p>CS 4600/5200 · Database Theory and Applications · University of Central Missouri · Dr. Gorkem Kar. The database runs on <a href="https://pglite.dev/">PGlite</a>, PostgreSQL compiled to run in a web browser.</p>
+</footer>
+</div>
+
+<script type="application/json" id="txdata">
+[
+ {
+  "id": "dirty",
+  "title": "No dirty reads",
+  "level": "Read Committed",
+  "intro": "Session A changes Music's budget but has not committed. What does session B see?",
+  "lesson": "B never sees A's uncommitted 1,000. PostgreSQL never allows dirty reads, at any isolation level: B reads the last committed version of the row.",
+  "events": [
+   {
+    "who": "A",
+    "sql": "BEGIN;",
+    "out": "BEGIN"
+   },
+   {
+    "who": "A",
+    "sql": "UPDATE department SET budget = 1000 WHERE dept_name = 'Music';",
+    "out": "UPDATE 1"
+   },
+   {
+    "who": "B",
+    "sql": "SELECT budget FROM department WHERE dept_name = 'Music';",
+    "out": "  budget  \n----------\n 60000.00"
+   },
+   {
+    "who": "A",
+    "sql": "ROLLBACK;",
+    "out": "ROLLBACK"
+   },
+   {
+    "who": "B",
+    "sql": "SELECT budget FROM department WHERE dept_name = 'Music';",
+    "out": "  budget  \n----------\n 60000.00"
+   }
+  ]
+ },
+ {
+  "id": "lost",
+  "title": "Lost update: read, then write",
+  "level": "Read Committed",
+  "intro": "Each session reads Music's budget of 60,000, adds to it in the application, and writes the new total back: A adds 5,000, B adds 10,000.",
+  "lesson": "The budget ends at 70,000, not 75,000: A's 5,000 is lost. B wrote a total it had computed from a value that was already out of date.",
+  "events": [
+   {
+    "who": "A",
+    "sql": "BEGIN;",
+    "out": "BEGIN"
+   },
+   {
+    "who": "B",
+    "sql": "BEGIN;",
+    "out": "BEGIN"
+   },
+   {
+    "who": "A",
+    "sql": "SELECT budget FROM department WHERE dept_name = 'Music';",
+    "out": "  budget  \n----------\n 60000.00"
+   },
+   {
+    "who": "B",
+    "sql": "SELECT budget FROM department WHERE dept_name = 'Music';",
+    "out": "  budget  \n----------\n 60000.00"
+   },
+   {
+    "who": "A",
+    "sql": "UPDATE department SET budget = 65000 WHERE dept_name = 'Music';",
+    "out": "UPDATE 1"
+   },
+   {
+    "who": "A",
+    "sql": "COMMIT;",
+    "out": "COMMIT"
+   },
+   {
+    "who": "B",
+    "sql": "UPDATE department SET budget = 70000 WHERE dept_name = 'Music';",
+    "out": "UPDATE 1"
+   },
+   {
+    "who": "B",
+    "sql": "COMMIT;",
+    "out": "COMMIT"
+   },
+   {
+    "who": "A",
+    "sql": "SELECT budget FROM department WHERE dept_name = 'Music';",
+    "out": "  budget  \n----------\n 70000.00"
+   }
+  ]
+ },
+ {
+  "id": "lostfix",
+  "title": "No lost update: let the database add",
+  "level": "Read Committed",
+  "intro": "The same two raises, written as UPDATE … SET budget = budget + x, so the database reads and writes the row in one step.",
+  "lesson": "B's UPDATE waits for A's row lock. When A commits, B rereads the row, sees 65,000, and adds to that: 75,000, both raises kept.",
+  "events": [
+   {
+    "who": "A",
+    "sql": "BEGIN;",
+    "out": "BEGIN"
+   },
+   {
+    "who": "B",
+    "sql": "BEGIN;",
+    "out": "BEGIN"
+   },
+   {
+    "who": "A",
+    "sql": "UPDATE department SET budget = budget + 5000 WHERE dept_name = 'Music';",
+    "out": "UPDATE 1"
+   },
+   {
+    "who": "B",
+    "sql": "UPDATE department SET budget = budget + 10000 WHERE dept_name = 'Music';",
+    "waiting": true
+   },
+   {
+    "who": "A",
+    "sql": "COMMIT;",
+    "out": "COMMIT"
+   },
+   {
+    "who": "B",
+    "late": true,
+    "sql": "UPDATE department SET budget = budget + 10000 WHERE dept_name = 'Music';",
+    "out": "UPDATE 1"
+   },
+   {
+    "who": "B",
+    "sql": "COMMIT;",
+    "out": "COMMIT"
+   },
+   {
+    "who": "A",
+    "sql": "SELECT budget FROM department WHERE dept_name = 'Music';",
+    "out": "  budget  \n----------\n 75000.00"
+   }
+  ]
+ },
+ {
+  "id": "lostrr",
+  "title": "Lost update caught",
+  "level": "Repeatable Read",
+  "intro": "The read-then-write pattern again, but in Repeatable Read transactions.",
+  "lesson": "B's UPDATE waits for A; when A commits, B is stopped with a serialization error instead of overwriting A's change. The application must retry B's transaction from the start.",
+  "events": [
+   {
+    "who": "A",
+    "sql": "BEGIN ISOLATION LEVEL REPEATABLE READ;",
+    "out": "BEGIN"
+   },
+   {
+    "who": "B",
+    "sql": "BEGIN ISOLATION LEVEL REPEATABLE READ;",
+    "out": "BEGIN"
+   },
+   {
+    "who": "A",
+    "sql": "SELECT budget FROM department WHERE dept_name = 'Music';",
+    "out": "  budget  \n----------\n 60000.00"
+   },
+   {
+    "who": "B",
+    "sql": "SELECT budget FROM department WHERE dept_name = 'Music';",
+    "out": "  budget  \n----------\n 60000.00"
+   },
+   {
+    "who": "A",
+    "sql": "UPDATE department SET budget = 65000 WHERE dept_name = 'Music';",
+    "out": "UPDATE 1"
+   },
+   {
+    "who": "B",
+    "sql": "UPDATE department SET budget = 70000 WHERE dept_name = 'Music';",
+    "waiting": true
+   },
+   {
+    "who": "A",
+    "sql": "COMMIT;",
+    "out": "COMMIT"
+   },
+   {
+    "who": "B",
+    "late": true,
+    "sql": "UPDATE department SET budget = 70000 WHERE dept_name = 'Music';",
+    "out": "ERROR:  could not serialize access due to concurrent update"
+   },
+   {
+    "who": "B",
+    "sql": "ROLLBACK;",
+    "out": "ROLLBACK"
+   },
+   {
+    "who": "A",
+    "sql": "SELECT budget FROM department WHERE dept_name = 'Music';",
+    "out": "  budget  \n----------\n 65000.00"
+   }
+  ]
+ },
+ {
+  "id": "reread_rc",
+  "title": "Reading twice",
+  "level": "Read Committed",
+  "intro": "A reads Physics's budget and counts its instructors, then reads both again after B has changed the budget and added an instructor.",
+  "lesson": "Each statement sees what was committed when the statement started, so A's second reads differ: a non-repeatable read (the budget) and a phantom (the new instructor).",
+  "events": [
+   {
+    "who": "A",
+    "sql": "BEGIN ISOLATION LEVEL READ COMMITTED;",
+    "out": "BEGIN"
+   },
+   {
+    "who": "A",
+    "sql": "SELECT budget FROM department WHERE dept_name = 'Physics';",
+    "out": "  budget  \n----------\n 85000.00"
+   },
+   {
+    "who": "A",
+    "sql": "SELECT count(*) FROM instructor WHERE dept_name = 'Physics';",
+    "out": " count \n-------\n     2"
+   },
+   {
+    "who": "B",
+    "sql": "UPDATE department SET budget = 95000 WHERE dept_name = 'Physics';",
+    "out": "UPDATE 1"
+   },
+   {
+    "who": "B",
+    "sql": "INSERT INTO instructor VALUES ('99999', 'Rowan Blake', 'Physics', 70000);",
+    "out": "INSERT 0 1"
+   },
+   {
+    "who": "A",
+    "sql": "SELECT budget FROM department WHERE dept_name = 'Physics';",
+    "out": "  budget  \n----------\n 95000.00"
+   },
+   {
+    "who": "A",
+    "sql": "SELECT count(*) FROM instructor WHERE dept_name = 'Physics';",
+    "out": " count \n-------\n     3"
+   },
+   {
+    "who": "A",
+    "sql": "COMMIT;",
+    "out": "COMMIT"
+   }
+  ]
+ },
+ {
+  "id": "reread_rr",
+  "title": "Reading twice",
+  "level": "Repeatable Read",
+  "intro": "The same reads, in a Repeatable Read transaction.",
+  "lesson": "A sees the same snapshot for the whole transaction, taken at its first statement: the old budget and the old count, though B's changes are committed.",
+  "events": [
+   {
+    "who": "A",
+    "sql": "BEGIN ISOLATION LEVEL REPEATABLE READ;",
+    "out": "BEGIN"
+   },
+   {
+    "who": "A",
+    "sql": "SELECT budget FROM department WHERE dept_name = 'Physics';",
+    "out": "  budget  \n----------\n 85000.00"
+   },
+   {
+    "who": "A",
+    "sql": "SELECT count(*) FROM instructor WHERE dept_name = 'Physics';",
+    "out": " count \n-------\n     2"
+   },
+   {
+    "who": "B",
+    "sql": "UPDATE department SET budget = 95000 WHERE dept_name = 'Physics';",
+    "out": "UPDATE 1"
+   },
+   {
+    "who": "B",
+    "sql": "INSERT INTO instructor VALUES ('99999', 'Rowan Blake', 'Physics', 70000);",
+    "out": "INSERT 0 1"
+   },
+   {
+    "who": "A",
+    "sql": "SELECT budget FROM department WHERE dept_name = 'Physics';",
+    "out": "  budget  \n----------\n 85000.00"
+   },
+   {
+    "who": "A",
+    "sql": "SELECT count(*) FROM instructor WHERE dept_name = 'Physics';",
+    "out": " count \n-------\n     2"
+   },
+   {
+    "who": "A",
+    "sql": "COMMIT;",
+    "out": "COMMIT"
+   }
+  ]
+ },
+ {
+  "id": "deadlock",
+  "title": "Deadlock",
+  "level": "Read Committed",
+  "intro": "A updates Music, B updates Physics; then each tries to update the row the other holds.",
+  "lesson": "Each waits for the other, forever. After deadlock_timeout (1 second) PostgreSQL finds the cycle and cancels one transaction, here B, so A can go on.",
+  "events": [
+   {
+    "who": "A",
+    "sql": "BEGIN;",
+    "out": "BEGIN"
+   },
+   {
+    "who": "B",
+    "sql": "BEGIN;",
+    "out": "BEGIN"
+   },
+   {
+    "who": "A",
+    "sql": "UPDATE department SET budget = budget + 1000 WHERE dept_name = 'Music';",
+    "out": "UPDATE 1"
+   },
+   {
+    "who": "B",
+    "sql": "UPDATE department SET budget = budget + 1000 WHERE dept_name = 'Physics';",
+    "out": "UPDATE 1"
+   },
+   {
+    "who": "A",
+    "sql": "UPDATE department SET budget = budget + 1000 WHERE dept_name = 'Physics';",
+    "waiting": true
+   },
+   {
+    "who": "B",
+    "sql": "UPDATE department SET budget = budget + 1000 WHERE dept_name = 'Music';",
+    "out": "ERROR:  deadlock detected"
+   },
+   {
+    "who": "A",
+    "late": true,
+    "sql": "UPDATE department SET budget = budget + 1000 WHERE dept_name = 'Physics';",
+    "out": "UPDATE 1"
+   },
+   {
+    "who": "A",
+    "sql": "COMMIT;",
+    "out": "COMMIT"
+   },
+   {
+    "who": "B",
+    "sql": "ROLLBACK;",
+    "out": "ROLLBACK"
+   }
+  ]
+ },
+ {
+  "id": "skew_rr",
+  "title": "Write skew",
+  "level": "Repeatable Read",
+  "intro": "The rule: the two Hale departments, Comp. Sci. and Mathematics, must keep at least 200,000 between them. Each session checks the total, sees 210,000, and cuts a different department by 10,000.",
+  "lesson": "Both checks passed and both commits succeeded, yet the total is 190,000. Neither session changed a row the other changed, so snapshot isolation saw no conflict. The schedule is not serializable.",
+  "events": [
+   {
+    "who": "A",
+    "sql": "BEGIN ISOLATION LEVEL REPEATABLE READ;",
+    "out": "BEGIN"
+   },
+   {
+    "who": "B",
+    "sql": "BEGIN ISOLATION LEVEL REPEATABLE READ;",
+    "out": "BEGIN"
+   },
+   {
+    "who": "A",
+    "sql": "SELECT sum(budget) FROM department WHERE building = 'Hale';",
+    "out": "    sum    \n-----------\n 210000.00"
+   },
+   {
+    "who": "B",
+    "sql": "SELECT sum(budget) FROM department WHERE building = 'Hale';",
+    "out": "    sum    \n-----------\n 210000.00"
+   },
+   {
+    "who": "A",
+    "sql": "UPDATE department SET budget = budget - 10000 WHERE dept_name = 'Comp. Sci.';",
+    "out": "UPDATE 1"
+   },
+   {
+    "who": "B",
+    "sql": "UPDATE department SET budget = budget - 10000 WHERE dept_name = 'Mathematics';",
+    "out": "UPDATE 1"
+   },
+   {
+    "who": "A",
+    "sql": "COMMIT;",
+    "out": "COMMIT"
+   },
+   {
+    "who": "B",
+    "sql": "COMMIT;",
+    "out": "COMMIT"
+   },
+   {
+    "who": "A",
+    "sql": "SELECT sum(budget) FROM department WHERE building = 'Hale';",
+    "out": "    sum    \n-----------\n 190000.00"
+   }
+  ]
+ },
+ {
+  "id": "skew_ser",
+  "title": "Write skew caught",
+  "level": "Serializable",
+  "intro": "The same two transactions, in Serializable mode.",
+  "lesson": "PostgreSQL tracks what each transaction read and notices that no serial order explains both. B's commit fails and must be retried; on retry, B would see 200,000 and refuse the cut.",
+  "events": [
+   {
+    "who": "A",
+    "sql": "BEGIN ISOLATION LEVEL SERIALIZABLE;",
+    "out": "BEGIN"
+   },
+   {
+    "who": "B",
+    "sql": "BEGIN ISOLATION LEVEL SERIALIZABLE;",
+    "out": "BEGIN"
+   },
+   {
+    "who": "A",
+    "sql": "SELECT sum(budget) FROM department WHERE building = 'Hale';",
+    "out": "    sum    \n-----------\n 210000.00"
+   },
+   {
+    "who": "B",
+    "sql": "SELECT sum(budget) FROM department WHERE building = 'Hale';",
+    "out": "    sum    \n-----------\n 210000.00"
+   },
+   {
+    "who": "A",
+    "sql": "UPDATE department SET budget = budget - 10000 WHERE dept_name = 'Comp. Sci.';",
+    "out": "UPDATE 1"
+   },
+   {
+    "who": "B",
+    "sql": "UPDATE department SET budget = budget - 10000 WHERE dept_name = 'Mathematics';",
+    "out": "UPDATE 1"
+   },
+   {
+    "who": "A",
+    "sql": "COMMIT;",
+    "out": "COMMIT"
+   },
+   {
+    "who": "B",
+    "sql": "COMMIT;",
+    "out": "ERROR:  could not serialize access due to read/write dependencies among transactions\nDETAIL:  Reason code: Canceled on identification as a pivot, during commit attempt.\nHINT:  The transaction might succeed if retried."
+   },
+   {
+    "who": "A",
+    "sql": "SELECT sum(budget) FROM department WHERE building = 'Hale';",
+    "out": "    sum    \n-----------\n 200000.00"
+   }
+  ]
+ }
+]
+
+</script>
+<script type="text/plain" id="seed-sql">
+-- CS 4600/5200 Database Theory and Applications, Spring 2027
+-- Sample database from week 5 on: the week 3 university (seven tables), plus
+-- prereq, which says which course must come before which. Week 3's gaps are
+-- still here: a department with no people, a course nobody teaches, an
+-- instructor with no salary yet, and a student with no department.
+-- Runs on PostgreSQL 14 or newer, and in the browser playground.
+-- Load it with:  psql -d university -f university.sql
+-- It drops the old tables first (and any views built on them), so it is
+-- safe to run again whenever you want the starting data back.
+
+DROP TABLE IF EXISTS prereq, advisor, teaches, takes, course, student, instructor, department CASCADE;
+
+CREATE TABLE department (
+  dept_name  varchar(20) PRIMARY KEY,
+  building   varchar(15) NOT NULL,
+  budget     numeric(12,2) CHECK (budget > 0)
+);
+
+CREATE TABLE instructor (
+  id         char(5) PRIMARY KEY,
+  name       varchar(30) NOT NULL,
+  dept_name  varchar(20) REFERENCES department,
+  salary     numeric(8,2) CHECK (salary > 29000)
+);
+
+CREATE TABLE student (
+  id         char(5) PRIMARY KEY,
+  name       varchar(30) NOT NULL,
+  dept_name  varchar(20) REFERENCES department,
+  tot_cred   integer DEFAULT 0 CHECK (tot_cred >= 0)
+);
+
+CREATE TABLE course (
+  course_id  varchar(8) PRIMARY KEY,
+  title      varchar(40) NOT NULL,
+  dept_name  varchar(20) REFERENCES department,
+  credits    integer CHECK (credits > 0)
+);
+
+CREATE TABLE takes (
+  id         char(5) REFERENCES student,
+  course_id  varchar(8) REFERENCES course,
+  semester   varchar(6) CHECK (semester IN ('Fall', 'Spring', 'Summer')),
+  year       integer CHECK (year BETWEEN 2000 AND 2100),
+  grade      varchar(2),
+  PRIMARY KEY (id, course_id, semester, year)
+);
+
+INSERT INTO department VALUES
+  ('Comp. Sci.',  'Hale',   120000),
+  ('Mathematics', 'Hale',    90000),
+  ('Physics',     'Kirk',    85000),
+  ('Biology',     'Morrow',  95000),
+  ('History',     'Linden',  50000),
+  ('Music',       'Linden',  60000);
+
+INSERT INTO instructor VALUES
+  ('10101', 'Avery Chen',   'Comp. Sci.',  98000),
+  ('12121', 'Jordan Patel', 'Comp. Sci.',  92000),
+  ('15151', 'Maria Lopez',  'Mathematics', 87000),
+  ('22222', 'Sam Okafor',   'Physics',     95000),
+  ('32343', 'Lena Fischer', 'History',     61000),
+  ('33456', 'Kofi Mensah',  'Physics',     87000),
+  ('45565', 'Priya Raman',  'Comp. Sci.',  75000),
+  ('58583', 'Tomas Novak',  'History',     62000),
+  ('76543', 'Hana Sato',    'Biology',     80000),
+  ('83821', 'Diego Torres', 'Music',       72000);
+
+INSERT INTO student VALUES
+  ('00128', 'Riley Adams',   'Comp. Sci.',  102),
+  ('12345', 'Morgan Lee',    'Comp. Sci.',   32),
+  ('19991', 'Casey Brooks',  'History',      80),
+  ('23121', 'Jamie Rivera',  'Physics',     110),
+  ('44553', 'Taylor Nguyen', 'Physics',      56),
+  ('45678', 'Drew Kim',      'Physics',      46),
+  ('54321', 'Alex Johnson',  'Comp. Sci.',   54),
+  ('55739', 'Sky Martinez',  'Music',        38),
+  ('70557', 'Quinn Davis',   'Physics',       0),
+  ('76653', 'Robin Ali',     'Mathematics',  58),
+  ('98765', 'Jesse Park',    'Mathematics',  98),
+  ('98988', 'Avery Clark',   'Biology',     120);
+
+INSERT INTO course VALUES
+  ('CS-101',  'Intro to Computer Science', 'Comp. Sci.',  4),
+  ('CS-190',  'Game Design',               'Comp. Sci.',  4),
+  ('CS-315',  'Robotics',                  'Comp. Sci.',  3),
+  ('CS-347',  'Database System Concepts',  'Comp. Sci.',  3),
+  ('MA-201',  'Linear Algebra',            'Mathematics', 3),
+  ('PHY-101', 'Physical Principles',       'Physics',     4),
+  ('HIS-351', 'World History',             'History',     3),
+  ('MU-199',  'Music Video Production',    'Music',       3),
+  ('BIO-101', 'Intro to Biology',          'Biology',     4);
+
+INSERT INTO takes VALUES
+  ('00128', 'CS-101',  'Fall',   2025, 'A'),
+  ('00128', 'CS-347',  'Fall',   2025, 'A-'),
+  ('12345', 'CS-101',  'Fall',   2025, 'C'),
+  ('12345', 'CS-190',  'Spring', 2026, 'A'),
+  ('12345', 'CS-315',  'Spring', 2026, 'A'),
+  ('12345', 'CS-347',  'Fall',   2025, 'A'),
+  ('19991', 'HIS-351', 'Spring', 2026, 'B'),
+  ('23121', 'PHY-101', 'Fall',   2025, 'C+'),
+  ('44553', 'PHY-101', 'Fall',   2025, 'B-'),
+  ('45678', 'CS-101',  'Fall',   2025, 'F'),
+  ('45678', 'CS-101',  'Spring', 2026, 'B+'),
+  ('45678', 'CS-315',  'Spring', 2026, 'B'),
+  ('54321', 'CS-101',  'Fall',   2025, 'A-'),
+  ('54321', 'CS-190',  'Spring', 2026, 'B+'),
+  ('55739', 'MU-199',  'Spring', 2026, 'A-'),
+  ('76653', 'MA-201',  'Fall',   2025, 'C'),
+  ('98765', 'CS-101',  'Fall',   2025, 'C-'),
+  ('98765', 'CS-315',  'Spring', 2026, 'B'),
+  ('98988', 'BIO-101', 'Spring', 2026, 'A'),
+  ('98988', 'CS-347',  'Spring', 2027, NULL),
+  ('70557', 'CS-347',  'Spring', 2027, NULL),
+  ('54321', 'MA-201',  'Spring', 2027, NULL);
+
+-- New in week 3 ------------------------------------------------------------
+
+CREATE TABLE teaches (
+  id         char(5) REFERENCES instructor,
+  course_id  varchar(8) REFERENCES course,
+  semester   varchar(6) CHECK (semester IN ('Fall', 'Spring', 'Summer')),
+  year       integer CHECK (year BETWEEN 2000 AND 2100),
+  PRIMARY KEY (id, course_id, semester, year)
+);
+
+CREATE TABLE advisor (
+  s_id       char(5) PRIMARY KEY REFERENCES student,
+  i_id       char(5) NOT NULL REFERENCES instructor
+);
+
+-- A department with no instructors, students or courses yet.
+INSERT INTO department VALUES ('Economics', 'Watson', 70000);
+
+-- A new hire whose salary is not set yet.
+INSERT INTO instructor VALUES ('98345', 'Noor Haddad', 'Mathematics', NULL);
+
+-- A student who has not declared a department.
+INSERT INTO student VALUES ('61234', 'Emery Walsh', NULL, 12);
+
+-- A course in the catalog that nobody teaches or takes yet.
+INSERT INTO course VALUES ('CS-319', 'Image Processing', 'Comp. Sci.', 3);
+
+INSERT INTO teaches VALUES
+  ('10101', 'CS-101',  'Fall',   2025),
+  ('10101', 'CS-347',  'Fall',   2025),
+  ('10101', 'CS-315',  'Spring', 2026),
+  ('12121', 'CS-190',  'Spring', 2026),
+  ('45565', 'CS-101',  'Spring', 2026),
+  ('45565', 'CS-347',  'Spring', 2027),
+  ('15151', 'MA-201',  'Fall',   2025),
+  ('15151', 'MA-201',  'Spring', 2027),
+  ('22222', 'PHY-101', 'Fall',   2025),
+  ('32343', 'HIS-351', 'Spring', 2026),
+  ('83821', 'MU-199',  'Spring', 2026),
+  ('76543', 'BIO-101', 'Spring', 2026);
+
+INSERT INTO advisor VALUES
+  ('00128', '45565'),
+  ('12345', '10101'),
+  ('19991', '32343'),
+  ('23121', '22222'),
+  ('44553', '22222'),
+  ('45678', '33456'),
+  ('54321', '10101'),
+  ('76653', '15151'),
+  ('98765', '15151'),
+  ('98988', '76543');
+
+-- New in week 5 ------------------------------------------------------------
+
+-- prereq: course_id requires prereq_id first. Both are courses, so both are
+-- foreign keys to course; a course cannot require itself.
+CREATE TABLE prereq (
+  course_id  varchar(8) REFERENCES course,
+  prereq_id  varchar(8) REFERENCES course,
+  PRIMARY KEY (course_id, prereq_id),
+  CHECK (course_id <> prereq_id)
+);
+
+INSERT INTO prereq VALUES
+  ('CS-190', 'CS-101'),
+  ('CS-315', 'CS-190'),
+  ('CS-319', 'CS-315'),
+  ('CS-319', 'MA-201'),
+  ('CS-347', 'CS-101'),
+  ('CS-347', 'MA-201');
+
+-- table_info(name): one row per column of a table, with its type, whether it
+-- may be NULL, and the keys it takes part in (with ON DELETE, when it is not the
+-- default). Like psql's \d, for the playground.
+--   SELECT * FROM table_info('advisor');
+CREATE OR REPLACE FUNCTION table_info(t text)
+RETURNS TABLE (column_name text, data_type text, nulls text, keys text)
+LANGUAGE sql STABLE AS $$
+  SELECT a.attname::text,
+         format_type(a.atttypid, a.atttypmod),
+         CASE WHEN a.attnotnull THEN 'not null' ELSE 'null allowed' END,
+         coalesce((
+           SELECT string_agg(
+                    CASE con.contype WHEN 'p' THEN 'primary key' WHEN 'u' THEN 'unique'
+                                     ELSE 'references ' || con.confrelid::regclass::text END
+                    || CASE WHEN cardinality(con.conkey) > 1 THEN ' (' || (
+                         SELECT string_agg(x.attname, ', ' ORDER BY k.ord)
+                         FROM unnest(con.conkey) WITH ORDINALITY AS k(n, ord)
+                         JOIN pg_attribute x ON x.attrelid = con.conrelid AND x.attnum = k.n) || ')'
+                       ELSE '' END
+                    || CASE WHEN con.contype = 'f' THEN CASE con.confdeltype
+                         WHEN 'c' THEN ' on delete cascade' WHEN 'n' THEN ' on delete set null'
+                         WHEN 'd' THEN ' on delete set default' WHEN 'r' THEN ' on delete restrict'
+                         ELSE '' END ELSE '' END,
+                    '; ' ORDER BY CASE con.contype WHEN 'p' THEN 1 WHEN 'u' THEN 2 ELSE 3 END,
+                                  con.confrelid::regclass::text)
+           FROM pg_constraint con
+           WHERE con.conrelid = a.attrelid AND a.attnum = ANY (con.conkey)
+             AND con.contype IN ('p', 'u', 'f')), '')
+  FROM pg_attribute a
+  WHERE a.attrelid = to_regclass(t) AND a.attnum > 0 AND NOT a.attisdropped
+  ORDER BY a.attnum
+$$;
+
+-- Week 13: five schedules of two or three transactions, one operation a row,
+-- so conflicts, precedence graphs and dirty reads can be found with SQL.
+-- op: R read, W write, C commit, A abort; item is NULL for C and A.
+CREATE TABLE sched (
+  sched varchar(4),
+  step  int,
+  tx    int NOT NULL,
+  op    char(1) NOT NULL CHECK (op IN ('R', 'W', 'C', 'A')),
+  item  char(1) CHECK ((op IN ('R', 'W')) = (item IS NOT NULL)),
+  PRIMARY KEY (sched, step)
+);
+INSERT INTO sched VALUES
+  -- S1: serial, T1 then T2
+  ('S1', 1, 1, 'R', 'A'), ('S1', 2, 1, 'W', 'A'), ('S1', 3, 1, 'R', 'B'), ('S1', 4, 1, 'W', 'B'), ('S1', 5, 1, 'C', NULL),
+  ('S1', 6, 2, 'R', 'A'), ('S1', 7, 2, 'W', 'A'), ('S1', 8, 2, 'R', 'B'), ('S1', 9, 2, 'W', 'B'), ('S1', 10, 2, 'C', NULL),
+  -- S2: interleaved, but equivalent to S1
+  ('S2', 1, 1, 'R', 'A'), ('S2', 2, 1, 'W', 'A'), ('S2', 3, 2, 'R', 'A'), ('S2', 4, 2, 'W', 'A'),
+  ('S2', 5, 1, 'R', 'B'), ('S2', 6, 1, 'W', 'B'), ('S2', 7, 2, 'R', 'B'), ('S2', 8, 2, 'W', 'B'),
+  ('S2', 9, 1, 'C', NULL), ('S2', 10, 2, 'C', NULL),
+  -- S3: the lost update
+  ('S3', 1, 1, 'R', 'A'), ('S3', 2, 2, 'R', 'A'), ('S3', 3, 1, 'W', 'A'), ('S3', 4, 2, 'W', 'A'),
+  ('S3', 5, 1, 'C', NULL), ('S3', 6, 2, 'C', NULL),
+  -- S4: three transactions
+  ('S4', 1, 1, 'R', 'A'), ('S4', 2, 3, 'R', 'B'), ('S4', 3, 1, 'W', 'A'), ('S4', 4, 2, 'R', 'A'),
+  ('S4', 5, 3, 'W', 'B'), ('S4', 6, 2, 'R', 'B'), ('S4', 7, 2, 'W', 'A'),
+  ('S4', 8, 1, 'C', NULL), ('S4', 9, 3, 'C', NULL), ('S4', 10, 2, 'C', NULL),
+  -- S5: T2 reads what T1 wrote, commits, and then T1 aborts
+  ('S5', 1, 1, 'R', 'A'), ('S5', 2, 1, 'W', 'A'), ('S5', 3, 2, 'R', 'A'), ('S5', 4, 2, 'C', NULL),
+  ('S5', 5, 1, 'R', 'B'), ('S5', 6, 1, 'A', NULL);
+
+</script>
+<script type="module" src="../../assets/playground.js"></script>
+</body>
+</html>

@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Week 13 — Transactions and Concurrency · CS 4600/5200</title>
+<meta name="description" content="CS 4600/5200 week 13: transactions and the ACID properties; transaction states, COMMIT, ROLLBACK and savepoints; schedules, conflicts and precedence graphs; recoverable and cascadeless schedules; dirty reads, non-repeatable reads, phantoms, lost updates and write skew; isolation levels in PostgreSQL; retrying in a program; locks, strict two-phase locking and deadlocks; row versions and snapshots.">
+<link rel="stylesheet" href="../../assets/course.css">
+<link rel="stylesheet" href="../../assets/db.css">
+</head>
+<body>
+<a class="skip-link" href="#s1">Skip to the first slide</a>
+
+<div class="deck-stage">
+<main class="deck" aria-label="Week 13 lecture slides: transactions and concurrency">
+
+<!-- 1 ─────────────────────────────────────────────────────────── title -->
+<section class="slide slide--title" id="s1">
+  <p class="course-line">CS 4600/5200 · Database Theory and Applications · Week 13 of 15</p>
+  <h1>Transactions and Concurrency</h1>
+  <p class="subtitle">
+    Hundreds of people can use one database at the same moment, and the power can fail at any instant.
+    This week: how a group of changes happens completely or not at all, what goes wrong when two
+    sessions touch the same rows, and how locks and row versions keep them apart.
+  </p>
+  <p class="byline">
+    Dr. Gorkem Kar
+    <span>University of Central Missouri</span>
+    <span>School of Computer Science and Cybersecurity</span>
+  </p>
+  <div class="title-art">
+<svg viewBox="0 0 380 330" aria-hidden="true" focusable="false" style="--dg-k:1">
+<g class="v-in" style="--d:0.10s"><rect class="dg-box-t" x="55" y="20" width="80" height="36" rx="4"/><text class="dg-sm-b" x="95" y="44" text-anchor="middle">A</text></g>
+<path class="dg-line-q" d="M95 60 V310"/>
+<g class="v-in" style="--d:0.20s"><rect class="dg-box-a" x="245" y="20" width="80" height="36" rx="4"/><text class="dg-sm-b" x="285" y="44" text-anchor="middle">B</text></g>
+<path class="dg-line-q" d="M285 60 V310"/>
+<g class="v-in" style="--d:0.50s"><rect class="dg-box-t" x="35" y="76" width="120" height="26" rx="4"/></g>
+<g class="v-in" style="--d:0.75s"><rect class="dg-box-a" x="225" y="114" width="120" height="26" rx="4"/></g>
+<g class="v-in" style="--d:1.00s"><rect class="dg-box-t" x="35" y="152" width="120" height="26" rx="4"/></g>
+<g class="v-in" style="--d:1.25s"><rect class="dg-warn" x="225" y="190" width="120" height="26" rx="4"/></g>
+<g class="v-in" style="--d:1.50s"><rect class="dg-box-t" x="35" y="228" width="120" height="26" rx="4"/></g>
+<g class="v-in" style="--d:1.75s"><rect class="dg-box-a" x="225" y="266" width="120" height="26" rx="4"/></g>
+<path class="dg-dash v-draw" pathLength="1" style="--d:2.20s" d="M225 203 C190 210, 170 230, 155 240"/>
+</svg>
+  </div>
+  
+</section>
+
+<!-- 2 ─────────────────────────────────────────────── where we are -->
+<section class="slide" id="s2">
+  <h2>Where we are</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div>
+        <h3>So far</h3>
+        <ul>
+          <li>One query at a time: how it is stored, planned and run.</li>
+          <li>Lab 6 and milestone 3 wrapped two changes in <code>with conn.transaction():</code>.</li>
+          <li>We assumed nobody else was using the database.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>This week</h3>
+        <ul>
+          <li>What a transaction promises: ACID.</li>
+          <li>Which interleavings of two transactions are safe, and how to tell.</li>
+          <li>What each isolation level allows, and how PostgreSQL keeps sessions apart.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="callout">
+      <span class="mark" aria-hidden="true">→</span>
+      <p>Concurrency bugs pass every test you run alone. They show up on the busy day, as money that vanished or a rule that quietly broke.</p>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 3 ─────────────────────────────────────────────── why -->
+<section class="slide" id="s3">
+  <h2>Two statements that must happen together</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <pre class="code"><span class="k">BEGIN</span>;
+<span class="k">UPDATE</span> department <span class="k">SET</span> budget = budget - 5000
+<span class="k">WHERE</span> dept_name = <span class="s">'Music'</span>;
+<span class="k">UPDATE</span> department <span class="k">SET</span> budget = budget + 5000
+<span class="k">WHERE</span> dept_name = <span class="s">'Physics'</span>;
+<span class="k">COMMIT</span>;</pre>
+      <ul>
+        <li>Moving 5,000 of budget from Music to Physics takes two UPDATEs.</li>
+        <li>If the server crashes between them, 5,000 has vanished.</li>
+        <li>If another session sums the budgets between them, it sees 5,000 too little.</li>
+        <li>A <strong>transaction</strong> makes the two one unit: nobody sees half of it, and a crash keeps all of it or none.</li>
+      </ul>
+    </div>
+    <p><a class="try" href="playground.html#acid">Playground examples 1.1 to 1.3</a></p>
+  </div>
+  
+</section>
+
+<!-- 4 ─────────────────────────────────────────────── section -->
+<section class="slide slide--section" id="s4">
+  <h2>Transactions</h2>
+  <p>What a transaction promises.</p>
+  
+</section>
+
+<!-- 5 ─────────────────────────────────────────────── ACID -->
+<section class="slide" id="s5">
+  <h2>ACID: four promises</h2>
+  <div class="slide-main">
+    <div class="fig-scroll" tabindex="0" role="region" aria-label="The ACID properties">
+    <table class="tbl tbl--compact">
+      <caption>The four properties of a transaction, and what provides each in PostgreSQL</caption>
+      <thead><tr><th scope="col">Property</th><th scope="col">The promise</th><th scope="col">Who keeps it</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Atomicity</strong></td><td>All of the transaction's changes happen, or none.</td><td>Row versions and the commit record (this week and next)</td></tr>
+        <tr><td><strong>Consistency</strong></td><td>A transaction that starts from a correct database leaves a correct one.</td><td>You, with constraints and transactions that keep your rules</td></tr>
+        <tr><td><strong>Isolation</strong></td><td>Each transaction behaves as if it ran alone.</td><td>Snapshots and locks, as strong as the isolation level asks</td></tr>
+        <tr><td><strong>Durability</strong></td><td>Once COMMIT returns, the changes survive a crash.</td><td>The write-ahead log (week 14)</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <ul>
+      <li>Consistency is the odd one: the database checks your constraints, but only you know that the budgets in Hale must add to 200,000.</li>
+    </ul>
+  </div>
+  
+</section>
+
+<!-- 6 ─────────────────────────────────────────────── states -->
+<section class="slide" id="s6">
+  <h2>The life of a transaction</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:1000px">
+<svg style="--dg-k:1" viewBox="0 0 1000 330" role="img" aria-labelledby="stt std">
+<title id="stt">The states of a transaction</title>
+<desc id="std">A state diagram with five states. A transaction starts active. When its last statement has run, it becomes partially committed; when its changes are safely on disk, it becomes committed. From active, an error or a ROLLBACK makes it failed, and so does a failure to write its changes from partially committed. A failed transaction&#x27;s changes are undone, and it becomes aborted. Committed and aborted are the two ways a transaction can end.</desc>
+<defs><marker id="sta" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#0e5a6b"/></marker><marker id="stb" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#9e1b32"/></marker></defs>
+<g class="v-in" style="--d:0.10s"><rect class="dg-box" x="40" y="135" width="180" height="50" rx="6"/><text class="dg-sm-b" x="130.0" y="166" text-anchor="middle">active</text></g>
+<g class="v-in" style="--d:0.30s"><rect class="dg-box" x="330" y="30" width="240" height="50" rx="6"/><text class="dg-sm-b" x="450.0" y="61" text-anchor="middle">partially committed</text></g>
+<g class="v-in" style="--d:0.50s"><rect class="dg-box-t" x="720" y="30" width="240" height="50" rx="6"/><text class="dg-sm-b" x="840.0" y="61" text-anchor="middle">committed</text></g>
+<g class="v-in" style="--d:0.70s"><rect class="dg-box" x="330" y="240" width="240" height="50" rx="6"/><text class="dg-sm-b" x="450.0" y="271" text-anchor="middle">failed</text></g>
+<g class="v-in" style="--d:0.90s"><rect class="dg-box-a" x="720" y="240" width="240" height="50" rx="6"/><text class="dg-sm-b" x="840.0" y="271" text-anchor="middle">aborted</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.20s" d="M220 150 C270 120, 290 70, 326 58" marker-end="url(#sta)"/>
+<g class="v-in" style="--d:1.40s"><text class="dg-xs" x="232" y="100" text-anchor="end">last statement runs</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.70s" d="M570 55 H716" marker-end="url(#sta)"/>
+<g class="v-in" style="--d:1.90s"><text class="dg-xs" x="643" y="45" text-anchor="middle">changes on disk</text></g>
+<path class="dg-line-a v-draw" pathLength="1" style="--d:2.20s" d="M220 175 C270 210, 290 255, 326 262" marker-end="url(#stb)"/>
+<g class="v-in" style="--d:2.40s"><text class="dg-xs" x="232" y="238" text-anchor="end">error or ROLLBACK</text></g>
+<path class="dg-line-a v-draw" pathLength="1" style="--d:2.70s" d="M450 80 V236" marker-end="url(#stb)"/>
+<g class="v-in" style="--d:2.90s"><text class="dg-xs" x="462" y="164" text-anchor="start">can&#x27;t write the changes</text></g>
+<path class="dg-line-a v-draw" pathLength="1" style="--d:3.20s" d="M570 265 H716" marker-end="url(#stb)"/>
+<g class="v-in" style="--d:3.40s"><text class="dg-xs" x="643" y="255" text-anchor="middle">changes undone</text></g>
+<g class="v-in" style="--d:3.70s"><text class="dg-xs" x="840" y="112" text-anchor="middle">the two ways to end</text></g>
+<path class="dg-line-q" d="M840 84 V96 M840 122 V236"/>
+</svg>
+      <figcaption><strong>Figure 13.1.</strong> Every transaction ends either committed or aborted. After an abort, the database is as if the transaction never ran.</figcaption>
+    </figure>
+    <ul>
+      <li>An aborted transaction can be <strong>restarted</strong> as a new transaction, if it failed for a reason like a deadlock; a program does that, not the database.</li>
+    </ul>
+  </div>
+  
+</section>
+
+<!-- 7 ─────────────────────────────────────────────── in SQL -->
+<section class="slide" id="s7">
+  <h2>Transactions in SQL</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <pre class="code"><span class="k">BEGIN</span>;
+<span class="k">UPDATE</span> instructor <span class="k">SET</span> salary = salary * 1.1
+<span class="k">WHERE</span> dept_name = <span class="s">'Physics'</span>;
+SAVEPOINT after_physics;
+<span class="k">UPDATE</span> instructor <span class="k">SET</span> salary = salary * 1.1
+<span class="k">WHERE</span> dept_name = <span class="s">'Music'</span>;
+<span class="k">ROLLBACK</span> <span class="k">TO</span> SAVEPOINT after_physics;
+<span class="k">COMMIT</span>;   <span class="c">-- keeps only the Physics raises</span></pre>
+      <ul>
+        <li>Without <code>BEGIN</code>, each statement is its own transaction (<strong>autocommit</strong>).</li>
+        <li><code>COMMIT</code> keeps; <code>ROLLBACK</code> undoes everything since <code>BEGIN</code>.</li>
+        <li>After an error, the transaction can only roll back: PostgreSQL ignores every statement until it ends.</li>
+        <li>A <strong>savepoint</strong> lets you undo part of a transaction and carry on.</li>
+        <li>psycopg starts a transaction for you; <code>with conn.transaction():</code> commits at the end of the block, or rolls back if an exception leaves it.</li>
+      </ul>
+    </div>
+    <p><a class="try" href="playground.html#acid">Playground example 1.4</a></p>
+  </div>
+  
+</section>
+
+<!-- 8 ─────────────────────────────────────────────── section -->
+<section class="slide slide--section" id="s8">
+  <h2>Schedules</h2>
+  <p>Which interleavings are safe, and how to tell.</p>
+  
+</section>
+
+<!-- 9 ─────────────────────────────────────────────── schedules -->
+<section class="slide" id="s9">
+  <h2>Interleaving is the point</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:1000px">
+<svg style="--dg-k:1" viewBox="0 0 1000 430" role="img" aria-labelledby="sgt sgd">
+<title id="sgt">A serial schedule and an interleaved one</title>
+<desc id="sgd">Two schedules of the same two transactions, drawn with one column per transaction and time going down. Each transaction reads A, writes A, reads B, writes B and commits. Left, S1, serial: all of T1, then all of T2. Right, S2, interleaved: T1 reads and writes A, then T2 reads and writes A, then T1 reads and writes B, then T2 reads and writes B, then T1 and T2 commit. In S2, T2 still sees every item after T1 has written it, so S2 leaves the same result as S1: it is serializable.</desc>
+<g class="v-in" style="--d:0.10s"><text class="dg-sm-b" x="210" y="24" text-anchor="middle">S1: serial</text></g>
+<g class="v-in" style="--d:0.10s"><rect class="dg-box-m" x="60" y="36" width="300" height="32" rx="0"/><text class="dg-xs" x="75" y="58">step</text><text class="dg-sm-b" x="180" y="58" text-anchor="middle">T1</text><text class="dg-sm-b" x="290" y="58" text-anchor="middle">T2</text></g>
+<g class="v-in" style="--d:0.30s"><text class="dg-xs" x="75" y="89">1</text><rect class="dg-box-t" x="140" y="72" width="80" height="24" rx="3"/><text class="dg-xs dg-mono" x="180" y="89" text-anchor="middle">R(A)</text></g>
+<g class="v-in" style="--d:0.42s"><text class="dg-xs" x="75" y="120">2</text><rect class="dg-box-t" x="140" y="103" width="80" height="24" rx="3"/><text class="dg-xs dg-mono" x="180" y="120" text-anchor="middle">W(A)</text></g>
+<g class="v-in" style="--d:0.54s"><text class="dg-xs" x="75" y="151">3</text><rect class="dg-box-t" x="140" y="134" width="80" height="24" rx="3"/><text class="dg-xs dg-mono" x="180" y="151" text-anchor="middle">R(B)</text></g>
+<g class="v-in" style="--d:0.66s"><text class="dg-xs" x="75" y="182">4</text><rect class="dg-box-t" x="140" y="165" width="80" height="24" rx="3"/><text class="dg-xs dg-mono" x="180" y="182" text-anchor="middle">W(B)</text></g>
+<g class="v-in" style="--d:0.78s"><text class="dg-xs" x="75" y="213">5</text><rect class="dg-box-t" x="140" y="196" width="80" height="24" rx="3"/><text class="dg-xs dg-mono" x="180" y="213" text-anchor="middle">C</text></g>
+<g class="v-in" style="--d:0.90s"><text class="dg-xs" x="75" y="244">6</text><rect class="dg-box-a" x="250" y="227" width="80" height="24" rx="3"/><text class="dg-xs dg-mono" x="290" y="244" text-anchor="middle">R(A)</text></g>
+<g class="v-in" style="--d:1.02s"><text class="dg-xs" x="75" y="275">7</text><rect class="dg-box-a" x="250" y="258" width="80" height="24" rx="3"/><text class="dg-xs dg-mono" x="290" y="275" text-anchor="middle">W(A)</text></g>
+<g class="v-in" style="--d:1.14s"><text class="dg-xs" x="75" y="306">8</text><rect class="dg-box-a" x="250" y="289" width="80" height="24" rx="3"/><text class="dg-xs dg-mono" x="290" y="306" text-anchor="middle">R(B)</text></g>
+<g class="v-in" style="--d:1.26s"><text class="dg-xs" x="75" y="337">9</text><rect class="dg-box-a" x="250" y="320" width="80" height="24" rx="3"/><text class="dg-xs dg-mono" x="290" y="337" text-anchor="middle">W(B)</text></g>
+<g class="v-in" style="--d:1.38s"><text class="dg-xs" x="75" y="368">10</text><rect class="dg-box-a" x="250" y="351" width="80" height="24" rx="3"/><text class="dg-xs dg-mono" x="290" y="368" text-anchor="middle">C</text></g>
+<path class="dg-line-q" d="M120 36 V380 M235 36 V380"/>
+<g class="v-in" style="--d:1.60s"><text class="dg-sm-b" x="710" y="24" text-anchor="middle">S2: interleaved</text></g>
+<g class="v-in" style="--d:1.60s"><rect class="dg-box-m" x="560" y="36" width="300" height="32" rx="0"/><text class="dg-xs" x="575" y="58">step</text><text class="dg-sm-b" x="680" y="58" text-anchor="middle">T1</text><text class="dg-sm-b" x="790" y="58" text-anchor="middle">T2</text></g>
+<g class="v-in" style="--d:1.80s"><text class="dg-xs" x="575" y="89">1</text><rect class="dg-box-t" x="640" y="72" width="80" height="24" rx="3"/><text class="dg-xs dg-mono" x="680" y="89" text-anchor="middle">R(A)</text></g>
+<g class="v-in" style="--d:1.92s"><text class="dg-xs" x="575" y="120">2</text><rect class="dg-box-t" x="640" y="103" width="80" height="24" rx="3"/><text class="dg-xs dg-mono" x="680" y="120" text-anchor="middle">W(A)</text></g>
+<g class="v-in" style="--d:2.04s"><text class="dg-xs" x="575" y="151">3</text><rect class="dg-box-a" x="750" y="134" width="80" height="24" rx="3"/><text class="dg-xs dg-mono" x="790" y="151" text-anchor="middle">R(A)</text></g>
+<g class="v-in" style="--d:2.16s"><text class="dg-xs" x="575" y="182">4</text><rect class="dg-box-a" x="750" y="165" width="80" height="24" rx="3"/><text class="dg-xs dg-mono" x="790" y="182" text-anchor="middle">W(A)</text></g>
+<g class="v-in" style="--d:2.28s"><text class="dg-xs" x="575" y="213">5</text><rect class="dg-box-t" x="640" y="196" width="80" height="24" rx="3"/><text class="dg-xs dg-mono" x="680" y="213" text-anchor="middle">R(B)</text></g>
+<g class="v-in" style="--d:2.40s"><text class="dg-xs" x="575" y="244">6</text><rect class="dg-box-t" x="640" y="227" width="80" height="24" rx="3"/><text class="dg-xs dg-mono" x="680" y="244" text-anchor="middle">W(B)</text></g>
+<g class="v-in" style="--d:2.52s"><text class="dg-xs" x="575" y="275">7</text><rect class="dg-box-a" x="750" y="258" width="80" height="24" rx="3"/><text class="dg-xs dg-mono" x="790" y="275" text-anchor="middle">R(B)</text></g>
+<g class="v-in" style="--d:2.64s"><text class="dg-xs" x="575" y="306">8</text><rect class="dg-box-a" x="750" y="289" width="80" height="24" rx="3"/><text class="dg-xs dg-mono" x="790" y="306" text-anchor="middle">W(B)</text></g>
+<g class="v-in" style="--d:2.76s"><text class="dg-xs" x="575" y="337">9</text><rect class="dg-box-t" x="640" y="320" width="80" height="24" rx="3"/><text class="dg-xs dg-mono" x="680" y="337" text-anchor="middle">C</text></g>
+<g class="v-in" style="--d:2.88s"><text class="dg-xs" x="575" y="368">10</text><rect class="dg-box-a" x="750" y="351" width="80" height="24" rx="3"/><text class="dg-xs dg-mono" x="790" y="368" text-anchor="middle">C</text></g>
+<path class="dg-line-q" d="M620 36 V380 M735 36 V380"/>
+<g class="v-in" style="--d:3.30s"><text class="dg-sm-b" x="710" y="420" text-anchor="middle">same result as S1: S2 is serializable</text></g>
+</svg>
+      <figcaption><strong>Figure 13.2.</strong> A <strong>schedule</strong> is the order in which the operations of several transactions run. R(A) reads item A, W(A) writes it, C commits.</figcaption>
+    </figure>
+    <ul>
+      <li>Running one transaction at a time is safe but slow: while one waits for a disk or a user, the others wait too.</li>
+      <li>A schedule is <strong>serializable</strong> if it leaves the same result as some serial order. That is the goal.</li>
+    </ul>
+  </div>
+  
+</section>
+
+<!-- 10 ────────────────────────────────────────────── conflicts -->
+<section class="slide" id="s10">
+  <h2>Conflicting operations</h2>
+  <div class="slide-main">
+    <div class="fig-scroll" tabindex="0" role="region" aria-label="Which pairs of operations conflict">
+    <table class="tbl tbl--compact">
+      <caption>Two operations of different transactions on the same item</caption>
+      <thead><tr><th scope="col">First</th><th scope="col">Then</th><th scope="col">Conflict?</th><th scope="col">Why</th></tr></thead>
+      <tbody>
+        <tr><td>R<sub>i</sub>(Q)</td><td>R<sub>j</sub>(Q)</td><td>No</td><td>Both read the same value in either order.</td></tr>
+        <tr><td>R<sub>i</sub>(Q)</td><td>W<sub>j</sub>(Q)</td><td>Yes</td><td>Swapped, T<sub>i</sub> would read T<sub>j</sub>'s value.</td></tr>
+        <tr><td>W<sub>i</sub>(Q)</td><td>R<sub>j</sub>(Q)</td><td>Yes</td><td>Swapped, T<sub>j</sub> would read the older value.</td></tr>
+        <tr><td>W<sub>i</sub>(Q)</td><td>W<sub>j</sub>(Q)</td><td>Yes</td><td>Swapped, a different write survives.</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <ul>
+      <li>Operations on different items never conflict, and can be swapped freely.</li>
+      <li>If swapping non-conflicting neighbours can turn a schedule into a serial one, it is <strong>conflict serializable</strong>.</li>
+    </ul>
+    <p><a class="try" href="playground.html#sched">Playground example 2.2</a></p>
+  </div>
+  
+</section>
+
+<!-- 11 ────────────────────────────────────────────── precedence graph -->
+<section class="slide" id="s11">
+  <h2>The precedence graph</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:1000px">
+<svg style="--dg-k:1" viewBox="0 0 1000 360" role="img" aria-labelledby="pgt pgd">
+<title id="pgt">Precedence graphs of three schedules</title>
+<desc id="pgd">Three precedence graphs, one circle per transaction and an arrow from Ti to Tj when an operation of Ti conflicts with a later one of Tj. S2: one arrow, T1 to T2, from conflicts on A and on B; no cycle, so S2 is conflict serializable, equivalent to T1 then T2. S3, the lost update: an arrow T1 to T2, because T1 reads A before T2 writes it, and an arrow T2 to T1, because T2 reads A before T1 writes it. That is a cycle, so S3 is not conflict serializable. S4: arrows T1 to T2, on A, and T3 to T2, on B; no cycle, so S4 is equivalent to T1, T3, T2 or to T3, T1, T2.</desc>
+<defs><marker id="pga" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#0e5a6b"/></marker><marker id="pgb" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#9e1b32"/></marker></defs>
+<g class="v-in" style="--d:0.10s"><text class="dg-sm-b" x="165" y="30" text-anchor="middle">S2</text></g>
+<g class="v-in" style="--d:0.20s"><circle class="dg-box-t" cx="80" cy="150" r="34"/><text class="dg-sm-b" x="80" y="156" text-anchor="middle">T1</text></g>
+<g class="v-in" style="--d:0.30s"><circle class="dg-box-t" cx="250" cy="150" r="34"/><text class="dg-sm-b" x="250" y="156" text-anchor="middle">T2</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:0.60s" d="M114 150 H212" marker-end="url(#pga)"/>
+<g class="v-in" style="--d:0.80s"><text class="dg-xs" x="165" y="138" text-anchor="middle">A, B</text></g>
+<g class="v-in" style="--d:1.00s"><text class="dg-sm-b dg-txt-ok" x="165" y="260" text-anchor="middle">no cycle</text></g>
+<g class="v-in" style="--d:1.10s"><text class="dg-xs" x="165" y="286" text-anchor="middle">same as T1, T2</text></g>
+<path class="dg-line-q" d="M335 50 V330"/>
+<g class="v-in" style="--d:1.30s"><text class="dg-sm-b" x="500" y="30" text-anchor="middle">S3: the lost update</text></g>
+<g class="v-in" style="--d:1.40s"><circle class="dg-box-a" cx="415" cy="150" r="34"/><text class="dg-sm-b" x="415" y="156" text-anchor="middle">T1</text></g>
+<g class="v-in" style="--d:1.50s"><circle class="dg-box-a" cx="585" cy="150" r="34"/><text class="dg-sm-b" x="585" y="156" text-anchor="middle">T2</text></g>
+<path class="dg-line-a v-draw" pathLength="1" style="--d:1.80s" d="M441 128 C470 90, 530 90, 557 126" marker-end="url(#pgb)"/>
+<g class="v-in" style="--d:2.00s"><text class="dg-xs" x="500" y="88" text-anchor="middle">R1(A) before W2(A)</text></g>
+<path class="dg-line-a v-draw" pathLength="1" style="--d:2.20s" d="M559 172 C530 210, 470 210, 443 174" marker-end="url(#pgb)"/>
+<g class="v-in" style="--d:2.40s"><text class="dg-xs" x="500" y="222" text-anchor="middle">R2(A) before W1(A)</text></g>
+<g class="v-in" style="--d:2.60s"><text class="dg-sm-b dg-txt-bad" x="500" y="260" text-anchor="middle">cycle</text></g>
+<g class="v-in" style="--d:2.70s"><text class="dg-xs" x="500" y="286" text-anchor="middle">not conflict serializable</text></g>
+<path class="dg-line-q" d="M665 50 V330"/>
+<g class="v-in" style="--d:2.90s"><text class="dg-sm-b" x="835" y="30" text-anchor="middle">S4</text></g>
+<g class="v-in" style="--d:3.00s"><circle class="dg-box-t" cx="740" cy="90" r="34"/><text class="dg-sm-b" x="740" y="96" text-anchor="middle">T1</text></g>
+<g class="v-in" style="--d:3.10s"><circle class="dg-box-t" cx="740" cy="210" r="34"/><text class="dg-sm-b" x="740" y="216" text-anchor="middle">T3</text></g>
+<g class="v-in" style="--d:3.20s"><circle class="dg-box-t" cx="920" cy="150" r="34"/><text class="dg-sm-b" x="920" y="156" text-anchor="middle">T2</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:3.40s" d="M770 106 L889 131" marker-end="url(#pga)"/>
+<g class="v-in" style="--d:3.50s"><text class="dg-xs" x="840" y="106" text-anchor="middle">A</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:3.60s" d="M770 194 L889 169" marker-end="url(#pga)"/>
+<g class="v-in" style="--d:3.70s"><text class="dg-xs" x="840" y="212" text-anchor="middle">B</text></g>
+<g class="v-in" style="--d:3.90s"><text class="dg-sm-b dg-txt-ok" x="835" y="286" text-anchor="middle">no cycle</text></g>
+<g class="v-in" style="--d:4.00s"><text class="dg-xs" x="835" y="312" text-anchor="middle">same as T1, T3, T2</text></g>
+</svg>
+      <figcaption><strong>Figure 13.3.</strong> An arrow T<sub>i</sub> → T<sub>j</sub> for each conflict in which T<sub>i</sub> goes first. A schedule is conflict serializable exactly when its graph has no cycle.</figcaption>
+    </figure>
+    <ul>
+      <li>With no cycle, any <strong>topological order</strong> of the graph is an equivalent serial order: S4 can be T1, T3, T2 or T3, T1, T2.</li>
+    </ul>
+  </div>
+  
+</section>
+
+<!-- 12 ────────────────────────────────────────────── in SQL -->
+<section class="slide" id="s12">
+  <h2>Finding a cycle with SQL</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <pre class="code"><span class="k">WITH</span> <span class="k">RECURSIVE</span> edge <span class="k">AS</span> (
+  <span class="k">SELECT</span> <span class="k">DISTINCT</span> a.sched, a.tx <span class="k">AS</span> from_tx,
+                  b.tx <span class="k">AS</span> to_tx
+  <span class="k">FROM</span> sched a <span class="k">JOIN</span> sched b
+    <span class="k">ON</span> a.sched = b.sched <span class="k">AND</span> a.item = b.item
+   <span class="k">AND</span> a.tx &lt;&gt; b.tx <span class="k">AND</span> a.step &lt; b.step
+   <span class="k">AND</span> <span class="s">'W'</span> <span class="k">IN</span> (a.op, b.op)
+), reach(sched, start, at) <span class="k">AS</span> (
+  <span class="k">SELECT</span> sched, from_tx, to_tx <span class="k">FROM</span> edge
+  <span class="k">UNION</span>
+  <span class="k">SELECT</span> r.sched, r.start, e.to_tx
+  <span class="k">FROM</span> reach r <span class="k">JOIN</span> edge e
+    <span class="k">ON</span> e.sched = r.sched <span class="k">AND</span> e.from_tx = r.at
+)
+<span class="k">SELECT</span> * <span class="k">FROM</span> reach <span class="k">WHERE</span> start = at;</pre>
+      <ul>
+        <li><code>edge</code>: the precedence graph, from the conflicting pairs.</li>
+        <li><code>reach</code>: every transaction reachable from each one.</li>
+        <li>A transaction that reaches itself is on a cycle.</li>
+        <li><code>UNION</code> drops repeated rows, so the recursion stops even around a cycle. <code>UNION ALL</code> would run forever.</li>
+        <li>Here it finds S3: T1 reaches T1, and T2 reaches T2.</li>
+      </ul>
+    </div>
+    <p><a class="try" href="playground.html#sched">Playground examples 2.3 and 2.4, exercise 4</a></p>
+  </div>
+  
+</section>
+
+<!-- 13 ────────────────────────────────────────────── recoverable -->
+<section class="slide" id="s13">
+  <h2>Serializable is not enough: aborts</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div>
+        <h3>S5</h3>
+        <ol>
+          <li>T1 reads A</li>
+          <li>T1 writes A</li>
+          <li>T2 reads A, T1's uncommitted value</li>
+          <li>T2 commits</li>
+          <li>T1 reads B</li>
+          <li>T1 aborts</li>
+        </ol>
+      </div>
+      <ul>
+        <li>T2 committed work built on a value that never officially existed, and committed work can't be undone. S5 is not <strong>recoverable</strong>.</li>
+        <li><strong>Recoverable</strong>: a transaction commits only after every transaction it read from has committed.</li>
+        <li><strong>Cascadeless</strong>: nobody reads uncommitted values at all, so one abort never forces others to abort.</li>
+        <li>PostgreSQL's schedules are always cascadeless: a session never sees another's uncommitted writes.</li>
+      </ul>
+    </div>
+    <p><a class="try" href="playground.html#sched">Playground example 2.5, exercise 5</a></p>
+  </div>
+  
+</section>
+
+<!-- 14 ─────────────────────────────────────────────── section -->
+<section class="slide slide--section" id="s14">
+  <h2>Isolation levels</h2>
+  <p>How much of other sessions' work a transaction may see.</p>
+  
+</section>
+
+<!-- 15 ────────────────────────────────────────────── anomalies -->
+<section class="slide" id="s15">
+  <h2>What can go wrong</h2>
+  <div class="slide-main">
+    <div class="fig-scroll" tabindex="0" role="region" aria-label="Concurrency anomalies">
+    <table class="tbl tbl--compact">
+      <caption>Five anomalies, each in one of the recorded scenarios</caption>
+      <thead><tr><th scope="col">Anomaly</th><th scope="col">What happens</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Dirty read</strong></td><td>B reads a value A has written but not committed. A rolls back; B used a value that never existed.</td></tr>
+        <tr><td><strong>Non-repeatable read</strong></td><td>A reads Physics's budget twice and gets two values, because B committed a change in between.</td></tr>
+        <tr><td><strong>Phantom</strong></td><td>A counts Physics instructors twice and gets 2, then 3: B inserted a row that matches A's condition.</td></tr>
+        <tr><td><strong>Lost update</strong></td><td>A and B both read 60,000 and each write back their own total. One raise disappears.</td></tr>
+        <tr><td><strong>Write skew</strong></td><td>A and B each check a rule, see it holds, and change different rows. Together they break it.</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p><a class="try" href="playground.html#iso">Playground section 3: step through each one</a></p>
+  </div>
+  
+</section>
+
+<!-- 16 ────────────────────────────────────────────── levels -->
+<section class="slide" id="s16">
+  <h2>Isolation levels</h2>
+  <div class="slide-main">
+    <div class="fig-scroll" tabindex="0" role="region" aria-label="Isolation levels and the anomalies they allow">
+    <table class="tbl tbl--compact">
+      <caption>What each level allows in PostgreSQL</caption>
+      <thead><tr><th scope="col">Level</th><th scope="col">Dirty read</th><th scope="col">Non-repeatable, phantom</th><th scope="col">Lost update</th><th scope="col">Write skew</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">Read Uncommitted</th><td colspan="4">Accepted, but runs as Read Committed</td></tr>
+        <tr><th scope="row">Read Committed (default)</th><td>No</td><td>Yes</td><td>Yes</td><td>Yes</td></tr>
+        <tr><th scope="row">Repeatable Read</th><td>No</td><td>No</td><td>No: error</td><td>Yes</td></tr>
+        <tr><th scope="row">Serializable</th><td>No</td><td>No</td><td>No: error</td><td>No: error</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <ul>
+      <li>The SQL standard only says what each level must rule out; PostgreSQL rules out more than it has to.</li>
+      <li>"Error" means the database stops one transaction with a <strong>serialization failure</strong>, and the program must run it again.</li>
+    </ul>
+    <pre class="code"><span class="k">BEGIN</span> <span class="k">ISOLATION</span> <span class="k">LEVEL</span> REPEATABLE READ;</pre>
+  </div>
+  
+</section>
+
+<!-- 17 ────────────────────────────────────────────── lost update -->
+<section class="slide" id="s17">
+  <h2>Three ways to avoid the lost update</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <pre class="code"><span class="c">-- 1. Let the database do the arithmetic</span>
+<span class="k">UPDATE</span> department <span class="k">SET</span> budget = budget + 5000
+<span class="k">WHERE</span> dept_name = <span class="s">'Music'</span>;
+
+<span class="c">-- 2. Lock the row when you read it</span>
+<span class="k">SELECT</span> budget <span class="k">FROM</span> department
+<span class="k">WHERE</span> dept_name = <span class="s">'Music'</span> FOR <span class="k">UPDATE</span>;
+<span class="c">-- ... compute in the program, then UPDATE</span>
+
+<span class="c">-- 3. Repeatable Read, and retry on error</span>
+<span class="k">BEGIN</span> <span class="k">ISOLATION</span> <span class="k">LEVEL</span> REPEATABLE READ;</pre>
+      <ul>
+        <li>The bug is <strong>read, compute, write back</strong>: the value read can be out of date by the time it is written.</li>
+        <li>1: the second UPDATE waits for the first, then rereads the row. Both raises kept: 75,000.</li>
+        <li>2: <code>FOR UPDATE</code> makes the second reader wait, so it reads 65,000.</li>
+        <li>3: the second writer gets "could not serialize access due to concurrent update" and runs again.</li>
+      </ul>
+    </div>
+    <p><a class="try" href="playground.html#iso">Scenarios: lost update, no lost update, lost update caught</a></p>
+  </div>
+  
+</section>
+
+<!-- 18 ────────────────────────────────────────────── write skew -->
+<section class="slide" id="s18">
+  <h2>Write skew, and what Serializable adds</h2>
+  <div class="slide-main">
+    <ul>
+      <li>The rule: the two Hale departments, Comp. Sci. and Mathematics, keep at least 200,000 between them. They start with 210,000.</li>
+      <li>A cuts Comp. Sci. by 10,000 and B cuts Mathematics by 10,000. Each first checks the total: 210,000, fine.</li>
+      <li>In Repeatable Read both commit, and the total is 190,000. They changed different rows, so nothing conflicted on a row.</li>
+      <li>In Serializable, PostgreSQL also tracks what each transaction <strong>read</strong>. A read what B wrote and B read what A wrote: no serial order explains that, so B's COMMIT fails. Retried, B sees 200,000 and refuses.</li>
+    </ul>
+    <div class="callout">
+      <span class="mark" aria-hidden="true">→</span>
+      <p>If a transaction checks a rule that involves other rows than the ones it changes, use Serializable, or lock what you check with <code>FOR UPDATE</code>.</p>
+    </div>
+    <p><a class="try" href="playground.html#iso">Scenarios: write skew, write skew caught</a></p>
+  </div>
+  
+</section>
+
+<!-- 19 ────────────────────────────────────────────── retry -->
+<section class="slide" id="s19">
+  <h2>Retrying in a program</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <pre class="code">RETRY = (errors.SerializationFailure,
+         errors.DeadlockDetected)
+
+<span class="k">def</span> cut_budget(conn, dept, amount):
+    <span class="k">for</span> attempt <span class="k">in</span> range(5):
+        <span class="k">try</span>:
+            <span class="k">with</span> conn.transaction():
+                cur = conn.execute(HALE_SUM)
+                total = cur.fetchone()[0]
+                <span class="k">if</span> total - amount &lt; 200000:
+                    <span class="k">raise</span> ValueError(<span class="s">"below 200,000"</span>)
+                conn.execute(CUT, (amount, dept))
+            <span class="k">return</span>
+        <span class="k">except</span> RETRY:
+            <span class="k">continue</span>  <span class="c"># rolled back: run it again</span>
+    <span class="k">raise</span> RuntimeError(<span class="s">"gave up after 5 tries"</span>)</pre>
+      <ul>
+        <li>The connection's isolation level is set once, to Serializable. <code>HALE_SUM</code> and <code>CUT</code> hold the SELECT and the UPDATE.</li>
+        <li>A serialization failure or a deadlock is not a bug: it is the database asking you to try again.</li>
+        <li>Retry the <strong>whole</strong> transaction, reads included, so the checks see the new data.</li>
+        <li>Give up after a few tries, and tell the user.</li>
+        <li>A rule failure (<code>ValueError</code> here) is not retried: retrying would fail the same way.</li>
+      </ul>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 20 ─────────────────────────────────────────────── section -->
+<section class="slide slide--section" id="s20">
+  <h2>Locks and versions</h2>
+  <p>How PostgreSQL keeps sessions apart.</p>
+  
+</section>
+
+<!-- 21 ────────────────────────────────────────────── locks and 2PL -->
+<section class="slide" id="s21">
+  <h2>Locks and two-phase locking</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:1000px">
+<svg style="--dg-k:1" viewBox="0 0 1000 330" role="img" aria-labelledby="tpt tpd">
+<title id="tpt">Locks held over time under two-phase locking and strict two-phase locking</title>
+<desc id="tpd">Two step charts of the number of locks a transaction holds over time. Left, two-phase locking: the count climbs as the transaction acquires locks, the growing phase, reaches a peak, the lock point, and then falls as it releases them, the shrinking phase; once it has released a lock it never acquires another. Right, strict two-phase locking, which PostgreSQL uses for writes: the count climbs the same way, but the transaction keeps every lock until it commits or rolls back, and then releases them all at once, so no other transaction can read or overwrite its uncommitted changes.</desc>
+<g class="v-in" style="--d:0.10s"><text class="dg-sm-b" x="270" y="24" text-anchor="middle">Two-phase locking</text></g>
+<path class="dg-line" d="M70 60 V260 H470"/>
+<g class="v-in" style="--d:0.10s"><text class="dg-xs" x="470" y="282" text-anchor="end">time</text><text class="dg-xs" x="62" y="70" text-anchor="end">locks</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:0.40s" d="M70 260 H110 V226 H160 V192 H210 V158 H260 V124 H310 V158 H360 V192 H400 V226 H440 V260"/>
+<g class="v-in" style="--d:1.50s"><text class="dg-xs" x="165" y="300" text-anchor="middle">growing</text></g>
+<g class="v-in" style="--d:1.50s"><text class="dg-xs" x="370" y="300" text-anchor="middle">shrinking</text></g>
+<g class="v-in" style="--d:1.50s"><text class="dg-xs" x="260" y="108" text-anchor="middle">lock point</text></g>
+<g class="v-in" style="--d:2.20s"><text class="dg-sm-b" x="770" y="24" text-anchor="middle">Strict two-phase locking</text></g>
+<path class="dg-line" d="M570 60 V260 H970"/>
+<g class="v-in" style="--d:2.20s"><text class="dg-xs" x="970" y="282" text-anchor="end">time</text><text class="dg-xs" x="562" y="70" text-anchor="end">locks</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:2.50s" d="M570 260 H610 V226 H660 V192 H710 V158 H760 V124 H900 V260"/>
+<g class="v-in" style="--d:3.60s"><text class="dg-xs" x="665" y="300" text-anchor="middle">growing</text></g>
+<g class="v-in" style="--d:3.60s"><text class="dg-xs" x="900" y="300" text-anchor="middle">COMMIT: release all</text></g>
+<g class="v-in" style="--d:3.60s"><text class="dg-xs" x="830" y="108" text-anchor="middle">hold until the end</text></g>
+</svg>
+      <figcaption><strong>Figure 13.4.</strong> Two-phase locking: no lock is acquired after the first is released. Every schedule it allows is conflict serializable; the strict form is also cascadeless.</figcaption>
+    </figure>
+    <ul>
+      <li>A <strong>shared</strong> lock lets others read too; an <strong>exclusive</strong> lock lets nobody else lock the item. Only two shared locks are compatible.</li>
+      <li>PostgreSQL locks every row it writes until the transaction ends, strict two-phase locking for writes, but readers take no row locks: they read an older version instead.</li>
+    </ul>
+    <p><a class="try" href="playground.html#locks">Playground examples 4.1 and 4.2</a></p>
+  </div>
+  
+</section>
+
+<!-- 22 ────────────────────────────────────────────── deadlock -->
+<section class="slide" id="s22">
+  <h2>Deadlock</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:1000px">
+<svg style="--dg-k:1" viewBox="0 0 1000 300" role="img" aria-labelledby="wft wfd">
+<title id="wft">A deadlock in the wait-for graph</title>
+<desc id="wfd">The deadlock scenario as a wait-for graph. Session A holds the lock on Music&#x27;s row and waits for Physics&#x27;s row; session B holds the lock on Physics&#x27;s row and waits for Music&#x27;s row. The arrow from A to B and the arrow from B to A make a cycle. Neither can go on, so after deadlock_timeout, one second by default, PostgreSQL checks for cycles, finds this one, and cancels B&#x27;s statement with &#x27;deadlock detected&#x27;. B must roll back, which releases Physics, and A&#x27;s UPDATE finishes.</desc>
+<defs><marker id="wfa" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#9e1b32"/></marker></defs>
+<g class="v-in" style="--d:0.10s"><rect class="dg-box-t" x="110" y="100" width="200" height="90" rx="6"/><text class="dg-sm-b" x="210" y="140" text-anchor="middle">Session A</text><text class="dg-xs" x="210" y="166" text-anchor="middle">holds Music</text></g>
+<g class="v-in" style="--d:0.30s"><rect class="dg-box-a" x="690" y="100" width="200" height="90" rx="6"/><text class="dg-sm-b" x="790" y="140" text-anchor="middle">Session B</text><text class="dg-xs" x="790" y="166" text-anchor="middle">holds Physics</text></g>
+<path class="dg-line-a v-draw" pathLength="1" style="--d:0.80s" d="M310 120 C430 70, 570 70, 686 118" marker-end="url(#wfa)"/>
+<g class="v-in" style="--d:1.10s"><text class="dg-xs" x="500" y="64" text-anchor="middle">A waits for Physics</text></g>
+<path class="dg-line-a v-draw" pathLength="1" style="--d:1.60s" d="M690 172 C570 222, 430 222, 314 174" marker-end="url(#wfa)"/>
+<g class="v-in" style="--d:1.90s"><text class="dg-xs" x="500" y="236" text-anchor="middle">B waits for Music</text></g>
+<g class="v-in" style="--d:2.30s"><text class="dg-sm-b dg-txt-bad" x="500" y="150" text-anchor="middle">cycle</text></g>
+<g class="v-in" style="--d:2.80s"><text class="dg-sm" x="500" y="286" text-anchor="middle">After 1 second PostgreSQL finds the cycle and cancels B: &quot;deadlock detected&quot;.</text></g>
+</svg>
+      <figcaption><strong>Figure 13.5.</strong> The wait-for graph: an arrow from each waiting session to the one it waits for. A cycle is a deadlock.</figcaption>
+    </figure>
+    <ul>
+      <li><strong>Detection</strong>, PostgreSQL's way: wait <code>deadlock_timeout</code> (1 second), look for a cycle, cancel one transaction.</li>
+      <li><strong>Prevention</strong>, your way: change rows in the same order everywhere, for example by key. Then no cycle can form.</li>
+    </ul>
+    <p><a class="try" href="playground.html#iso">Scenario: deadlock</a></p>
+  </div>
+  
+</section>
+
+<!-- 23 ────────────────────────────────────────────── versions -->
+<section class="slide" id="s23">
+  <h2>Versions, not overwrites</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:1000px">
+<svg style="--dg-k:1" viewBox="0 0 1000 380" role="img" aria-labelledby="vvt vvd">
+<title id="vvt">Two versions of Music&#x27;s row, and who sees which</title>
+<desc id="vvd">A heap page holding two versions of Music&#x27;s row. The old version, at slot (0,6), has budget 60,000, xmin 752, the transaction that loaded it, and xmax 755, the transaction that replaced it. The new version, at slot (0,9), has budget 61,000, xmin 755 and xmax 0. An arrow leads from the old version to the new one. Beside the old version: any other session sees it, because 755 is not committed in its snapshot. Beside the new version: transaction 755, which made the change and has not committed, sees the new one. If 755 commits, later snapshots see 61,000; if it rolls back, the new version is dead and everyone keeps seeing 60,000, until VACUUM removes the dead version.</desc>
+<defs><marker id="vva" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#0e5a6b"/></marker></defs>
+<g class="v-in" style="--d:0.10s"><text class="dg-sm-b" x="250" y="26" text-anchor="middle">One page of department</text></g>
+<g class="v-in" style="--d:0.10s"><rect class="dg-box-m" x="40" y="40" width="420" height="300" rx="4"/></g>
+<g class="v-in" style="--d:0.20s"><text class="dg-xs" x="110" y="70" text-anchor="middle">slot</text></g>
+<g class="v-in" style="--d:0.20s"><text class="dg-xs" x="200" y="70" text-anchor="middle">budget</text></g>
+<g class="v-in" style="--d:0.20s"><text class="dg-xs" x="290" y="70" text-anchor="middle">xmin</text></g>
+<g class="v-in" style="--d:0.20s"><text class="dg-xs" x="380" y="70" text-anchor="middle">xmax</text></g>
+<g class="v-in" style="--d:0.40s"><rect class="dg-box" x="60" y="90" width="380" height="48" rx="4"/><text class="dg-sm dg-mono" x="110" y="120" text-anchor="middle">(0,6)</text><text class="dg-sm dg-mono" x="200" y="120" text-anchor="middle">60,000</text><text class="dg-sm dg-mono" x="290" y="120" text-anchor="middle">752</text><text class="dg-sm dg-mono" x="380" y="120" text-anchor="middle">755</text></g>
+<g class="v-in" style="--d:1.60s"><rect class="dg-box-t" x="60" y="220" width="380" height="48" rx="4"/><text class="dg-sm dg-mono" x="110" y="250" text-anchor="middle">(0,9)</text><text class="dg-sm dg-mono" x="200" y="250" text-anchor="middle">61,000</text><text class="dg-sm dg-mono" x="290" y="250" text-anchor="middle">755</text><text class="dg-sm dg-mono" x="380" y="250" text-anchor="middle">0</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.30s" d="M250 140 V214" marker-end="url(#vva)"/>
+<g class="v-in" style="--d:1.40s"><text class="dg-xs" x="262" y="182" text-anchor="start">UPDATE by 755</text></g>
+<g class="v-in" style="--d:2.00s"><text class="dg-xs" x="250" y="320" text-anchor="middle">Nothing is overwritten.</text></g>
+<g class="v-in" style="--d:2.40s"><rect class="dg-box" x="540" y="64" width="420" height="100" rx="6"/><text class="dg-sm-b" x="560" y="96">Any other session</text><text class="dg-sm" x="560" y="124">sees 60,000: 755 is not committed</text><text class="dg-xs" x="560" y="148">in its snapshot, so (0,6) is still alive</text></g>
+<g class="v-in" style="--d:3.00s"><rect class="dg-box-t" x="540" y="194" width="420" height="100" rx="6"/><text class="dg-sm-b" x="560" y="226">Transaction 755 (not committed yet)</text><text class="dg-sm" x="560" y="254">sees its own change: 61,000</text><text class="dg-xs" x="560" y="278">the version it created, (0,9)</text></g>
+<path class="dg-dash v-draw" pathLength="1" style="--d:2.60s" d="M440 114 H536"/>
+<path class="dg-dash v-draw" pathLength="1" style="--d:3.20s" d="M440 244 H536"/>
+</svg>
+      <figcaption><strong>Figure 13.6.</strong> An UPDATE writes a new version of the row. <code>xmin</code> is the transaction that created a version and <code>xmax</code> the one that replaced it.</figcaption>
+    </figure>
+    <ul>
+      <li>This is <strong>multiversion concurrency control</strong> (MVCC): readers never wait for writers, and writers never wait for readers.</li>
+    </ul>
+    <p><a class="try" href="playground.html#mvcc">Playground examples 5.1 and 5.2</a></p>
+  </div>
+  
+</section>
+
+<!-- 24 ────────────────────────────────────────────── snapshots -->
+<section class="slide" id="s24">
+  <h2>Snapshots decide what you see</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div>
+        <h3>A snapshot</h3>
+        <ul>
+          <li>The set of transactions that had committed when it was taken.</li>
+          <li>A version is visible if its <code>xmin</code> is in the snapshot and its <code>xmax</code> is not.</li>
+          <li>Plus your own changes.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>When it is taken</h3>
+        <ul>
+          <li><strong>Read Committed</strong>: at each statement. Each statement sees the latest commits, so two reads can differ.</li>
+          <li><strong>Repeatable Read</strong> and <strong>Serializable</strong>: once, at the first statement, kept to the end.</li>
+        </ul>
+      </div>
+    </div>
+    <ul>
+      <li>Old versions pile up until <code>VACUUM</code> removes those no snapshot can see any more. Next week.</li>
+    </ul>
+    <p><a class="try" href="playground.html#mvcc">Playground example 5.3</a></p>
+  </div>
+  
+</section>
+
+<!-- 25 ────────────────────────────────────────────── takeaways -->
+<section class="slide" id="s25">
+  <h2>Takeaways</h2>
+  <div class="slide-main">
+    <ol class="steps">
+      <li><span class="n" aria-hidden="true">1</span><div><strong>A transaction is all or nothing.</strong><p>Group changes that belong together; consistency is your rules, kept inside one transaction.</p></div></li>
+      <li><span class="n" aria-hidden="true">2</span><div><strong>Serializable means a serial order explains it.</strong><p>No cycle in the precedence graph; recoverable and cascadeless handle aborts.</p></div></li>
+      <li><span class="n" aria-hidden="true">3</span><div><strong>Know your level.</strong><p>Read Committed allows lost updates and write skew; Repeatable Read stops lost updates; Serializable stops both.</p></div></li>
+      <li><span class="n" aria-hidden="true">4</span><div><strong>Errors under concurrency are normal.</strong><p>Retry the whole transaction on a serialization failure or deadlock.</p></div></li>
+      <li><span class="n" aria-hidden="true">5</span><div><strong>Locks for writers, versions for readers.</strong><p>Strict two-phase locking on rows, and snapshots of row versions.</p></div></li>
+    </ol>
+  </div>
+  
+</section>
+
+<!-- 26 ────────────────────────────────────────────── this week -->
+<section class="slide" id="s26">
+  <h2>This week's work</h2>
+  <div class="slide-main">
+    <div class="week-work">
+      <div>
+        <h3>Read</h3>
+        <ul>
+          <li>Chapter 17 (transactions), sections 17.1 to 17.10.</li>
+          <li>Chapter 18 (concurrency control), sections 18.1, 18.2, 18.7 and 18.8.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Do</h3>
+        <ul>
+          <li>The <a href="playground.html">week 13 playground</a>: the two-session replay and 8 exercises.</li>
+          <li>Quiz 13 in Brightspace.</li>
+          <li><a href="lab8.html">Lab 8</a>: two sessions in psql.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Due</h3>
+        <ul>
+          <li><span class="due">Sunday, April 18, 11:59 p.m. CT</span>: <a href="lab8.html">Lab 8</a>.</li>
+          <li><span class="due">Sunday, April 25, 11:59 p.m. CT</span>: <a href="../../project/milestone4.html">project milestone 4</a>.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="callout" style="margin-top:auto">
+      <span class="mark" aria-hidden="true">→</span>
+      <p><strong>Next week:</strong> recovery. How a committed transaction survives a crash, and the day-to-day care of a PostgreSQL server: backups, VACUUM and monitoring.</p>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 27 ────────────────────────────────────────────── resources -->
+<section class="slide" id="s27">
+  <h2>Free resources</h2>
+  <div class="slide-main">
+    <ul class="resources">
+      <li><a href="https://www.postgresql.org/docs/current/transaction-iso.html">Transaction isolation</a><span class="src">PostgreSQL documentation</span><p>Each level, the anomalies it allows, and the errors to retry.</p></li>
+      <li><a href="https://www.postgresql.org/docs/current/explicit-locking.html">Explicit locking</a><span class="src">PostgreSQL documentation</span><p>Table and row lock modes, FOR UPDATE, and deadlocks.</p></li>
+      <li><a href="https://www.postgresql.org/docs/current/mvcc-intro.html">Concurrency control: introduction</a><span class="src">PostgreSQL documentation</span><p>Why readers and writers don't block each other.</p></li>
+      <li><a href="https://www.postgresql.org/docs/current/sql-savepoint.html">SAVEPOINT</a><span class="src">PostgreSQL documentation</span><p>Savepoints, with examples of rolling back to one.</p></li>
+      <li><a href="playground.html">Week 13 playground</a><span class="src">this course</span><p>The recorded two-session scenarios and the schedule queries, in your browser.</p></li>
+    </ul>
+  </div>
+  
+</section>
+
+</main>
+</div>
+<script src="../../assets/deck.js"></script>
+</body>
+</html>

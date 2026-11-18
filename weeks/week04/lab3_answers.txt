@@ -1,0 +1,66 @@
+CS 4600/5200 Lab 3: answers
+===========================
+
+Name:
+Student ID:
+Course (CS 4600 or CS 5200):
+Section (online or face to face):
+
+Save this file as plain text. Your queries go in lab3.sql. Here, write the
+number of rows each query returned, and answer the written questions in
+your own words. Leave the headings as they are.
+
+
+Part B: row counts
+------------------
+
+Q1  rows:
+Q2  rows:
+Q3  rows:
+Q4  rows:
+Q5  rows:
+Q6  rows:
+Q7  rows:
+Q8  rows:
+Q9  rows:
+Q10 rows:
+
+
+Part C: short answers
+---------------------
+
+W1. The two queries that count students not in Physics: give each number,
+    then explain the difference. Name the student who causes it and say
+    what <> does with a NULL. (2 to 4 sentences)
+
+First query:
+Second query:
+Answer:
+
+
+W2. The "top two" advisor award: how many advisors would get it if you
+    kept rk <= 2, drk <= 2 and rn <= 2? Which would you use, and what is
+    wrong with the other two here? (2 to 4 sentences)
+
+rk <= 2:
+drk <= 2:
+rn <= 2:
+Answer:
+
+
+Part D: CS 5200 only (CS 4600 students may leave this blank)
+------------------------------------------------------------
+
+Q11 rows:
+Q12 rows:
+
+Q12. Your query read aloud as one sentence, starting "There is no course
+     that Avery Chen taught..."
+
+Answer:
+
+
+AI use. Did you use a generative AI tool for this lab? If yes, say which
+tool, what you asked it, and what you kept. If no, write "None".
+
+Answer:

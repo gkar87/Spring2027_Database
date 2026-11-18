@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lab 0 — Set Up PostgreSQL · CS 4600/5200</title>
+<meta name="description" content="CS 4600/5200 Lab 0: install PostgreSQL or use Google Colab, load the university sample database, check it, and run your first queries.">
+<link rel="stylesheet" href="../../assets/course.css">
+<link rel="stylesheet" href="../../assets/db.css">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to the lab</a>
+
+<div class="doc">
+<header class="doc-masthead">
+  <p class="inst"><span>CS 4600/5200 · Database Theory and Applications</span><span>Week 1</span><span><a href="../../index.html">Course home</a></span></p>
+  <h1>Lab 0: Set up PostgreSQL and run your first queries</h1>
+  <p class="tagline">By the end of this lab you have a working PostgreSQL with this term's sample database in it, and you have seen it accept good data and refuse bad data.</p>
+</header>
+
+<dl class="facts">
+  <div><dt>Due</dt><dd>Sunday, January 17, 11:59 p.m. CT</dd></div>
+  <div><dt>Time</dt><dd>About 60 minutes, most of it in class</dd></div>
+  <div><dt>Submit</dt><dd>One zip file, uploaded to Brightspace</dd></div>
+  <div><dt>Worth</dt><dd>One of the labs (labs are 25% of the grade)</dd></div>
+</dl>
+
+<nav class="toc" aria-labelledby="toc-h">
+  <h2 id="toc-h">On this page</h2>
+  <ol>
+    <li><a href="#files">Files for this lab</a></li>
+    <li><a href="#a">Part A: warm up in the playground</a></li>
+    <li><a href="#b">Part B: install PostgreSQL (pick one path)</a></li>
+    <li><a href="#c">Part C: load and check the database</a></li>
+    <li><a href="#d">Part D: your first queries</a></li>
+    <li><a href="#e">Part E: two short answers</a></li>
+    <li><a href="#submit">What to submit and how it is graded</a></li>
+    <li><a href="#help">If something goes wrong</a></li>
+  </ol>
+</nav>
+
+<main id="main">
+
+<section id="files" aria-labelledby="files-h">
+  <h2 id="files-h">Files for this lab</h2>
+  <p>Download all four into one folder, for example <code>Documents/cs5200/lab0</code>. Every command below assumes you are in that folder.</p>
+  <ul>
+    <li><a href="university.sql" download>university.sql</a>: creates the five tables and fills them with sample data. It is the same database the week 1 playground uses.</li>
+    <li><a href="lab0_check.sql" download>lab0_check.sql</a>: checks that your copy matches. Every line should say PASS.</li>
+    <li><a href="lab0.sql" download>lab0.sql</a>: the starter file for your queries in Part D.</li>
+    <li><a href="lab0_answers.txt" download>lab0_answers.txt</a>: the starter file for your name and your written answers in Part E.</li>
+  </ul>
+</section>
+
+<section id="a" aria-labelledby="a-h">
+  <h2 id="a-h">Part A: warm up in the playground (10 minutes)</h2>
+  <p>Open the <a href="playground.html">week 1 playground</a>. It runs PostgreSQL inside your browser, so it works before you install anything.</p>
+  <ol>
+    <li>Run examples 1.1 to 2.2 and read each result.</li>
+    <li>Run example 4.1 and read the error. Errors in this course are information, not failure.</li>
+    <li>Solve exercises 1 to 3. You don't submit them, but Part D uses the same ideas.</li>
+  </ol>
+</section>
+
+<section id="b" aria-labelledby="b-h">
+  <h2 id="b-h">Part B: install PostgreSQL (pick one path)</h2>
+  <p>PostgreSQL 14 or newer works for this course; 18 is the current release. Path 1 is recommended because you keep the same database all term. Path 2 needs no install, but a Colab session forgets everything when it closes, so you rerun its setup cell each time.</p>
+  <p class="note note--info">You work on your own computer all term; there is no university lab for this course. Colab is fine until week 12, but <strong>by week 13 you need Path 1</strong>: Lab 8 and the project's milestone 4 run two sessions on the same server at once, which a Colab notebook can't. If your only computer can't install software, such as a Chromebook or a tablet, tell me in the first two weeks.</p>
+
+  <h3>Path 1a: Windows</h3>
+  <ol>
+    <li>Go to <a href="https://www.postgresql.org/download/">postgresql.org/download</a>, choose <strong>Windows</strong>, and download the installer for the newest version.</li>
+    <li>Run it and keep the default components: PostgreSQL Server, pgAdmin 4 and Command Line Tools. You can skip Stack Builder at the end.</li>
+    <li>When asked, choose a password for the <code>postgres</code> user and <strong>write it down</strong>. Keep port 5432.</li>
+    <li>Open PowerShell in your lab folder (in File Explorer, type <code>powershell</code> in the address bar and press Enter). Tell PowerShell where psql is, changing 18 if you installed another version:
+<pre>$pg = "C:\Program Files\PostgreSQL\18\bin"
+&amp; "$pg\psql.exe" -U postgres -c "SELECT version();"</pre>
+      Type your password when asked. If you see a version line, Path 1a is done. In Parts C and D, write <code>&amp; "$pg\psql.exe" -U postgres</code> wherever the commands say <code>psql</code>, and <code>&amp; "$pg\createdb.exe" -U postgres</code> for <code>createdb</code>.</li>
+  </ol>
+
+  <h3>Path 1b: macOS</h3>
+  <ol>
+    <li>Download <a href="https://postgresapp.com/">Postgres.app</a>, move it to Applications, open it, and click <strong>Initialize</strong>.</li>
+    <li>In Terminal, add its command-line tools to your path (this is the command Postgres.app's own page gives), then open a new Terminal window:
+<pre>sudo mkdir -p /etc/paths.d &amp;&amp;
+echo /Applications/Postgres.app/Contents/Versions/latest/bin | sudo tee /etc/paths.d/postgresapp</pre></li>
+    <li>Check it: <code>psql -c "SELECT version();"</code>. Postgres.app logs you in as your Mac user with no password.</li>
+  </ol>
+
+  <h3>Path 1c: Linux (Ubuntu or Debian)</h3>
+<pre>sudo apt update
+sudo apt install postgresql
+sudo -u postgres createuser --superuser "$USER"
+psql -d postgres -c "SELECT version();"</pre>
+
+  <h3>Path 2: Google Colab, no install</h3>
+  <ol>
+    <li>Open <a href="https://colab.research.google.com/">Google Colab</a> and create a new notebook.</li>
+    <li>Upload the three lab files with the folder icon on the left, then <strong>Upload</strong>.</li>
+    <li>Run this setup cell. It takes about a minute, and you rerun it whenever the session restarts:
+<pre>!apt-get -qq update &gt; /dev/null &amp;&amp; apt-get -qq install -y postgresql &gt; /dev/null
+!service postgresql start
+!sudo -u postgres psql -q -c "CREATE ROLE root SUPERUSER LOGIN;"
+!psql -d postgres -c "SELECT version();"</pre></li>
+    <li>In Parts C and D, start each command with <code>!</code>, for example <code>!psql -d university -f lab0_check.sql</code>.</li>
+  </ol>
+  <p class="note note--info">After a Colab restart, rerun the setup cell and Part C's two commands. The <code>CREATE ROLE</code> line then reports that the role exists; that is fine.</p>
+</section>
+
+<section id="c" aria-labelledby="c-h">
+  <h2 id="c-h">Part C: load and check the database</h2>
+  <p>Create an empty database named <code>university</code>, load the sample data into it, and run the check:</p>
+<pre>createdb university
+psql -d university -f university.sql
+psql -d university -f lab0_check.sql</pre>
+  <p>Loading prints five <code>NOTICE: table "…" does not exist, skipping</code> lines the first time. They are expected: the script removes old copies of the tables before creating new ones. The check should print:</p>
+  <div class="fig-scroll" tabindex="0" role="region" aria-label="Expected output of lab0_check">
+  <table class="tbl tbl--result">
+    <caption>Expected output of lab0_check.sql</caption>
+    <thead><tr><th scope="col">relation</th><th scope="col" class="num">expected</th><th scope="col" class="num">found</th><th scope="col">status</th></tr></thead>
+    <tbody>
+      <tr><td>department</td><td class="num">6</td><td class="num">6</td><td>PASS</td></tr>
+      <tr><td>instructor</td><td class="num">10</td><td class="num">10</td><td>PASS</td></tr>
+      <tr><td>student</td><td class="num">12</td><td class="num">12</td><td>PASS</td></tr>
+      <tr><td>course</td><td class="num">9</td><td class="num">9</td><td>PASS</td></tr>
+      <tr><td>takes</td><td class="num">22</td><td class="num">22</td><td>PASS</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>If a line says FAIL, run the load command again; <code>university.sql</code> always starts from scratch.</p>
+  <p>Optional: open <strong>pgAdmin</strong> (installed with Path 1a, or from <a href="https://www.pgadmin.org/">pgadmin.org</a>) and find the five tables under Databases → university → Schemas → public → Tables. Everything in this course can also be done in psql alone.</p>
+</section>
+
+<section id="d" aria-labelledby="d-h">
+  <h2 id="d-h">Part D: your first queries</h2>
+  <p>Open <code>lab0.sql</code> in any text editor (VS Code, Notepad, TextEdit in plain-text mode). Q1 and Q2 are written for you. Write Q3 to Q6 under their comments:</p>
+  <ol class="qs">
+    <li><p><strong>Q3.</strong> The name and budget of every department in the Hale building.</p></li>
+    <li><p><strong>Q4.</strong> The name and total credits of every Physics student, most credits first.</p></li>
+    <li><p><strong>Q5.</strong> Add a made-up student (not yourself) with an id that is not taken, any department that exists, and 0 credits. Then select that one row.</p></li>
+    <li><p><strong>Q6.</strong> Write one <code>INSERT</code> or <code>UPDATE</code> that breaks a constraint on purpose: a primary key, a foreign key or a <code>CHECK</code>. Say which in a comment. An error here is the right answer.</p></li>
+  </ol>
+  <p>Then run the whole file and save everything it prints:</p>
+<pre>psql -d university -e -f lab0.sql &gt; lab0_output.txt 2&gt;&amp;1</pre>
+  <p><code>-e</code> prints each query above its result, and <code>2&gt;&amp;1</code> keeps the error messages in the file too. Open <code>lab0_output.txt</code> and check that Q6's error is in it.</p>
+  <p class="note">Running the file twice makes Q5 fail the second time, because your student already exists. That is a primary-key violation, and it shows exactly what keys are for. To start clean, reload <code>university.sql</code> and run the file again.</p>
+</section>
+
+<section id="e" aria-labelledby="e-h">
+  <h2 id="e-h">Part E: two short answers</h2>
+  <p>Write these in <code>lab0_answers.txt</code>, under their headings, three or four sentences each. Fill in your name, student ID, course and section at the top, and the AI use line at the end. Save it as plain text: in TextEdit choose <strong>Format › Make Plain Text</strong> first; Notepad and VS Code save plain text already.</p>
+  <ol class="qs">
+    <li><p><strong>E1.</strong> Which constraint did your Q6 break? If the database had accepted that row, what would go wrong later, and for whom?</p></li>
+    <li><p><strong>E2.</strong> The primary key of <code>takes</code> is (id, course_id, semester, year). Using a row from the data, explain why (id, course_id) alone would not be enough.</p></li>
+  </ol>
+</section>
+
+<section id="submit" aria-labelledby="sub-h">
+  <h2 id="sub-h">What to submit and how it is graded</h2>
+  <p>Upload <strong>one zip file</strong> to the Lab 0 assignment in Brightspace. Name it <code>lab0_lastname_firstname.zip</code>, for example <code>lab0_rivera_jamie.zip</code>, and put these three files in it:</p>
+  <ul>
+    <li><code>lab0_answers.txt</code>: your name and your answers to E1 and E2.</li>
+    <li><code>lab0.sql</code>: your queries for Q3 to Q6.</li>
+    <li><code>lab0_output.txt</code>: what psql printed when you ran it.</li>
+  </ul>
+  <p>To make the zip, put the three files in one folder and select them, then:</p>
+  <ul>
+    <li><strong>Windows:</strong> right-click and choose <strong>Compress to ZIP file</strong> (on Windows 10, <strong>Send to › Compressed (zipped) folder</strong>), then rename the zip.</li>
+    <li><strong>macOS:</strong> right-click, choose <strong>Compress 3 Items</strong>, and rename <code>Archive.zip</code>.</li>
+    <li><strong>Linux or Colab:</strong> run the line below. In Colab, start it with <code>!</code>, then right-click the zip in the file panel and choose <strong>Download</strong>.</li>
+  </ul>
+<pre>zip lab0_lastname_firstname.zip lab0_answers.txt lab0.sql lab0_output.txt</pre>
+  <p>Before you upload, open the zip and check that all three files are inside and that <code>lab0_output.txt</code> is not empty. Upload a new zip if you need to change anything before the deadline; the latest one is graded.</p>
+  <div class="fig-scroll" tabindex="0" role="region" aria-label="Lab 0 rubric, 10 points">
+  <table class="tbl">
+    <caption>Lab 0 rubric, 10 points</caption>
+    <thead><tr><th scope="col">Item</th><th scope="col">What earns full credit</th><th scope="col" class="num">Points</th></tr></thead>
+    <tbody>
+      <tr><td>Setup (Q1, Q2)</td><td>A version line and five PASS rows in your output.</td><td class="num">3</td></tr>
+      <tr><td>Queries (Q3–Q5)</td><td>Each returns the right rows and only the columns asked for.</td><td class="num">3</td></tr>
+      <tr><td>Constraint (Q6)</td><td>A statement that fails, with the constraint named in a comment.</td><td class="num">1</td></tr>
+      <tr><td>Short answers (E1, E2)</td><td>Correct, specific to this database, in your own words.</td><td class="num">3</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Late work loses 10% per day for up to three days and is not accepted after that. Generative AI is not needed for this lab; under the course's limited-use policy, use it only where a lab says so, and say how you used it.</p>
+</section>
+
+<section id="help" aria-labelledby="help-h">
+  <h2 id="help-h">If something goes wrong</h2>
+  <ul>
+    <li><strong>"psql is not recognized" or "command not found"</strong>: the tools are not on your path. On Windows, use the <code>$pg</code> line from Path 1a; on a Mac, open a new Terminal after step 2 of Path 1b.</li>
+    <li><strong>"password authentication failed"</strong>: on Windows, use the password you chose during install, with <code>-U postgres</code>.</li>
+    <li><strong>"database "university" does not exist"</strong>: run <code>createdb university</code> first.</li>
+    <li><strong>"database "university" already exists"</strong>: fine. Skip <code>createdb</code> and just reload <code>university.sql</code>.</li>
+    <li><strong>Anything else</strong>: copy the exact error message and bring it to office hours, Tuesday and Wednesday 12:00–3:00 p.m., MIC room D159, or post it in the week 1 discussion in Brightspace. The <a href="https://www.postgresql.org/docs/current/tutorial.html">PostgreSQL tutorial</a>, chapter 1, covers installation questions.</li>
+  </ul>
+</section>
+</main>
+
+<footer>
+  <p>CS 4600/5200 · Database Theory and Applications · University of Central Missouri · Dr. Gorkem Kar · Spring 2027</p>
+</footer>
+</div>
+</body>
+</html>

@@ -1,0 +1,983 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Week 2 — Relational Algebra · CS 4600/5200</title>
+<meta name="description" content="CS 4600/5200 week 2: relational algebra. Selection, projection, rename, union, intersection, difference, Cartesian product, joins, assignment and division, how each maps to SQL, and why equivalent expressions matter to the optimizer.">
+<link rel="stylesheet" href="../../assets/course.css">
+<link rel="stylesheet" href="../../assets/db.css">
+</head>
+<body>
+<a class="skip-link" href="#s1">Skip to the first slide</a>
+
+<div class="deck-stage">
+<main class="deck" aria-label="Week 2 lecture slides: Relational algebra">
+
+<!-- 1 ─────────────────────────────────────────────────────────── title -->
+<section class="slide slide--title" id="s1">
+  <p class="course-line">CS 4600/5200 · Database Theory and Applications · Week 2 of 15</p>
+  <h1>Relational Algebra: The Math Under SQL</h1>
+  <p class="subtitle">
+    A handful of operators, each taking relations in and giving one relation back.
+    They give every SQL query an exact meaning, and they are what the optimizer
+    rewrites when it decides how to run your query.
+  </p>
+  <p class="byline">
+    Dr. Gorkem Kar
+    <span>University of Central Missouri</span>
+    <span>School of Computer Science and Cybersecurity</span>
+  </p>
+  <div class="title-art">
+<svg viewBox="0 0 360 330" aria-hidden="true" focusable="false" style="--dg-k:1">
+<path class="dg-line-q v-draw" pathLength="1" style="--d:0.7s" d="M180 220 L180 164"/>
+<path class="dg-line-q v-draw" pathLength="1" style="--d:1.2s" d="M180 120 L180 64"/>
+<g class="v-in" style="--d:1.4s"><rect class="dg-box-a" x="70.0" y="20" width="220" height="44" rx="6"/><text class="dg-sm dg-mono" x="180" y="48" text-anchor="middle">π name</text></g>
+<g class="v-in" style="--d:0.9s"><rect class="dg-box-t" x="70.0" y="120" width="220" height="44" rx="6"/><text class="dg-sm dg-mono" x="180" y="148" text-anchor="middle">σ dept = &#x27;Physics&#x27;</text></g>
+<g class="v-in" style="--d:0.3s"><rect class="dg-box-m" x="70.0" y="220" width="220" height="44" rx="6"/><text class="dg-sm dg-mono" x="180" y="248" text-anchor="middle">instructor</text></g>
+<text class="dg-xs dg-teal v-in" style="--d:1.7s" x="180" y="300" text-anchor="middle">10 tuples in, 2 tuples out</text>
+</svg>
+  </div>
+  
+</section>
+
+<!-- 2 ─────────────────────────────────────────────── last week -->
+<section class="slide" id="s2">
+  <h2>Last week, in four lines</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <ol class="steps">
+        <li><span class="n" aria-hidden="true">1</span><div><strong>A relation is a set of tuples over named attributes.</strong><p>No duplicate tuples, no order, one value per cell.</p></div></li>
+        <li><span class="n" aria-hidden="true">2</span><div><strong>Keys and foreign keys are promises.</strong><p>The DBMS checks them on every change.</p></div></li>
+        <li><span class="n" aria-hidden="true">3</span><div><strong>NULL comparisons are unknown.</strong><p>WHERE keeps a row only when its condition is true.</p></div></li>
+        <li><span class="n" aria-hidden="true">4</span><div><strong>A query's result is a relation.</strong><p>So it can feed another query.</p></div></li>
+      </ol>
+      <div class="fill" style="gap:16px">
+        <div class="panel panel--key">
+          <h3>Today builds on line 4</h3>
+          <p>If every result is a relation, we can name a small set of operations on relations and build every query from them. That set is the relational algebra.</p>
+        </div>
+        <div class="panel">
+          <h3>Housekeeping</h3>
+          <p>Lab 0 grades are in Brightspace. From this week, every lab is submitted as one zip file with a plain-text answers file inside; Lab 1 shows how.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 3 ─────────────────────────────────────────────── why an algebra -->
+<section class="slide" id="s3">
+  <h2>Why an algebra? Relations in, one relation out</h2>
+  <div class="slide-main">
+    <div class="cols-2-1">
+      <figure class="fig">
+<svg style="--dg-k:1" viewBox="0 0 760 330" role="img" aria-labelledby="clt cld">
+<title id="clt">An expression tree: projection over selection over instructor</title>
+<desc id="cld">Read from the bottom up. The relation instructor has 10 tuples. The selection σ dept_name = Physics takes them and returns a relation of 2 tuples. The projection π name takes that relation and returns a relation of 2 tuples: Sam Okafor and Kofi Mensah. Every arrow carries a relation, which is why operators can be stacked.</desc>
+<defs><marker id="cla" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#5c6470"/></marker></defs>
+<path class="dg-line-q v-draw" pathLength="1" style="--d:0.8s" d="M260 236 L260 186" marker-end="url(#cla)"/>
+<path class="dg-line-q v-draw" pathLength="1" style="--d:1.7s" d="M260 130 L260 80" marker-end="url(#cla)"/>
+<g class="v-in" style="--d:0.2s"><rect class="dg-box-m" x="110" y="236" width="300" height="56" rx="6"/><text class="dg-txt dg-mono" x="260" y="261" text-anchor="middle">instructor</text><text class="dg-xs dg-teal" x="260" y="282" text-anchor="middle">10 tuples</text></g>
+<g class="v-in" style="--d:1.1s"><rect class="dg-box-t" x="110" y="130" width="300" height="56" rx="6"/><text class="dg-txt dg-mono" x="260" y="155" text-anchor="middle">σ[dept_name = &#x27;Physics&#x27;]</text><text class="dg-xs dg-teal" x="260" y="176" text-anchor="middle">2 tuples</text></g>
+<g class="v-in" style="--d:2.0s"><rect class="dg-box-a" x="110" y="24" width="300" height="56" rx="6"/><text class="dg-txt dg-mono" x="260" y="49" text-anchor="middle">π[name]</text><text class="dg-xs dg-teal" x="260" y="70" text-anchor="middle">2 tuples</text></g>
+<g class="v-in" style="--d:2.6s"><rect class="dg-box" x="470" y="24" width="270" height="92" rx="4"/><rect class="dg-box-m" x="470" y="24" width="270" height="30" rx="4"/><text class="dg-sm-b" x="484" y="45">name</text><text class="dg-sm" x="484" y="76">Sam Okafor</text><text class="dg-sm" x="484" y="102">Kofi Mensah</text></g>
+<path class="dg-dash v-draw" pathLength="1" style="--d:2.5s" d="M410 52 L466 64"/>
+<text class="dg-txt-s v-in" style="--d:2.9s" x="470" y="160">Each operator: relations in,</text>
+<text class="dg-txt-s v-in" style="--d:2.9s" x="470" y="184">one relation out.</text>
+</svg>
+        <figcaption><strong>Figure 2.1.</strong> An expression tree, read from the bottom up. Each arrow carries a whole relation, which is why operators stack like arithmetic.</figcaption>
+      </figure>
+      <div class="fill" style="gap:14px">
+        <div class="panel panel--definition">
+          <span class="term">Closure</span>
+          <p>Every operator takes one or two relations and returns a relation. So the output of one operator can be the input of the next.</p>
+        </div>
+        <ul>
+          <li><strong>Exact meaning.</strong> Each SQL query means one algebra expression.</li>
+          <li><strong>Procedural.</strong> An expression says which operations, in what order.</li>
+          <li><strong>Rewritable.</strong> The optimizer swaps an expression for a cheaper equivalent one (slide 21).</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 4 ─────────────────────────────────────────────── the operators -->
+<section class="slide" id="s4">
+  <h2>The operators we cover today</h2>
+  <div class="slide-main">
+    <table class="tbl tbl--compact">
+      <caption class="visually-hidden">Relational algebra operators, what each does, and its SQL counterpart</caption>
+      <thead><tr><th scope="col">Symbol</th><th scope="col">Name</th><th scope="col">What it does</th><th scope="col">SQL counterpart</th></tr></thead>
+      <tbody>
+        <tr><td class="sym">σ</td><td>Selection</td><td>Keeps the tuples that satisfy a condition</td><td><code>WHERE</code></td></tr>
+        <tr><td class="sym">π</td><td>Projection</td><td>Keeps some attributes, then removes duplicates</td><td><code>SELECT DISTINCT</code> list</td></tr>
+        <tr><td class="sym">ρ</td><td>Rename</td><td>Gives a relation (or its attributes) a new name</td><td><code>AS</code></td></tr>
+        <tr><td class="sym">∪ ∩ −</td><td>Union, intersection, difference</td><td>Set operations on two compatible relations</td><td><code>UNION</code>, <code>INTERSECT</code>, <code>EXCEPT</code></td></tr>
+        <tr><td class="sym">×</td><td>Cartesian product</td><td>Pairs every tuple of one relation with every tuple of the other</td><td><code>CROSS JOIN</code></td></tr>
+        <tr><td class="sym">⋈</td><td>Join (theta, natural)</td><td>A product followed by a selection</td><td><code>JOIN … ON</code>, <code>NATURAL JOIN</code></td></tr>
+        <tr><td class="sym">←</td><td>Assignment</td><td>Names an intermediate result</td><td><code>WITH</code></td></tr>
+        <tr><td class="sym">÷</td><td>Division</td><td>"For all" questions: tuples related to every tuple of another relation</td><td>No direct keyword</td></tr>
+      </tbody>
+    </table>
+    <p class="note-line">σ, π, ∪, −, × and ρ are the six basic operators. The others can be written with them, but they are worth having.</p>
+  </div>
+  
+</section>
+
+<!-- 5 ─────────────────────────────────────────────── section -->
+<section class="slide slide--section" id="s5">
+  <h2>One relation in, one relation out</h2>
+  <p>Selection picks rows, projection picks columns, rename changes names. Together they already express every single-table query from last week.</p>
+  
+</section>
+
+<!-- 6 ─────────────────────────────────────────────── selection -->
+<section class="slide" id="s6">
+  <h2>Selection σ keeps the tuples that pass a test</h2>
+  <div class="slide-main">
+    <p class="formula">σ<sub>dept_name = 'Physics'</sub>(instructor)</p>
+    <figure class="fig" style="max-width:900px">
+<svg style="--dg-k:1" viewBox="0 0 1000 400" role="img" aria-labelledby="sel seld">
+<title id="sel">Selection keeps the rows that satisfy the condition</title>
+<desc id="seld">σ dept_name = Physics applied to instructor. Each of the 10 rows is tested. The 2 Physics rows, Sam Okafor and Kofi Mensah, pass and are kept with all 4 attributes. The other 8 rows fail and are dropped.</desc>
+<defs><marker id="sla" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#0e5a6b"/></marker></defs>
+<text class="dg-sm-b" x="0" y="24">instructor</text>
+<rect class="dg-box" x="0" y="40" width="400" height="352"/>
+<rect class="dg-box-m" x="0" y="40" width="400" height="32"/>
+<text class="dg-xs" font-weight="700" x="8" y="61">id</text>
+<text class="dg-xs" font-weight="700" x="74" y="61">name</text>
+<text class="dg-xs" font-weight="700" x="204" y="61">dept_name</text>
+<text class="dg-xs" font-weight="700" x="326" y="61">salary</text>
+<g class="v-dim" style="--d:0.4s">
+<text class="dg-xs" x="8" y="93">10101</text>
+<text class="dg-xs" x="74" y="93">Avery Chen</text>
+<text class="dg-xs" x="204" y="93">Comp. Sci.</text>
+<text class="dg-xs" x="326" y="93">98000</text>
+</g>
+<text class="dg-sm-b dg-txt-bad v-in" style="--d:0.4s" x="412" y="94">✗</text>
+<g class="v-dim" style="--d:0.52s">
+<text class="dg-xs" x="8" y="125">12121</text>
+<text class="dg-xs" x="74" y="125">Jordan Patel</text>
+<text class="dg-xs" x="204" y="125">Comp. Sci.</text>
+<text class="dg-xs" x="326" y="125">92000</text>
+</g>
+<text class="dg-sm-b dg-txt-bad v-in" style="--d:0.52s" x="412" y="126">✗</text>
+<g class="v-dim" style="--d:0.64s">
+<text class="dg-xs" x="8" y="157">15151</text>
+<text class="dg-xs" x="74" y="157">Maria Lopez</text>
+<text class="dg-xs" x="204" y="157">Mathematics</text>
+<text class="dg-xs" x="326" y="157">87000</text>
+</g>
+<text class="dg-sm-b dg-txt-bad v-in" style="--d:0.64s" x="412" y="158">✗</text>
+<rect class="dg-hl-t v-in" style="--d:0.76s" x="1" y="169" width="398" height="30"/>
+<g>
+<text class="dg-xs" x="8" y="189">22222</text>
+<text class="dg-xs" x="74" y="189">Sam Okafor</text>
+<text class="dg-xs" x="204" y="189">Physics</text>
+<text class="dg-xs" x="326" y="189">95000</text>
+</g>
+<text class="dg-sm-b dg-txt-ok v-in" style="--d:0.76s" x="412" y="190">✓</text>
+<g class="v-dim" style="--d:0.88s">
+<text class="dg-xs" x="8" y="221">32343</text>
+<text class="dg-xs" x="74" y="221">Lena Fischer</text>
+<text class="dg-xs" x="204" y="221">History</text>
+<text class="dg-xs" x="326" y="221">61000</text>
+</g>
+<text class="dg-sm-b dg-txt-bad v-in" style="--d:0.88s" x="412" y="222">✗</text>
+<rect class="dg-hl-t v-in" style="--d:1.0s" x="1" y="233" width="398" height="30"/>
+<g>
+<text class="dg-xs" x="8" y="253">33456</text>
+<text class="dg-xs" x="74" y="253">Kofi Mensah</text>
+<text class="dg-xs" x="204" y="253">Physics</text>
+<text class="dg-xs" x="326" y="253">87000</text>
+</g>
+<text class="dg-sm-b dg-txt-ok v-in" style="--d:1.0s" x="412" y="254">✓</text>
+<g class="v-dim" style="--d:1.12s">
+<text class="dg-xs" x="8" y="285">45565</text>
+<text class="dg-xs" x="74" y="285">Priya Raman</text>
+<text class="dg-xs" x="204" y="285">Comp. Sci.</text>
+<text class="dg-xs" x="326" y="285">75000</text>
+</g>
+<text class="dg-sm-b dg-txt-bad v-in" style="--d:1.12s" x="412" y="286">✗</text>
+<g class="v-dim" style="--d:1.24s">
+<text class="dg-xs" x="8" y="317">58583</text>
+<text class="dg-xs" x="74" y="317">Tomas Novak</text>
+<text class="dg-xs" x="204" y="317">History</text>
+<text class="dg-xs" x="326" y="317">62000</text>
+</g>
+<text class="dg-sm-b dg-txt-bad v-in" style="--d:1.24s" x="412" y="318">✗</text>
+<g class="v-dim" style="--d:1.3599999999999999s">
+<text class="dg-xs" x="8" y="349">76543</text>
+<text class="dg-xs" x="74" y="349">Hana Sato</text>
+<text class="dg-xs" x="204" y="349">Biology</text>
+<text class="dg-xs" x="326" y="349">80000</text>
+</g>
+<text class="dg-sm-b dg-txt-bad v-in" style="--d:1.3599999999999999s" x="412" y="350">✗</text>
+<g class="v-dim" style="--d:1.48s">
+<text class="dg-xs" x="8" y="381">83821</text>
+<text class="dg-xs" x="74" y="381">Diego Torres</text>
+<text class="dg-xs" x="204" y="381">Music</text>
+<text class="dg-xs" x="326" y="381">72000</text>
+</g>
+<text class="dg-sm-b dg-txt-bad v-in" style="--d:1.48s" x="412" y="382">✗</text>
+<text class="dg-sm dg-mono v-in" style="--d:1.7s" x="470" y="150">σ[dept_name = 'Physics']</text>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.9s" d="M450 170 L670 170" marker-end="url(#sla)"/>
+<g class="v-in" style="--d:2.4s">
+<text class="dg-sm-b" x="680" y="128">result: 2 tuples, same 4 attributes</text>
+<rect class="dg-box" x="680" y="140" width="320" height="96"/>
+<rect class="dg-box-m" x="680" y="140" width="320" height="32"/>
+<text class="dg-xs" font-weight="700" x="686" y="161">id</text>
+<text class="dg-xs" font-weight="700" x="746" y="161">name</text>
+<text class="dg-xs" font-weight="700" x="854" y="161">dept_name</text>
+<text class="dg-xs" font-weight="700" x="958" y="161">salary</text>
+<text class="dg-xs" x="686" y="193">22222</text>
+<text class="dg-xs" x="746" y="193">Sam Okafor</text>
+<text class="dg-xs" x="854" y="193">Physics</text>
+<text class="dg-xs" x="958" y="193">95000</text>
+<text class="dg-xs" x="686" y="225">33456</text>
+<text class="dg-xs" x="746" y="225">Kofi Mensah</text>
+<text class="dg-xs" x="854" y="225">Physics</text>
+<text class="dg-xs" x="958" y="225">87000</text>
+</g>
+<text class="dg-txt-s v-in" style="--d:2.8s" x="680" y="290">Rows are tested one at a time.</text>
+<text class="dg-txt-s v-in" style="--d:2.8s" x="680" y="314">The columns are untouched.</text>
+</svg>
+      <figcaption><strong>Figure 2.2.</strong> Each tuple is tested on its own. The result has the same schema as the input and at most as many tuples. <a class="try" href="playground.html#unary">Run it, playground example 1.1</a></figcaption>
+    </figure>
+  </div>
+  
+</section>
+
+<!-- 7 ─────────────────────────────────────────────── conditions -->
+<section class="slide" id="s7">
+  <h2>What can go in a selection's condition</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div>
+        <h3>Comparisons</h3>
+        <p>An attribute compared with a constant or another attribute of the same tuple: <code>=</code>, <code>≠</code>, <code>&lt;</code>, <code>≤</code>, <code>&gt;</code>, <code>≥</code>.</p>
+        <h3>Connectives</h3>
+        <p><strong>∧</strong> (and), <strong>∨</strong> (or), <strong>¬</strong> (not).</p>
+        <pre class="code">σ<sub>dept_name = 'Physics' ∧ salary &gt; 90000</sub>(instructor)
+σ<sub>dept_name = building</sub>(department)   <span class="c">-- two attributes</span></pre>
+        <p>The first gives Sam Okafor alone. The second compares two attributes of the same tuple; here it is empty.</p>
+      </div>
+      <div class="fill" style="gap:16px">
+        <div class="panel panel--accent">
+          <h3>A condition looks at one tuple</h3>
+          <p>"Instructors who earn more than Maria Lopez" compares two tuples, so σ alone cannot say it. We need two relations side by side: the product, slide 15, and rename, slide 10.</p>
+        </div>
+        <div class="callout">
+          <span class="mark" aria-hidden="true">§</span>
+          <p>NULL works as in week 1: a comparison with NULL is <strong>unknown</strong>, and σ keeps only tuples whose condition is <strong>true</strong>.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 8 ─────────────────────────────────────────────── projection -->
+<section class="slide" id="s8">
+  <h2>Projection π keeps attributes, and a set keeps each tuple once</h2>
+  <div class="slide-main">
+    <p class="formula">π<sub>dept_name</sub>(instructor)</p>
+    <div class="cols-2-1">
+      <figure class="fig">
+<svg style="--dg-k:1" viewBox="0 0 880 400" role="img" aria-labelledby="prj prjd">
+<title id="prj">Projection keeps columns, and a set keeps each value once</title>
+<desc id="prjd">π dept_name applied to instructor. The dept_name column has 10 values: Comp. Sci. three times, Physics twice, History twice, and Mathematics, Biology and Music once. Because a relation is a set, the result has 6 tuples, one per department.</desc>
+<text class="dg-sm-b" x="0" y="24">dept_name of each instructor (10 values)</text>
+<rect class="dg-box" x="0" y="40" width="250" height="320"/>
+<text class="dg-xs" x="12" y="61">Comp. Sci.</text>
+<text class="dg-xs" x="12" y="93">Comp. Sci.</text>
+<text class="dg-xs" x="12" y="125">Mathematics</text>
+<text class="dg-xs" x="12" y="157">Physics</text>
+<text class="dg-xs" x="12" y="189">History</text>
+<text class="dg-xs" x="12" y="221">Physics</text>
+<text class="dg-xs" x="12" y="253">Comp. Sci.</text>
+<text class="dg-xs" x="12" y="285">History</text>
+<text class="dg-xs" x="12" y="317">Biology</text>
+<text class="dg-xs" x="12" y="349">Music</text>
+<text class="dg-sm-b v-in" style="--d:2.2s" x="600" y="24">π[dept_name](instructor): 6 tuples</text>
+<g class="v-in" style="--d:2.2s"><rect class="dg-box-t" x="600" y="40" width="250" height="192"/></g>
+<text class="dg-xs v-in" style="--d:2.3s" x="612" y="61">Comp. Sci.</text>
+<text class="dg-xs v-in" style="--d:2.3s" x="612" y="93">Mathematics</text>
+<text class="dg-xs v-in" style="--d:2.3s" x="612" y="125">Physics</text>
+<text class="dg-xs v-in" style="--d:2.3s" x="612" y="157">History</text>
+<text class="dg-xs v-in" style="--d:2.3s" x="612" y="189">Biology</text>
+<text class="dg-xs v-in" style="--d:2.3s" x="612" y="221">Music</text>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:0.3s" d="M252 56.0 C 420 56.0, 430 56.0, 598 56.0"/>
+<path class="dg-line-a v-draw" pathLength="1" style="--d:0.47s" d="M252 88.0 C 420 88.0, 430 56.0, 598 56.0"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:0.64s" d="M252 120.0 C 420 120.0, 430 88.0, 598 88.0"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:0.81s" d="M252 152.0 C 420 152.0, 430 120.0, 598 120.0"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:0.98s" d="M252 184.0 C 420 184.0, 430 152.0, 598 152.0"/>
+<path class="dg-line-a v-draw" pathLength="1" style="--d:1.1500000000000001s" d="M252 216.0 C 420 216.0, 430 120.0, 598 120.0"/>
+<path class="dg-line-a v-draw" pathLength="1" style="--d:1.32s" d="M252 248.0 C 420 248.0, 430 56.0, 598 56.0"/>
+<path class="dg-line-a v-draw" pathLength="1" style="--d:1.4900000000000002s" d="M252 280.0 C 420 280.0, 430 152.0, 598 152.0"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.6600000000000001s" d="M252 312.0 C 420 312.0, 430 184.0, 598 184.0"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.83s" d="M252 344.0 C 420 344.0, 430 216.0, 598 216.0"/>
+<text class="dg-xs dg-txt-bad v-in" style="--d:2.6s" x="600" y="270">Red lines: a value already in the result.</text>
+<text class="dg-xs dg-txt-bad v-in" style="--d:2.6s" x="600" y="290">It merges; it does not add a row.</text>
+</svg>
+        <figcaption><strong>Figure 2.3.</strong> Ten values go in; six tuples come out, because the result is a set.</figcaption>
+      </figure>
+      <div class="fill" style="gap:14px">
+        <div class="panel panel--key">
+          <h3>In the algebra</h3>
+          <p>π removes duplicates. Always.</p>
+        </div>
+        <div class="panel">
+          <h3>In SQL</h3>
+          <p><code>SELECT dept_name FROM instructor</code> returns all 10 rows. You need <code>SELECT DISTINCT</code> to get the algebra's answer.</p>
+        </div>
+        <p><a class="try" href="playground.html#unary">Compare both, playground examples 1.3 and 1.4</a></p>
+      </div>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 9 ─────────────────────────────────────────────── composing -->
+<section class="slide" id="s9">
+  <h2>Compose operators: the order can matter</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div>
+        <h3>Works</h3>
+        <pre class="code">π<sub>name</sub>(σ<sub>dept_name = 'Physics'</sub>(instructor))</pre>
+        <p>Select the Physics tuples, then keep their names: Sam Okafor, Kofi Mensah.</p>
+        <h3 style="margin-top:20px">Fails</h3>
+        <pre class="code">σ<sub>dept_name = 'Physics'</sub>(π<sub>name</sub>(instructor))</pre>
+        <p>π has already thrown <code>dept_name</code> away, so σ has nothing to test. The playground stops with <em>There is no attribute dept_name</em> and lists the one attribute left, <code>name</code>.</p>
+      </div>
+      <div class="fill" style="gap:16px">
+        <div class="panel panel--key">
+          <h3>When σ and π can swap</h3>
+          <p>π<sub>L</sub>(σ<sub>c</sub>(R)) = σ<sub>c</sub>(π<sub>L</sub>(R)) only if every attribute that the condition <em>c</em> uses is in the list <em>L</em>.</p>
+        </div>
+        <div class="callout">
+          <span class="mark" aria-hidden="true">→</span>
+          <p>Equivalences like this one are the optimizer's rules. Slide 21 shows one that saves real work.</p>
+        </div>
+        <p><a class="try" href="playground.html#unary">See both trees, playground example 1.5</a></p>
+      </div>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 10 ────────────────────────────────────────────── rename -->
+<section class="slide" id="s10">
+  <h2>Rename ρ gives a relation a second name</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div>
+        <pre class="code">ρ<sub>i2</sub>(instructor)
+ρ<sub>s(sid, sname, dept, cred)</sub>(student)</pre>
+        <p>The first is the same relation, now called <code>i2</code>. The second also renames each attribute, in order.</p>
+        <h3 style="margin-top:20px">Why you need it</h3>
+        <p>To compare a relation with itself. Who earns more than Maria Lopez?</p>
+        <pre class="code">π<sub>instructor.name</sub>(
+  σ<sub>instructor.salary &gt; i2.salary ∧ i2.name = 'Maria Lopez'</sub>(
+    instructor × ρ<sub>i2</sub>(instructor)))</pre>
+      </div>
+      <div class="fill" style="gap:16px">
+        <div class="panel panel--definition">
+          <span class="term">Result</span>
+          <p>Avery Chen, Jordan Patel and Sam Okafor. Maria Lopez earns 87,000; Kofi Mensah also earns 87,000, so Kofi Mensah is not <em>more</em>.</p>
+        </div>
+        <div class="panel">
+          <h3>Without ρ</h3>
+          <p>instructor × instructor has two attributes called <code>instructor.salary</code>, and the condition could not say which is which.</p>
+        </div>
+        <p><a class="try" href="playground.html#unary">Run it, playground example 1.6</a></p>
+      </div>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 11 ────────────────────────────────────────────── section -->
+<section class="slide slide--section" id="s11">
+  <h2>Two relations in, one relation out</h2>
+  <p>Set operations combine relations that look alike. The product and joins combine relations that don't.</p>
+  
+</section>
+
+<!-- 12 ────────────────────────────────────────────── set operations -->
+<section class="slide" id="s12">
+  <h2>Union, intersection and difference work on whole tuples</h2>
+  <div class="slide-main">
+    <p class="formula">F = π<sub>course_id</sub>(σ<sub>semester = 'Fall' ∧ year = 2025</sub>(takes)) &nbsp;&nbsp; S = the same for Spring 2026</p>
+    <figure class="fig">
+<svg style="--dg-k:1" viewBox="0 0 1130 330" role="img" aria-labelledby="vn vnd">
+<title id="vn">Union, intersection and difference of two course sets</title>
+<desc id="vnd">F is the set of courses taken in Fall 2025: CS-101, CS-347, PHY-101 and MA-201. S is the set taken in Spring 2026: CS-101, CS-190, CS-315, HIS-351, MU-199 and BIO-101. F ∪ S, everything in either, is all 9 courses. F ∩ S, in both, is CS-101 alone. F − S, in F but not S, is CS-347, PHY-101 and MA-201.</desc>
+<g class="v-in" style="--d:0.3s">
+<text class="dg-big dg-mono" x="185" y="34" text-anchor="middle">F ∪ S</text>
+<defs><clipPath id="vc0a"><circle cx="135" cy="170" r="110"/></clipPath><clipPath id="vc0b"><circle cx="235" cy="170" r="110"/></clipPath></defs>
+<circle cx="135" cy="170" r="110" fill="#d3e6ea"/><circle cx="235" cy="170" r="110" fill="#d3e6ea"/>
+<circle class="dg-line" cx="135" cy="170" r="110"/><circle class="dg-line" cx="235" cy="170" r="110"/>
+<text class="dg-sm-b" x="31" y="78">F</text><text class="dg-sm-b" x="327" y="78">S</text>
+<text class="dg-xs" x="53" y="140">CS-347</text>
+<text class="dg-xs" x="53" y="166">PHY-101</text>
+<text class="dg-xs" x="53" y="192">MA-201</text>
+<text class="dg-xs" font-weight="700" x="185.0" y="175" text-anchor="middle">CS-101</text>
+<text class="dg-xs" x="253" y="118">CS-190</text>
+<text class="dg-xs" x="253" y="144">CS-315</text>
+<text class="dg-xs" x="253" y="170">HIS-351</text>
+<text class="dg-xs" x="253" y="196">MU-199</text>
+<text class="dg-xs" x="253" y="222">BIO-101</text>
+<text class="dg-sm dg-teal" x="185" y="310" text-anchor="middle">shaded: 9 courses</text>
+</g>
+<g class="v-in" style="--d:1.5s">
+<text class="dg-big dg-mono" x="565" y="34" text-anchor="middle">F ∩ S</text>
+<defs><clipPath id="vc1a"><circle cx="515" cy="170" r="110"/></clipPath><clipPath id="vc1b"><circle cx="615" cy="170" r="110"/></clipPath></defs>
+<circle cx="615" cy="170" r="110" fill="#d3e6ea" clip-path="url(#vc1a)"/>
+<circle class="dg-line" cx="515" cy="170" r="110"/><circle class="dg-line" cx="615" cy="170" r="110"/>
+<text class="dg-sm-b" x="411" y="78">F</text><text class="dg-sm-b" x="707" y="78">S</text>
+<text class="dg-xs" x="433" y="140">CS-347</text>
+<text class="dg-xs" x="433" y="166">PHY-101</text>
+<text class="dg-xs" x="433" y="192">MA-201</text>
+<text class="dg-xs" font-weight="700" x="565.0" y="175" text-anchor="middle">CS-101</text>
+<text class="dg-xs" x="633" y="118">CS-190</text>
+<text class="dg-xs" x="633" y="144">CS-315</text>
+<text class="dg-xs" x="633" y="170">HIS-351</text>
+<text class="dg-xs" x="633" y="196">MU-199</text>
+<text class="dg-xs" x="633" y="222">BIO-101</text>
+<text class="dg-sm dg-teal" x="565" y="310" text-anchor="middle">shaded: CS-101</text>
+</g>
+<g class="v-in" style="--d:2.6999999999999997s">
+<text class="dg-big dg-mono" x="945" y="34" text-anchor="middle">F − S</text>
+<defs><clipPath id="vc2a"><circle cx="895" cy="170" r="110"/></clipPath><clipPath id="vc2b"><circle cx="995" cy="170" r="110"/></clipPath></defs>
+<path fill="#d3e6ea" fill-rule="evenodd" d="M785 170 a110 110 0 1 0 220 0 a110 110 0 1 0 -220 0 Z"/>
+<circle cx="995" cy="170" r="110" fill="#fff" clip-path="url(#vc2a)"/>
+<circle class="dg-line" cx="895" cy="170" r="110"/><circle class="dg-line" cx="995" cy="170" r="110"/>
+<text class="dg-sm-b" x="791" y="78">F</text><text class="dg-sm-b" x="1087" y="78">S</text>
+<text class="dg-xs" x="813" y="140">CS-347</text>
+<text class="dg-xs" x="813" y="166">PHY-101</text>
+<text class="dg-xs" x="813" y="192">MA-201</text>
+<text class="dg-xs" font-weight="700" x="945.0" y="175" text-anchor="middle">CS-101</text>
+<text class="dg-xs" x="1013" y="118">CS-190</text>
+<text class="dg-xs" x="1013" y="144">CS-315</text>
+<text class="dg-xs" x="1013" y="170">HIS-351</text>
+<text class="dg-xs" x="1013" y="196">MU-199</text>
+<text class="dg-xs" x="1013" y="222">BIO-101</text>
+<text class="dg-sm dg-teal" x="945" y="310" text-anchor="middle">shaded: 3 courses</text>
+</g>
+</svg>
+      <figcaption><strong>Figure 2.4.</strong> Courses taken in Fall 2025 (F) and Spring 2026 (S). Only CS-101 was taken in both terms.</figcaption>
+    </figure>
+    <p><a class="try" href="playground.html#sets">Run all three, playground section 2</a></p>
+  </div>
+  
+</section>
+
+<!-- 13 ────────────────────────────────────────────── compatibility -->
+<section class="slide" id="s13">
+  <h2>Set operations need compatible relations</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div>
+        <div class="panel panel--definition">
+          <span class="term">Union-compatible</span>
+          <p>Both relations have the same number of attributes, and the <em>i</em>-th attribute of each has a compatible domain.</p>
+        </div>
+        <h3 style="margin-top:20px">Fine</h3>
+        <pre class="code">π<sub>name</sub>(student) ∪ π<sub>name</sub>(instructor)</pre>
+        <p>22 names: no student shares a name with an instructor.</p>
+      </div>
+      <div>
+        <h3>Not compatible</h3>
+        <pre class="code">π<sub>name</sub>(student) ∪ π<sub>name, id</sub>(instructor) <span class="c">-- 1 vs 2</span>
+π<sub>name</sub>(student) ∪ π<sub>tot_cred</sub>(student)     <span class="c">-- text vs int</span></pre>
+        <p>PostgreSQL reports the second as <em>UNION types character varying and integer cannot be matched</em>.</p>
+        <div class="callout">
+          <span class="mark" aria-hidden="true">§</span>
+          <p>Attribute <strong>names</strong> do not have to match; positions and types do. The result takes the left side's names.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 14 ────────────────────────────────────────────── product -->
+<section class="slide" id="s14">
+  <h2>The Cartesian product × pairs every tuple with every tuple</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:1000px">
+<svg style="--dg-k:1" viewBox="0 0 1100 380" role="img" aria-labelledby="px pxd">
+<title id="px">The Cartesian product pairs every tuple with every tuple</title>
+<desc id="pxd">Three students times two departments gives 3 × 2 = 6 tuples, each a student glued to a department, with 2 + 2 = 4 attributes. Only 2 of the 6 pairs have matching department names: Riley with Comp. Sci. and Jamie with Physics. The other 4 pairs are true combinations but meaningless.</desc>
+<g class="v-in" style="--d:0.2s"><text class="dg-sm-b" x="0" y="38">student (3 of its tuples)</text>
+<rect class="dg-box" x="0" y="50" width="250" height="136"/>
+<rect class="dg-box-m" x="0" y="50" width="250" height="34"/>
+<text class="dg-xs" font-weight="700" x="10.0" y="72">name</text>
+<text class="dg-xs" font-weight="700" x="125.0" y="72">dept_name</text>
+<text class="dg-xs" x="10.0" y="106">Riley A.</text>
+<text class="dg-xs" x="125.0" y="106">Comp. Sci.</text>
+<text class="dg-xs" x="10.0" y="140">Jamie R.</text>
+<text class="dg-xs" x="125.0" y="140">Physics</text>
+<text class="dg-xs" x="10.0" y="174">Robin A.</text>
+<text class="dg-xs" x="125.0" y="174">Mathematics</text>
+</g>
+<g class="v-in" style="--d:0.5s"><text class="dg-sm-b" x="0" y="238">department (2 of its tuples)</text>
+<rect class="dg-box" x="0" y="250" width="250" height="102"/>
+<rect class="dg-box-m" x="0" y="250" width="250" height="34"/>
+<text class="dg-xs" font-weight="700" x="10.0" y="272">dept_name</text>
+<text class="dg-xs" font-weight="700" x="125.0" y="272">building</text>
+<text class="dg-xs" x="10.0" y="306">Comp. Sci.</text>
+<text class="dg-xs" x="125.0" y="306">Hale</text>
+<text class="dg-xs" x="10.0" y="340">Physics</text>
+<text class="dg-xs" x="125.0" y="340">Kirk</text>
+</g>
+<text class="dg-big v-in" style="--d:0.8s" x="300" y="200">×</text>
+<text class="dg-sm-b v-in" style="--d:0.9s" x="380" y="38">student × department: 3 × 2 = 6 tuples, 4 attributes</text>
+<rect class="dg-box v-in" style="--d:0.9s" x="380" y="50" width="640" height="238"/>
+<rect class="dg-box-m v-in" style="--d:0.9s" x="380" y="50" width="640" height="34"/>
+<text class="dg-xs v-in" style="--d:0.9s" font-weight="700" x="390" y="72">name</text>
+<text class="dg-xs v-in" style="--d:0.9s" font-weight="700" x="500" y="72">student.dept_name</text>
+<text class="dg-xs v-in" style="--d:0.9s" font-weight="700" x="680" y="72">department.dept_name</text>
+<text class="dg-xs v-in" style="--d:0.9s" font-weight="700" x="870" y="72">building</text>
+<rect class="dg-hl-t v-in" style="--d:3.6s" x="381" y="85" width="638" height="32"/>
+<g class="v-in" style="--d:1.2s">
+<text class="dg-xs" x="390" y="106">Riley A.</text>
+<text class="dg-xs" x="500" y="106">Comp. Sci.</text>
+<text class="dg-xs" x="680" y="106">Comp. Sci.</text>
+<text class="dg-xs" x="870" y="106">Hale</text>
+</g>
+<text class="dg-sm-b dg-txt-ok v-in" style="--d:3.6s" x="1030" y="107">✓</text>
+<g class="v-in" style="--d:1.5499999999999998s">
+<text class="dg-xs" x="390" y="140">Riley A.</text>
+<text class="dg-xs" x="500" y="140">Comp. Sci.</text>
+<text class="dg-xs" x="680" y="140">Physics</text>
+<text class="dg-xs" x="870" y="140">Kirk</text>
+</g>
+<text class="dg-sm-b dg-txt-bad v-in" style="--d:3.6s" x="1030" y="141">✗</text>
+<g class="v-in" style="--d:1.9s">
+<text class="dg-xs" x="390" y="174">Jamie R.</text>
+<text class="dg-xs" x="500" y="174">Physics</text>
+<text class="dg-xs" x="680" y="174">Comp. Sci.</text>
+<text class="dg-xs" x="870" y="174">Hale</text>
+</g>
+<text class="dg-sm-b dg-txt-bad v-in" style="--d:3.6s" x="1030" y="175">✗</text>
+<rect class="dg-hl-t v-in" style="--d:3.6s" x="381" y="187" width="638" height="32"/>
+<g class="v-in" style="--d:2.25s">
+<text class="dg-xs" x="390" y="208">Jamie R.</text>
+<text class="dg-xs" x="500" y="208">Physics</text>
+<text class="dg-xs" x="680" y="208">Physics</text>
+<text class="dg-xs" x="870" y="208">Kirk</text>
+</g>
+<text class="dg-sm-b dg-txt-ok v-in" style="--d:3.6s" x="1030" y="209">✓</text>
+<g class="v-in" style="--d:2.5999999999999996s">
+<text class="dg-xs" x="390" y="242">Robin A.</text>
+<text class="dg-xs" x="500" y="242">Mathematics</text>
+<text class="dg-xs" x="680" y="242">Comp. Sci.</text>
+<text class="dg-xs" x="870" y="242">Hale</text>
+</g>
+<text class="dg-sm-b dg-txt-bad v-in" style="--d:3.6s" x="1030" y="243">✗</text>
+<g class="v-in" style="--d:2.95s">
+<text class="dg-xs" x="390" y="276">Robin A.</text>
+<text class="dg-xs" x="500" y="276">Mathematics</text>
+<text class="dg-xs" x="680" y="276">Physics</text>
+<text class="dg-xs" x="870" y="276">Kirk</text>
+</g>
+<text class="dg-sm-b dg-txt-bad v-in" style="--d:3.6s" x="1030" y="277">✗</text>
+<text class="dg-txt-s v-in" style="--d:3.9s" x="380" y="318">✓ only 2 pairs describe a real student in a real department. A join keeps those.</text>
+</svg>
+      <figcaption><strong>Figure 2.5.</strong> Three students times two departments is six pairs; two of them make sense, and the product keeps all six. The full student × department has 12 × 6 = 72 tuples and 4 + 3 = 7 attributes.</figcaption>
+    </figure>
+  </div>
+  
+</section>
+
+<!-- 15 ────────────────────────────────────────────── product then select -->
+<section class="slide" id="s15">
+  <h2>A join is a product followed by a selection</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div>
+        <pre class="code">σ<sub>student.dept_name = department.dept_name</sub>(student × department)</pre>
+        <p>72 pairs in, 12 out: each student with their own department. This pattern is so common it has its own symbol.</p>
+        <div class="panel panel--definition" style="margin-top:16px">
+          <span class="term">Theta join</span>
+          <p>R ⋈<sub>θ</sub> S = σ<sub>θ</sub>(R × S), for any condition θ.</p>
+        </div>
+        <div class="panel panel--definition" style="margin-top:12px">
+          <span class="term">Equijoin</span>
+          <p>A theta join whose condition uses only = .</p>
+        </div>
+      </div>
+      <div class="fill" style="gap:16px">
+        <h3>Same idea, in SQL</h3>
+        <pre class="code"><span class="k">SELECT</span> *
+<span class="k">FROM</span> student <span class="k">JOIN</span> department
+  <span class="k">ON</span> student.dept_name = department.dept_name;</pre>
+        <div class="callout">
+          <span class="mark" aria-hidden="true">→</span>
+          <p>A DBMS never builds the 72 pairs first. Week 11 shows the join algorithms that skip them. The <em>meaning</em> is still "product, then select".</p>
+        </div>
+        <p><a class="try" href="playground.html#joins">Run it, playground examples 3.1 and 3.2</a></p>
+      </div>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 16 ────────────────────────────────────────────── natural join -->
+<section class="slide" id="s16">
+  <h2>Natural join ⋈ matches every attribute the two relations share</h2>
+  <div class="slide-main">
+    <p class="formula">student ⋈ department</p>
+    <figure class="fig">
+<svg style="--dg-k:1" viewBox="0 0 1100 380" role="img" aria-labelledby="nj njd">
+<title id="nj">Natural join matches tuples on the attribute both relations share</title>
+<desc id="njd">student and department share one attribute, dept_name. Each student is linked to the department with the same dept_name: Riley Adams to Comp. Sci. in Hale, Casey Brooks to History in Linden, Jamie Rivera to Physics in Kirk, Sky Martinez to Music in Linden. Biology has no student here, so it does not appear. The result keeps dept_name once: name, dept_name, building.</desc>
+<text class="dg-sm-b" x="0" y="24">student (4 tuples shown)</text>
+<rect class="dg-box" x="0" y="40" width="270" height="170"/><rect class="dg-box-m" x="0" y="40" width="270" height="34"/>
+<text class="dg-xs" font-weight="700" x="10" y="62">name</text><text class="dg-xs dg-teal" font-weight="700" x="150" y="62">dept_name</text>
+<text class="dg-xs" x="10" y="96">Riley Adams</text><text class="dg-xs dg-teal" x="150" y="96">Comp. Sci.</text>
+<text class="dg-xs" x="10" y="130">Casey Brooks</text><text class="dg-xs dg-teal" x="150" y="130">History</text>
+<text class="dg-xs" x="10" y="164">Jamie Rivera</text><text class="dg-xs dg-teal" x="150" y="164">Physics</text>
+<text class="dg-xs" x="10" y="198">Sky Martinez</text><text class="dg-xs dg-teal" x="150" y="198">Music</text>
+<text class="dg-sm-b" x="420" y="24">department</text>
+<rect class="dg-box" x="420" y="40" width="230" height="204"/><rect class="dg-box-m" x="420" y="40" width="230" height="34"/>
+<text class="dg-xs dg-teal" font-weight="700" x="430" y="62">dept_name</text><text class="dg-xs" font-weight="700" x="560" y="62">building</text>
+<g><text class="dg-xs dg-teal" x="430" y="96">Comp. Sci.</text><text class="dg-xs" x="560" y="96">Hale</text></g>
+<g><text class="dg-xs dg-teal" x="430" y="130">Physics</text><text class="dg-xs" x="560" y="130">Kirk</text></g>
+<g><text class="dg-xs dg-teal" x="430" y="164">History</text><text class="dg-xs" x="560" y="164">Linden</text></g>
+<g><text class="dg-xs dg-teal" x="430" y="198">Music</text><text class="dg-xs" x="560" y="198">Linden</text></g>
+<g class="v-dim" style="--d:2.4s"><text class="dg-xs dg-teal" x="430" y="232">Biology</text><text class="dg-xs" x="560" y="232">Morrow</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:0.4s" d="M272 91.0 C 340 91.0, 350 91.0, 418 91.0"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:0.8500000000000001s" d="M272 125.0 C 340 125.0, 350 159.0, 418 159.0"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.3s" d="M272 159.0 C 340 159.0, 350 125.0, 418 125.0"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.75s" d="M272 193.0 C 340 193.0, 350 193.0, 418 193.0"/>
+<g class="v-in" style="--d:2.6s">
+<text class="dg-sm-b" x="740" y="24">student ⋈ department</text>
+<rect class="dg-box-t" x="740" y="40" width="360" height="170"/><rect class="dg-box-m" x="740" y="40" width="360" height="34"/>
+<text class="dg-xs" font-weight="700" x="750" y="62">name</text><text class="dg-xs dg-teal" font-weight="700" x="880" y="62">dept_name</text><text class="dg-xs" font-weight="700" x="1010" y="62">building</text>
+<text class="dg-xs" x="750" y="96">Riley Adams</text><text class="dg-xs dg-teal" x="880" y="96">Comp. Sci.</text><text class="dg-xs" x="1010" y="96">Hale</text>
+<text class="dg-xs" x="750" y="130">Casey Brooks</text><text class="dg-xs dg-teal" x="880" y="130">History</text><text class="dg-xs" x="1010" y="130">Linden</text>
+<text class="dg-xs" x="750" y="164">Jamie Rivera</text><text class="dg-xs dg-teal" x="880" y="164">Physics</text><text class="dg-xs" x="1010" y="164">Kirk</text>
+<text class="dg-xs" x="750" y="198">Sky Martinez</text><text class="dg-xs dg-teal" x="880" y="198">Music</text><text class="dg-xs" x="1010" y="198">Linden</text>
+</g>
+<text class="dg-txt-s v-in" style="--d:3.0s" x="740" y="250">dept_name appears once.</text>
+<text class="dg-txt-s v-in" style="--d:3.0s" x="420" y="300">Biology matches no student shown, so it drops out.</text>
+</svg>
+      <figcaption><strong>Figure 2.6.</strong> The shared attribute is dept_name. Matching tuples combine, the shared attribute appears once, and tuples with no partner drop out.</figcaption>
+    </figure>
+  </div>
+  
+</section>
+
+<!-- 17 ────────────────────────────────────────────── natural join trap -->
+<section class="slide" id="s17">
+  <h2>Natural join matches on names, even names you did not mean</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div>
+        <h3>Who took which course?</h3>
+        <pre class="code">π<sub>name, title</sub>(student ⋈ takes ⋈ course)</pre>
+        <p>Returns <strong>14</strong> pairs. But <code>takes</code> has 22 enrollments.</p>
+        <p><code>student</code> and <code>course</code> both have <code>dept_name</code>, so the join also demands that the course be in the student's own department. Drew Kim, a Physics major, took CS-101 and CS-315; both vanish.</p>
+      </div>
+      <div class="fill" style="gap:16px">
+        <h3>Fix: project away the accidental match</h3>
+        <pre class="code">π<sub>name, title</sub>(student ⋈ takes ⋈ π<sub>course_id, title</sub>(course))</pre>
+        <p>Returns <strong>21</strong> pairs: every enrollment except Drew Kim's second attempt at CS-101, which repeats a (name, title) pair.</p>
+        <div class="callout">
+          <span class="mark" aria-hidden="true">!</span>
+          <p>The same trap exists in SQL's <code>NATURAL JOIN</code>. Most style guides prefer <code>JOIN … ON</code> or <code>USING</code>, which name the join attributes.</p>
+        </div>
+        <p><a class="try" href="playground.html#joins">See the counts in the tree, playground example 3.4</a></p>
+      </div>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 18 ────────────────────────────────────────────── assignment -->
+<section class="slide" id="s18">
+  <h2>Assignment ← writes a long query in steps</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div>
+        <h3>Courses taken by Physics majors</h3>
+        <pre class="code">phys    ← σ<sub>dept_name = 'Physics'</sub>(student)
+enrolls ← phys ⋈ takes
+π<sub>name, title</sub>(enrolls ⋈ π<sub>course_id, title</sub>(course))</pre>
+        <table class="tbl tbl--result" style="margin-top:14px">
+          <caption>Result: 5 tuples</caption>
+          <thead><tr><th scope="col">name</th><th scope="col">title</th></tr></thead>
+          <tbody>
+            <tr><td>Drew Kim</td><td>Intro to Computer Science</td></tr>
+            <tr><td>Drew Kim</td><td>Robotics</td></tr>
+            <tr><td>Jamie Rivera</td><td>Physical Principles</td></tr>
+            <tr><td>Quinn Davis</td><td>Database System Concepts</td></tr>
+            <tr><td>Taylor Nguyen</td><td>Physical Principles</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="fill" style="gap:16px">
+        <div class="panel panel--key">
+          <h3>A name for a result</h3>
+          <p>← stores nothing in the database. It names a temporary relation so the final line stays readable.</p>
+        </div>
+        <div class="panel">
+          <h3>In SQL</h3>
+          <pre class="code"><span class="k">WITH</span> phys <span class="k">AS</span> (<span class="k">SELECT</span> * <span class="k">FROM</span> student
+              <span class="k">WHERE</span> dept_name = <span class="s">'Physics'</span>)
+<span class="k">SELECT</span> …</pre>
+          <p>Common table expressions, week 4.</p>
+        </div>
+        <p><a class="try" href="playground.html#steps">Run it, playground example 4.1</a></p>
+      </div>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 19 ────────────────────────────────────────────── division -->
+<section class="slide" id="s19">
+  <h2>Division ÷ answers "for all" questions</h2>
+  <div class="slide-main">
+    <div class="cols-2-1">
+      <figure class="fig">
+<svg style="--dg-k:1" viewBox="0 0 900 400" role="img" aria-labelledby="dv dvd">
+<title id="dv">Division finds the students who took every Computer Science course</title>
+<desc id="dvd">A grid with seven students who took a Computer Science course as rows and the four Comp. Sci. courses, CS-101, CS-190, CS-315 and CS-347, as columns. A tick means the student took that course. Only Morgan Lee&#x27;s row has all four ticks, so the division returns Morgan Lee alone. Riley Adams, Drew Kim, Alex Johnson and Jesse Park took two each; Avery Clark and Quinn Davis took one each.</desc>
+<text class="dg-sm-b dg-mono" x="225.0" y="28" text-anchor="middle">CS-101</text>
+<text class="dg-sm-b dg-mono" x="335.0" y="28" text-anchor="middle">CS-190</text>
+<text class="dg-sm-b dg-mono" x="445.0" y="28" text-anchor="middle">CS-315</text>
+<text class="dg-sm-b dg-mono" x="555.0" y="28" text-anchor="middle">CS-347</text>
+<text class="dg-sm" x="10" y="65">Riley Adams</text>
+<rect class="dg-box-m" x="174" y="44" width="102" height="30" rx="4"/>
+<text class="dg-sm-b dg-txt-ok v-in" style="--d:0.3s" x="225.0" y="65" text-anchor="middle">✓</text>
+<rect class="dg-box-m" x="284" y="44" width="102" height="30" rx="4"/>
+<rect class="dg-box-m" x="394" y="44" width="102" height="30" rx="4"/>
+<rect class="dg-box-m" x="504" y="44" width="102" height="30" rx="4"/>
+<text class="dg-sm-b dg-txt-ok v-in" style="--d:0.3s" x="555.0" y="65" text-anchor="middle">✓</text>
+<text class="dg-xs  v-in" style="--d:2.0s" x="626" y="65">2 of 4</text>
+<rect class="dg-hl-t v-in" style="--d:2.6s" x="0" y="78" width="730" height="38"/>
+<text class="dg-sm" x="10" y="103">Morgan Lee</text>
+<rect class="dg-box-m" x="174" y="82" width="102" height="30" rx="4"/>
+<text class="dg-sm-b dg-txt-ok v-in" style="--d:0.55s" x="225.0" y="103" text-anchor="middle">✓</text>
+<rect class="dg-box-m" x="284" y="82" width="102" height="30" rx="4"/>
+<text class="dg-sm-b dg-txt-ok v-in" style="--d:0.55s" x="335.0" y="103" text-anchor="middle">✓</text>
+<rect class="dg-box-m" x="394" y="82" width="102" height="30" rx="4"/>
+<text class="dg-sm-b dg-txt-ok v-in" style="--d:0.55s" x="445.0" y="103" text-anchor="middle">✓</text>
+<rect class="dg-box-m" x="504" y="82" width="102" height="30" rx="4"/>
+<text class="dg-sm-b dg-txt-ok v-in" style="--d:0.55s" x="555.0" y="103" text-anchor="middle">✓</text>
+<text class="dg-xs dg-txt-ok v-in" style="--d:2.0s" x="626" y="103">4 of 4 ← all</text>
+<text class="dg-sm" x="10" y="141">Drew Kim</text>
+<rect class="dg-box-m" x="174" y="120" width="102" height="30" rx="4"/>
+<text class="dg-sm-b dg-txt-ok v-in" style="--d:0.8s" x="225.0" y="141" text-anchor="middle">✓</text>
+<rect class="dg-box-m" x="284" y="120" width="102" height="30" rx="4"/>
+<rect class="dg-box-m" x="394" y="120" width="102" height="30" rx="4"/>
+<text class="dg-sm-b dg-txt-ok v-in" style="--d:0.8s" x="445.0" y="141" text-anchor="middle">✓</text>
+<rect class="dg-box-m" x="504" y="120" width="102" height="30" rx="4"/>
+<text class="dg-xs  v-in" style="--d:2.0s" x="626" y="141">2 of 4</text>
+<text class="dg-sm" x="10" y="179">Alex Johnson</text>
+<rect class="dg-box-m" x="174" y="158" width="102" height="30" rx="4"/>
+<text class="dg-sm-b dg-txt-ok v-in" style="--d:1.05s" x="225.0" y="179" text-anchor="middle">✓</text>
+<rect class="dg-box-m" x="284" y="158" width="102" height="30" rx="4"/>
+<text class="dg-sm-b dg-txt-ok v-in" style="--d:1.05s" x="335.0" y="179" text-anchor="middle">✓</text>
+<rect class="dg-box-m" x="394" y="158" width="102" height="30" rx="4"/>
+<rect class="dg-box-m" x="504" y="158" width="102" height="30" rx="4"/>
+<text class="dg-xs  v-in" style="--d:2.0s" x="626" y="179">2 of 4</text>
+<text class="dg-sm" x="10" y="217">Jesse Park</text>
+<rect class="dg-box-m" x="174" y="196" width="102" height="30" rx="4"/>
+<text class="dg-sm-b dg-txt-ok v-in" style="--d:1.3s" x="225.0" y="217" text-anchor="middle">✓</text>
+<rect class="dg-box-m" x="284" y="196" width="102" height="30" rx="4"/>
+<rect class="dg-box-m" x="394" y="196" width="102" height="30" rx="4"/>
+<text class="dg-sm-b dg-txt-ok v-in" style="--d:1.3s" x="445.0" y="217" text-anchor="middle">✓</text>
+<rect class="dg-box-m" x="504" y="196" width="102" height="30" rx="4"/>
+<text class="dg-xs  v-in" style="--d:2.0s" x="626" y="217">2 of 4</text>
+<text class="dg-sm" x="10" y="255">Avery Clark</text>
+<rect class="dg-box-m" x="174" y="234" width="102" height="30" rx="4"/>
+<rect class="dg-box-m" x="284" y="234" width="102" height="30" rx="4"/>
+<rect class="dg-box-m" x="394" y="234" width="102" height="30" rx="4"/>
+<rect class="dg-box-m" x="504" y="234" width="102" height="30" rx="4"/>
+<text class="dg-sm-b dg-txt-ok v-in" style="--d:1.55s" x="555.0" y="255" text-anchor="middle">✓</text>
+<text class="dg-xs  v-in" style="--d:2.0s" x="626" y="255">1 of 4</text>
+<text class="dg-sm" x="10" y="293">Quinn Davis</text>
+<rect class="dg-box-m" x="174" y="272" width="102" height="30" rx="4"/>
+<rect class="dg-box-m" x="284" y="272" width="102" height="30" rx="4"/>
+<rect class="dg-box-m" x="394" y="272" width="102" height="30" rx="4"/>
+<rect class="dg-box-m" x="504" y="272" width="102" height="30" rx="4"/>
+<text class="dg-sm-b dg-txt-ok v-in" style="--d:1.8s" x="555.0" y="293" text-anchor="middle">✓</text>
+<text class="dg-xs  v-in" style="--d:2.0s" x="626" y="293">1 of 4</text>
+<text class="dg-txt-s v-in" style="--d:2.9s" x="0" y="340">π[id, course_id](takes) ÷ π[course_id](σ[dept_name = 'Comp. Sci.'](course)) = { Morgan Lee's id, 12345 }</text>
+</svg>
+        <figcaption><strong>Figure 2.7.</strong> Which students took <em>every</em> Comp. Sci. course? A row qualifies only if all four boxes are ticked.</figcaption>
+      </figure>
+      <div class="fill" style="gap:14px">
+        <div class="panel panel--definition">
+          <span class="term">R(A, B) ÷ S(B)</span>
+          <p>The A-values that appear in R with <em>every</em> B-value of S.</p>
+        </div>
+        <p>Here R = π<sub>id, course_id</sub>(takes) and S = π<sub>course_id</sub>(σ<sub>dept_name = 'Comp. Sci.'</sub>(course)).</p>
+        <p>With the six basic operators:</p>
+        <pre class="code">π<sub>A</sub>(R) − π<sub>A</sub>((π<sub>A</sub>(R) × S) − R)</pre>
+        <p class="small">"All A's, minus those missing some B."</p>
+      </div>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 20 ────────────────────────────────────────────── section -->
+<section class="slide slide--section" id="s20">
+  <h2>Same answer, different work</h2>
+  <p>Many expressions mean the same relation. The optimizer's job is to find a cheap one.</p>
+  
+</section>
+
+<!-- 21 ────────────────────────────────────────────── pushdown -->
+<section class="slide" id="s21">
+  <h2>Push selections down: filter before you combine</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:1040px">
+<svg style="--dg-k:1" viewBox="0 0 1120 400" role="img" aria-labelledby="pd pdd">
+<title id="pd">Two equivalent expressions, two very different amounts of work</title>
+<desc id="pdd">The join condition is student.dept_name = department.dept_name. Left: σ applied after student × department. The product builds 12 × 6 = 72 tuples, and the selection keeps 4. Right: σ building = Kirk pushed down onto department first, which leaves 1 tuple; the product then builds only 12 × 1 = 12 tuples, and the join condition keeps the same 4. Same answer; the biggest intermediate result shrinks from 72 tuples to 12.</desc>
+<text class="dg-sm-b v-in" style="--d:0.2s" x="0" y="24">Select after the product</text>
+<path class="dg-line-q v-in" style="--d:0.2s" d="M200 150 L200 94"/>
+<path class="dg-line-q v-in" style="--d:0.2s" d="M90 250 L200 194"/>
+<path class="dg-line-q v-in" style="--d:0.2s" d="M310 250 L200 194"/>
+<g class="v-in" style="--d:0.30000000000000004s"><rect class="dg-box-a" x="23.5" y="50" width="353" height="44" rx="6"/><text class="dg-xs dg-mono" x="200" y="69" text-anchor="middle">σ[join condition ∧ building = &#x27;Kirk&#x27;]</text><text class="dg-xs dg-teal" x="200" y="87" text-anchor="middle">4 tuples</text></g>
+<g class="v-in" style="--d:0.30000000000000004s"><rect class="dg-box-t" x="100.0" y="150" width="200" height="44" rx="6"/><text class="dg-xs dg-mono" x="200" y="169" text-anchor="middle">student × department</text><text class="dg-xs dg-teal" x="200" y="187" text-anchor="middle">72 tuples</text></g>
+<g class="v-in" style="--d:0.30000000000000004s"><rect class="dg-box-m" x="15.0" y="250" width="150" height="44" rx="6"/><text class="dg-xs dg-mono" x="90" y="269" text-anchor="middle">student</text><text class="dg-xs dg-teal" x="90" y="287" text-anchor="middle">12 tuples</text></g>
+<g class="v-in" style="--d:0.30000000000000004s"><rect class="dg-box-m" x="235.0" y="250" width="150" height="44" rx="6"/><text class="dg-xs dg-mono" x="310" y="269" text-anchor="middle">department</text><text class="dg-xs dg-teal" x="310" y="287" text-anchor="middle">6 tuples</text></g>
+<text class="dg-sm-b v-in" style="--d:1.0s" x="580" y="24">Push the selection down first</text>
+<path class="dg-line-q v-in" style="--d:1.0s" d="M780 150 L780 94"/>
+<path class="dg-line-q v-in" style="--d:1.0s" d="M670 250 L780 194"/>
+<path class="dg-line-q v-in" style="--d:1.0s" d="M910 250 L780 194"/>
+<g class="v-in" style="--d:1.1s"><rect class="dg-box-a" x="693.5" y="50" width="173" height="44" rx="6"/><text class="dg-xs dg-mono" x="780" y="69" text-anchor="middle">σ[join condition]</text><text class="dg-xs dg-teal" x="780" y="87" text-anchor="middle">4 tuples</text></g>
+<g class="v-in" style="--d:1.1s"><rect class="dg-box-t" x="635.0" y="150" width="290" height="44" rx="6"/><text class="dg-xs dg-mono" x="780" y="169" text-anchor="middle">student × σ[building = &#x27;Kirk&#x27;]</text><text class="dg-xs dg-teal" x="780" y="187" text-anchor="middle">12 tuples</text></g>
+<g class="v-in" style="--d:1.1s"><rect class="dg-box-m" x="595.0" y="250" width="150" height="44" rx="6"/><text class="dg-xs dg-mono" x="670" y="269" text-anchor="middle">student</text><text class="dg-xs dg-teal" x="670" y="287" text-anchor="middle">12 tuples</text></g>
+<g class="v-in" style="--d:1.1s"><rect class="dg-box-t" x="810.0" y="250" width="200" height="44" rx="6"/><text class="dg-xs dg-mono" x="910" y="269" text-anchor="middle">σ[building = &#x27;Kirk&#x27;]</text><text class="dg-xs dg-teal" x="910" y="287" text-anchor="middle">1 tuple</text></g>
+<text class="dg-sm-b v-in" style="--d:2.0s" x="0" y="342">Largest intermediate result</text>
+<rect class="dg-bar-a v-grow" style="--d:2.2s" x="260" y="326" width="504" height="22"/>
+<text class="dg-sm v-in" style="--d:2.6s" x="774" y="343">72 tuples</text>
+<rect class="dg-bar v-grow" style="--d:2.6s" x="260" y="358" width="84" height="22"/>
+<text class="dg-sm v-in" style="--d:3.0s" x="354" y="375">12 tuples</text>
+</svg>
+      <figcaption><strong>Figure 2.8.</strong> Students in a department housed in Kirk, two ways. Both trees return the same 4 tuples. The join condition is student.dept_name = department.dept_name.</figcaption>
+    </figure>
+    <p>The rule: σ<sub>c</sub>(R × S) = R × σ<sub>c</sub>(S) when <em>c</em> uses only attributes of S. On 12 students it saves 60 tuples; on 30,000 students it saves millions.</p>
+  </div>
+  
+</section>
+
+<!-- 22 ────────────────────────────────────────────── algebra and SQL -->
+<section class="slide" id="s22">
+  <h2>From SQL to algebra, clause by clause</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div>
+        <pre class="code"><span class="k">SELECT DISTINCT</span> s.name, c.title      <span class="c">-- π</span>
+<span class="k">FROM</span>   student s                     <span class="c">-- ρ</span>
+<span class="k">JOIN</span>   takes t  <span class="k">ON</span> s.id = t.id       <span class="c">-- ⋈θ</span>
+<span class="k">JOIN</span>   course c <span class="k">ON</span> t.course_id = c.course_id
+<span class="k">WHERE</span>  s.dept_name = <span class="s">'Physics'</span>;     <span class="c">-- σ</span></pre>
+        <p style="margin-top:14px">π<sub>name, title</sub>(σ<sub>dept_name = 'Physics'</sub>(student ⋈ takes ⋈ π<sub>course_id, title</sub>(course)))</p>
+      </div>
+      <div class="fill" style="gap:16px">
+        <table class="tbl tbl--compact">
+          <caption class="visually-hidden">Where SQL and the algebra differ</caption>
+          <thead><tr><th scope="col">The algebra</th><th scope="col">SQL</th></tr></thead>
+          <tbody>
+            <tr><td>Results are sets</td><td>Results are bags unless <code>DISTINCT</code></td></tr>
+            <tr><td>∪ ∩ − remove duplicates</td><td><code>UNION</code> does; <code>UNION ALL</code> keeps them</td></tr>
+            <tr><td>No order</td><td><code>ORDER BY</code> sorts the output</td></tr>
+            <tr><td>Six basic operators</td><td>Also counts, sums, groups (week 4) and outer joins (week 3)</td></tr>
+          </tbody>
+        </table>
+        <p><a class="try" href="playground.html#sql">Run the SQL and the algebra side by side, playground section 5</a></p>
+      </div>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 23 ────────────────────────────────────────────── takeaways -->
+<section class="slide" id="s23">
+  <h2>What to take away</h2>
+  <div class="slide-main">
+    <ol class="steps">
+      <li><span class="n" aria-hidden="true">1</span><div><strong>Every operator returns a relation.</strong><p>So expressions nest, and a query is a tree of operators.</p></div></li>
+      <li><span class="n" aria-hidden="true">2</span><div><strong>σ picks tuples, π picks attributes, ρ renames.</strong><p>π removes duplicates; SQL needs DISTINCT for that.</p></div></li>
+      <li><span class="n" aria-hidden="true">3</span><div><strong>∪ ∩ − need union-compatible inputs.</strong><p>Same number of attributes, compatible types, position by position.</p></div></li>
+      <li><span class="n" aria-hidden="true">4</span><div><strong>A join is a product followed by a selection.</strong><p>Natural join matches every shared name, wanted or not.</p></div></li>
+      <li><span class="n" aria-hidden="true">5</span><div><strong>Equivalent expressions can cost very different amounts.</strong><p>Pushing σ down is the optimizer's first trick.</p></div></li>
+    </ol>
+  </div>
+  
+</section>
+
+<!-- 24 ────────────────────────────────────────────── this week -->
+<section class="slide" id="s24">
+  <h2>This week's work</h2>
+  <div class="slide-main">
+    <div class="week-work">
+      <div>
+        <h3>Read</h3>
+        <ul>
+          <li>Silberschatz, Korth and Sudarshan, <em>Database System Concepts</em>, 7th ed., chapter 2, sections 2.5–2.6 (relational query languages and the relational algebra).</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Do</h3>
+        <ul>
+          <li>Lab 1: write relational algebra for nine questions, check each in the playground, then write the same queries in SQL.</li>
+          <li>Week 2 playground: the eight exercises. Not graded, but quiz 3 assumes them.</li>
+          <li>Project: if you have not yet, find a partner or decide to work alone.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Due</h3>
+        <ul>
+          <li><span class="due">Sunday, January 24, 11:59 p.m. CT</span>: Lab 1, one zip file in Brightspace.</li>
+          <li>Quiz 2: in class today; online section within 48 hours of the recording.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="callout" style="margin-top:auto">
+      <span class="mark" aria-hidden="true">→</span>
+      <p><strong>Next week:</strong> SQL in depth. Joins of every kind, including outer joins that keep the tuples a join would drop, NULLs in practice, and SQL's set operations.</p>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 25 ────────────────────────────────────────────── resources -->
+<section class="slide" id="s25">
+  <h2>Free resources</h2>
+  <div class="slide-main">
+    <ul class="resources">
+      <li><a href="playground.html">Week 2 playground</a><span class="src">this course</span><p>Type σ, π, ⋈ and the rest, run them on the course database, and see the expression tree with the tuple count at each step.</p></li>
+      <li><a href="https://dbis-informatik.uibk.ac.at/relax">RelaX</a><span class="src">University of Innsbruck</span><p>A widely used relational algebra calculator, with its own sample datasets. Its notation differs a little from ours.</p></li>
+      <li><a href="https://www.postgresql.org/docs/current/tutorial-join.html">Joins between tables</a><span class="src">postgresql.org</span><p>The PostgreSQL tutorial's section on joins, including self joins.</p></li>
+      <li><a href="https://www.postgresql.org/docs/current/queries-union.html">Combining queries</a><span class="src">postgresql.org</span><p>UNION, INTERSECT and EXCEPT, with and without ALL.</p></li>
+      <li><a href="https://www.db-book.com/">Database System Concepts, 7th edition</a><span class="src">db-book.com</span><p>The textbook's site: the chapter 2 slides and practice exercises.</p></li>
+    </ul>
+    <div class="callout" style="margin-top:20px">
+      <span class="mark" aria-hidden="true">→</span>
+      <p>Stuck on Lab 1? Office hours are Tuesday and Wednesday 12:00–3:00 p.m., MIC room D159, or post in the week 2 discussion in Brightspace.</p>
+    </div>
+  </div>
+  
+</section>
+
+</main>
+</div>
+<script src="../../assets/deck.js"></script>
+</body>
+</html>

@@ -1,0 +1,1487 @@
+/* ==========================================================================
+   CS 5700 Artificial Intelligence · CS 4600/5200 Database Theory and Applications
+   University of Central Missouri · Dr. Gorkem Kar
+   Shared design system: course site + lecture decks
+   (one file, identical in both courses, so they look and behave alike)
+
+   Design intent
+   -------------
+   White paper, ink text, one institutional accent (UCM cardinal).
+   Serif display type against a sans body — the visual language of a
+   university press, not a slide template. Structure carries meaning:
+   a rule under the title marks a new idea, panels group what belongs
+   together, and nothing is coloured for decoration.
+
+   Accessibility (WCAG 2.1 AA / ADA Title II)
+   -------------------------------------------
+   - Every foreground/background pair below meets 4.5:1 for body text
+     and 3:1 for large text and graphical objects.
+   - Meaning is never carried by colour alone; labels and shapes repeat it.
+   - Layout is single-column reading order at 200% zoom and in print.
+   - Motion is opt-out via prefers-reduced-motion.
+   Spring 2027 upgrade (accessibility and legibility)
+   ----------------------------------------------------
+   - Minimum projected text raised: footers, captions, table headers,
+     labels and diagram text now 14px or more at the 1280x720 canvas,
+     body and table text 17px or more.
+   - Charter added to the display stack so PDFs exported on Linux or
+     Windows keep a readable serif.
+   ========================================================================== */
+
+:root {
+  /* Ink */
+  --ink:        #16181d;   /* 16.4:1 on white */
+  --body:       #23272e;   /* 13.7:1 on white */
+  --muted:      #5c6470;   /*  6.2:1 on white */
+  --faint:      #8a919c;   /*  3.3:1 — decorative rules only */
+
+  /* Accent — UCM cardinal */
+  --cardinal:      #9e1b32; /* 7.2:1 on white */
+  --cardinal-deep: #7a1426; /* 9.7:1 on white */
+  --cardinal-wash: #fbf5f6;
+
+  /* Secondary — used only inside diagrams */
+  --teal:       #0e5a6b;   /* 7.4:1 on white */
+  --teal-wash:  #f2f7f8;
+  --gold:       #8a5a00;   /* 5.9:1 on white */
+
+  /* Surfaces */
+  --paper:  #ffffff;
+  --panel:  #f6f7f9;
+  --rule:   #e3e6ea;
+  --rule-strong: #c9ced5;
+
+  /* Type */
+  --display: ui-serif, "Iowan Old Style", Charter, "Bitstream Charter",
+             "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto,
+          "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+          "Liberation Mono", monospace;
+
+  /* Rhythm */
+  --s1: 4px;  --s2: 8px;  --s3: 12px; --s4: 16px;
+  --s5: 24px; --s6: 32px; --s7: 48px; --s8: 64px;
+
+  --measure: 68ch;
+}
+
+/* --------------------------------------------------------------- base ---- */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--body);
+  font-family: var(--sans);
+  font-size: 16px;
+  line-height: 1.6;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, h4 {
+  font-family: var(--display);
+  color: var(--ink);
+  font-weight: 600;
+  line-height: 1.14;
+  letter-spacing: -0.012em;
+  margin: 0;
+  text-wrap: balance;
+}
+
+p { margin: 0 0 var(--s4); }
+p:last-child { margin-bottom: 0; }
+
+a {
+  color: var(--cardinal-deep);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
+}
+a:hover { background: var(--cardinal-wash); }
+
+strong { color: var(--ink); font-weight: 650; }
+em { font-style: italic; }
+
+code, kbd, var, .mono { font-family: var(--mono); font-size: 0.92em; }
+code { background: var(--panel); padding: 0.1em 0.34em; border-radius: 3px; }
+
+:focus-visible {
+  outline: 3px solid var(--cardinal);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
+hr { border: 0; border-top: 1px solid var(--rule); margin: var(--s6) 0; }
+
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 999;
+  background: var(--cardinal-deep);
+  color: #fff;
+  padding: 12px 20px;
+  font-weight: 600;
+}
+.skip-link:focus { left: 12px; top: 12px; }
+
+.visually-hidden {
+  position: absolute !important;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ================================================================ DECK ===
+   Fixed 1280×720 canvas (13.333in × 7.5in at 96dpi) so screen, PDF and
+   PowerPoint export agree exactly. deck.js scales it to the viewport.
+   ======================================================================== */
+
+.deck-stage {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  display: grid;
+  place-items: center;
+  background: var(--paper);
+  overflow: hidden;
+}
+
+.deck {
+  width: 1280px;
+  height: 720px;
+  position: relative;
+  transform-origin: center center;
+  background: var(--paper);
+}
+
+/* --- one slide ---------------------------------------------------------- */
+
+.slide {
+  position: absolute;
+  inset: 0;
+  background: var(--paper);
+  padding: 56px 72px 64px;
+  display: none;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.slide.is-active { display: flex; }
+
+/* Title-line rule: the recurring structural mark of the whole course. */
+.slide > h2 {
+  font-size: 40px;
+  padding-bottom: 14px;
+  margin-bottom: 26px;
+  border-bottom: 2px solid var(--cardinal);
+  flex: 0 0 auto;
+}
+
+.slide > h3 {
+  font-family: var(--sans);
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  color: var(--cardinal-deep);
+  margin-bottom: var(--s2);
+}
+
+.slide p, .slide li { font-size: 20px; line-height: 1.5; }
+.slide p { max-width: 62ch; }
+.slide strong { color: var(--ink); }
+
+.slide ul, .slide ol { margin: 0 0 var(--s4); padding-left: 1.35em; }
+.slide li { margin-bottom: 9px; }
+.slide li::marker { color: var(--cardinal); }
+.slide li > ul, .slide li > ol { margin-top: 9px; }
+
+.slide code { font-size: 0.88em; }
+.slide var { font-style: italic; font-family: var(--display); font-size: 1.04em; }
+
+/* --- body content region ------------------------------------------------- */
+
+.slide-main {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s5);
+}
+
+/* --- slide footer (injected by deck.js) ---------------------------------- */
+
+.slide-foot {
+  position: absolute;
+  left: 72px;
+  right: 72px;
+  bottom: 22px;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--s5);
+  font-family: var(--sans);
+  font-size: 14px;
+  color: var(--muted);
+  border-top: 1px solid var(--rule);
+  padding-top: 8px;
+  letter-spacing: 0.01em;
+}
+
+.slide-num { font-variant-numeric: tabular-nums; color: var(--ink); font-weight: 650; }
+
+/* --- title slide --------------------------------------------------------- */
+
+.slide--title {
+  justify-content: center;
+  padding: 72px 96px;
+}
+
+.slide--title .course-line {
+  font-family: var(--sans);
+  font-size: 16px;
+  font-weight: 650;
+  color: var(--cardinal-deep);
+  letter-spacing: 0.02em;
+  margin-bottom: var(--s5);
+}
+
+.slide--title h1 {
+  font-size: 66px;
+  line-height: 1.04;
+  max-width: 20ch;
+  margin-bottom: var(--s5);
+}
+
+.slide--title .subtitle {
+  font-size: 22px;
+  color: var(--muted);
+  max-width: 46ch;
+  line-height: 1.45;
+  margin-bottom: var(--s7);
+}
+
+.slide--title .byline {
+  font-size: 17px;
+  color: var(--body);
+  border-top: 2px solid var(--ink);
+  padding-top: var(--s4);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 36px;
+}
+.slide--title .byline span { color: var(--muted); font-size: 16px; }
+
+/* --- section divider ----------------------------------------------------- */
+
+.slide--section { justify-content: center; padding-left: 96px; }
+.slide--section h2 {
+  font-size: 54px;
+  border-bottom: 0;
+  margin-bottom: var(--s4);
+  padding-bottom: 0;
+  max-width: 22ch;
+}
+.slide--section p { font-size: 21px; color: var(--muted); max-width: 52ch; }
+.slide--section::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 10px;
+  background: var(--cardinal);
+}
+
+/* --- big statement ------------------------------------------------------- */
+
+.slide--statement { justify-content: center; padding-left: 96px; }
+.slide--statement blockquote {
+  margin: 0;
+  font-family: var(--display);
+  font-size: 42px;
+  line-height: 1.24;
+  color: var(--ink);
+  max-width: 26ch;
+  letter-spacing: -0.01em;
+}
+.slide--statement .attrib {
+  margin-top: var(--s5);
+  font-family: var(--sans);
+  font-size: 17px;
+  color: var(--muted);
+  max-width: 44ch;
+}
+
+/* --- grids --------------------------------------------------------------- */
+
+.cols-2,
+.cols-3,
+.cols-2-1,
+.cols-1-2 {
+  display: grid;
+  gap: var(--s6);
+  align-items: start;
+  min-height: 0;
+}
+/* minmax(0, 1fr), not 1fr: a bare 1fr keeps its content's automatic minimum, so
+   a wide diagram widened its own column and stole width from the text beside it.
+   Pinned tracks keep the split fixed whatever a figure contains. */
+.cols-2   { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.cols-3   { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s5); }
+.cols-2-1 { grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); }
+.cols-1-2 { grid-template-columns: minmax(0, 1fr) minmax(0, 1.55fr); }
+
+.split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--s7);
+  align-items: center;
+  min-height: 0;
+}
+
+.fill { display: flex; flex-direction: column; justify-content: center; min-height: 0; }
+
+/* --- panels -------------------------------------------------------------- */
+
+.panel {
+  background: var(--panel);
+  border-radius: 4px;
+  padding: 20px 22px;
+  border-left: 3px solid var(--rule-strong);
+}
+.panel > :last-child { margin-bottom: 0; }
+.panel h3 { margin-bottom: 6px; }
+.panel p, .panel li { font-size: 18px; line-height: 1.45; }
+.panel ul { margin-bottom: 0; }
+
+.panel--accent { background: var(--cardinal-wash); border-left-color: var(--cardinal); }
+.panel--key    { background: var(--teal-wash);     border-left-color: var(--teal); }
+
+.panel--definition {
+  background: var(--paper);
+  border: 1px solid var(--rule-strong);
+  border-left: 3px solid var(--ink);
+}
+.panel--definition .term {
+  font-family: var(--display);
+  font-size: 21px;
+  color: var(--ink);
+  font-weight: 600;
+  display: block;
+  margin-bottom: 6px;
+}
+
+/* --- formula block ------------------------------------------------------- */
+
+.eq {
+  font-family: var(--display);
+  font-size: 25px;
+  line-height: 1.45;
+  color: var(--ink);
+  background: var(--paper);
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+  padding: 16px 20px;
+  text-align: center;
+  margin: 0;
+}
+.eq--tight { font-size: 21px; padding: 12px 16px; }
+.eq .cond {
+  display: block;
+  font-family: var(--sans);
+  font-size: 16px;
+  color: var(--muted);
+  margin-top: 8px;
+}
+.eq var { font-size: 1em; }
+
+/* --- code block ---------------------------------------------------------- */
+
+.code {
+  font-family: var(--mono);
+  font-size: 16px;
+  line-height: 1.55;
+  background: var(--panel);
+  border-radius: 4px;
+  padding: 16px 18px;
+  margin: 0;
+  overflow: auto;
+  color: var(--ink);
+  tab-size: 2;
+}
+.code .c { color: var(--muted); }        /* comment  */
+.code .k { color: var(--cardinal-deep); font-weight: 600; } /* keyword */
+.code .s { color: var(--teal); }         /* string   */
+
+/* --- tables -------------------------------------------------------------- */
+
+.tbl {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 17px;
+  line-height: 1.4;
+}
+.tbl caption {
+  text-align: left;
+  font-size: 16px;
+  color: var(--muted);
+  padding-bottom: 8px;
+}
+.tbl th, .tbl td {
+  text-align: left;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--rule);
+  vertical-align: top;
+}
+.tbl thead th {
+  font-family: var(--sans);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
+  border-bottom: 2px solid var(--ink);
+  white-space: nowrap;
+}
+.tbl tbody tr:last-child td { border-bottom: 1px solid var(--ink); }
+.tbl td.num, .tbl th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.tbl--compact th, .tbl--compact td { padding: 6px 10px; font-size: 16px; }
+
+/* --- figures ------------------------------------------------------------- */
+
+.fig { margin: 0; display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+/* Each SVG's viewBox is its drawing's ink, so this gap is the only space between
+   a drawing and its caption — 10px on every figure in every deck. Overflow stays
+   visible because stroke width and arrow markers sit just outside the ink box. */
+.fig svg { width: 100%; height: auto; display: block; overflow: visible; }
+/* When a slide is short of room, the drawing shrinks (and stays centred) rather
+   than spilling over its caption: the figure may shrink, and so may its SVG. */
+.slide .fig svg { flex: 0 1 auto; min-height: 0; }
+.slide .fig figcaption { flex: 0 0 auto; }
+/* Text beside a figure keeps its height; the figure is what gives way. */
+.slide-main:has(> .fig) > :not(.fig) { flex-shrink: 0; }
+.fig figcaption {
+  font-size: 15px;
+  line-height: 1.45;
+  color: var(--muted);
+  max-width: 62ch;
+}
+.fig figcaption strong { color: var(--body); }
+
+/* shared SVG vocabulary */
+.dg-box   { fill: #fff; stroke: var(--ink); stroke-width: 1.6; }
+.dg-box-m { fill: var(--panel); stroke: var(--rule-strong); stroke-width: 1.4; }
+.dg-box-a { fill: var(--cardinal-wash); stroke: var(--cardinal); stroke-width: 1.8; }
+.dg-box-t { fill: var(--teal-wash); stroke: var(--teal); stroke-width: 1.6; }
+.dg-line  { stroke: var(--ink); stroke-width: 1.6; fill: none; }
+.dg-line-q{ stroke: var(--rule-strong); stroke-width: 1.4; fill: none; }
+.dg-dash  { stroke: var(--muted); stroke-width: 1.4; fill: none; stroke-dasharray: 5 5; }
+/* Diagram text is sized in rendered pixels, not user units. Each SVG carries
+   --dg-k, the rendered px per user unit of its canvas, so a label renders at the
+   same size in every figure however far its drawing is scaled to fit the column.
+   The four sizes are declared once here; the audit reads these same values back
+   and fails if a label lands more than a pixel away from one. */
+:root {
+  --dg-txt: 17px;
+  --dg-txt-s: 16px;
+  --dg-txt-b: 18px;
+  --dg-lbl: 15px;
+}
+.dg-txt   { fill: var(--ink); font-family: var(--sans); font-size: calc(var(--dg-txt) / var(--dg-k, 1)); }
+.dg-txt-s { fill: var(--muted); font-family: var(--sans); font-size: calc(var(--dg-txt-s) / var(--dg-k, 1)); }
+.dg-txt-b { fill: var(--ink); font-family: var(--sans); font-size: calc(var(--dg-txt-b) / var(--dg-k, 1)); font-weight: 650; }
+.dg-lbl   { fill: var(--cardinal-deep); font-family: var(--sans); font-size: calc(var(--dg-lbl) / var(--dg-k, 1)); font-weight: 650; }
+.dg-teal  { fill: var(--teal); }
+.dg-card  { fill: var(--cardinal); }
+.dg-wash  { fill: var(--panel); }
+.dg-gold  { fill: var(--gold); }
+/* chart strokes: data lines in the two accent colours, and a soft band */
+.dg-plot-a { fill: none; stroke: var(--cardinal); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+.dg-plot-t { fill: none; stroke: var(--teal); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+.dg-plot-g { fill: none; stroke: var(--gold); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 7 5; }
+.dg-band-t { fill: var(--teal); opacity: 0.16; }
+.dg-band-a { fill: var(--cardinal); opacity: 0.12; }
+
+/* --- callout: the one thing to remember ---------------------------------- */
+
+.callout {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  background: var(--cardinal-wash);
+  border: 1px solid #ecd3d8;
+  border-radius: 4px;
+  padding: 14px 18px;
+}
+.callout .mark {
+  font-family: var(--display);
+  font-size: 22px;
+  line-height: 1;
+  color: var(--cardinal);
+  flex: 0 0 auto;
+  padding-top: 2px;
+}
+.callout p { font-size: 18px; line-height: 1.45; }
+.callout strong { color: var(--cardinal-deep); }
+
+/* --- worked example ------------------------------------------------------ */
+
+.worked {
+  border: 1px solid var(--rule-strong);
+  border-radius: 4px;
+  padding: 16px 20px;
+  background: var(--paper);
+}
+.worked > .worked-label {
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--teal);
+  display: block;
+  margin-bottom: 8px;
+}
+.worked p, .worked li { font-size: 17px; line-height: 1.45; }
+.worked .eq { border: 0; padding: 8px 0; text-align: left; font-size: 20px; background: none; }
+
+/* --- objective / checklist lists ----------------------------------------- */
+
+.objectives { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; }
+.objectives li {
+  display: grid;
+  grid-template-columns: 26px 1fr;
+  gap: 12px;
+  align-items: start;
+  font-size: 19px;
+  line-height: 1.45;
+}
+.objectives li::before {
+  content: "";
+  width: 16px; height: 16px;
+  margin-top: 6px;
+  border: 2px solid var(--cardinal);
+  border-radius: 50%;
+}
+
+/* --- two-level list used for "how it works" ------------------------------ */
+
+.steps { list-style: none; padding: 0; margin: 0; display: grid; gap: 14px; }
+.steps li {
+  display: grid;
+  grid-template-columns: 30px 1fr;
+  gap: 14px;
+  align-items: start;
+}
+.steps .n {
+  font-family: var(--display);
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--paper);
+  background: var(--ink);
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  margin-top: 2px;
+}
+.steps strong { display: block; font-size: 18px; }
+.steps p { font-size: 17px; color: var(--muted); margin: 0; }
+
+/* --- reading / logistics list on the closing slide ----------------------- */
+
+.week-work { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--s5); }
+.week-work h3 { margin-bottom: 8px; }
+.week-work ul { padding-left: 1.1em; margin: 0; }
+.week-work li { font-size: 17px; line-height: 1.4; margin-bottom: 6px; }
+.week-work .due { color: var(--cardinal-deep); font-weight: 650; }
+
+/* --- roadmap strip ------------------------------------------------------- */
+
+.roadmap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: auto;
+  padding-top: var(--s4);
+}
+.roadmap span {
+  font-size: 14px;
+  padding: 4px 9px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 999px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.roadmap span[aria-current="step"] {
+  border-color: var(--cardinal);
+  background: var(--cardinal-wash);
+  color: var(--cardinal-deep);
+  font-weight: 700;
+}
+
+/* --- speaker notes (extracted by deck.js into a drawer) ------------------ */
+
+.notes { display: none; }
+
+/* =============================================================== UI =====
+   Chrome that belongs to the viewer, not the slide. Hidden in print.
+   ======================================================================== */
+
+.ui { position: fixed; z-index: 50; }
+
+.ui-nav {
+  bottom: 7px;
+  right: 18px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  height: 44px;
+}
+
+.ui-nav button {
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  background: #fff;
+  border: 1.5px solid var(--rule-strong);
+  border-radius: 6px;
+  padding: 9px 15px;
+  cursor: pointer;
+  min-width: 44px;
+  min-height: 44px;
+}
+.ui-nav button:hover { border-color: var(--ink); }
+.ui-nav button[disabled] { opacity: 0.4; cursor: default; }
+
+.ui-progress {
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: var(--rule);
+}
+.ui-progress > div {
+  height: 100%;
+  width: 0;
+  background: var(--cardinal);
+  transition: width 160ms linear;
+}
+
+.ui-home {
+  top: 16px;
+  left: 18px;
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  text-decoration: none;
+  padding: 7px 11px;
+  border: 1.5px solid transparent;
+  border-radius: 6px;
+}
+.ui-home:hover { color: var(--ink); border-color: var(--rule-strong); background: #fff; }
+
+.ui-hint {
+  bottom: 9px;
+  left: 18px;
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+  background: #fff;
+  padding: 5px 9px;
+  border-radius: 5px;
+  border: 1px solid var(--rule);
+}
+
+/* In a narrow window the keyboard hint would run into the buttons. The hint is
+   a convenience, so it yields: the buttons are the controls that must stay. */
+@media (max-width: 780px) {
+  .ui-hint { display: none; }
+  .ui-nav { right: 12px; gap: 6px; }
+  .ui-nav button { padding: 9px 11px; font-size: 13px; }
+}
+
+/* On a phone the home link moves into the control strip, bottom left, so it
+   never sits on a slide's title. */
+.ui-rotate { display: none; }
+@media (max-width: 780px), (max-height: 500px) {
+  .ui-home { top: auto; bottom: 7px; left: 12px; min-height: 44px;
+    display: inline-flex; align-items: center; gap: 4px; background: #fff; }
+  .ui-hint { display: none; }
+}
+@media (max-width: 420px) {
+  .ui-home-long { display: none; }
+}
+@media (orientation: portrait) and (max-width: 600px) {
+  .ui-rotate { display: block; top: 14px; left: 16px; right: 16px; margin: 0;
+    font-family: var(--sans); font-size: 15px; line-height: 1.4; color: var(--muted);
+    text-align: center; }
+  .ui-rotate::before { content: "\21BB  "; }
+}
+
+/* The strip reserved for the viewer's controls. It stays empty and white so
+   the slide's footer line is never obscured. */
+.ui-strip {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 54px;
+  background: var(--paper);
+  border-top: 1px solid var(--rule);
+  z-index: 45;
+}
+
+.notes-drawer {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  max-height: 38vh;
+  overflow: auto;
+  background: #fff;
+  border-top: 3px solid var(--cardinal);
+  padding: 18px 24px 26px;
+  box-shadow: 0 -8px 28px rgba(22, 24, 29, 0.10);
+  font-size: 15px;
+  line-height: 1.55;
+  z-index: 60;
+}
+.notes-drawer[hidden] { display: none; }
+.notes-drawer h2 {
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--cardinal-deep);
+  border: 0;
+  margin: 0 0 8px;
+  padding: 0;
+}
+.notes-drawer p, .notes-drawer li { font-size: 15px; max-width: 92ch; }
+.notes-drawer ul { margin: 0; padding-left: 1.2em; }
+
+/* ============================================================= MOTION ===
+   Animation exists here for one reason: to show a process in the order it
+   happens. Structural motion (a slide arriving, a title settling) stays
+   under 300ms and is almost invisible; algorithm sequences run long enough
+   to follow and can be replayed with R.
+
+   Two rules keep this safe for PDF and PowerPoint:
+     1. Nothing is hidden by default. Every element's ordinary style is the
+        finished state, and every animation uses fill-mode "backwards", so
+        before it starts — and if it never starts — the content is present.
+     2. Print disables animation outright, which therefore prints the
+        finished state: the whole traversal, all bars at full height.
+   ======================================================================== */
+
+@keyframes fade-in  { from { opacity: 0 } to { opacity: 1 } }
+@keyframes settle   { from { opacity: 0; transform: translateY(9px) } to { opacity: 1; transform: none } }
+@keyframes seq-in   { from { opacity: 0.12 } to { opacity: 1 } }
+/* SVG elements are animated through geometry properties (r, y, height) and
+   opacity only. Scaling them with transform needs transform-box on every
+   element and silently shifts the shape towards the canvas origin when it is
+   missing, so it is not used at all. */
+@keyframes seq-halo {
+  from { opacity: 0.5; r: 19px }
+  to   { opacity: 0;   r: 34px }
+}
+@keyframes bar-grow { from { height: 0; y: var(--base, 0px) } }
+@keyframes row-in   { from { opacity: 0; transform: translateX(-7px) } to { opacity: 1; transform: none } }
+
+.slide.is-active { animation: fade-in 180ms ease-out both; }
+.slide.is-active > h2 {
+  animation: settle 260ms cubic-bezier(0.2, 0.7, 0.3, 1) 40ms backwards;
+}
+.slide.is-active .slide-foot { animation: fade-in 300ms ease-out 160ms backwards; }
+
+/* --- sequenced diagrams: BFS / DFS traversal, bar growth ----------------- */
+
+.tn { --d: 0s; }
+
+.slide.is-active .dg-seq .tn {
+  animation: seq-in 280ms ease-out backwards;
+  animation-delay: var(--d);
+}
+
+/* A single expanding ring marks the node being expanded right now. It is
+   opacity 0 by default, so it does not exist in print. */
+.tn-halo {
+  fill: none;
+  stroke: var(--cardinal);
+  stroke-width: 1.6;
+  opacity: 0;
+  pointer-events: none;
+}
+.slide.is-active .dg-seq .tn-halo {
+  animation: seq-halo 640ms ease-out backwards;
+  animation-delay: var(--d);
+}
+
+/* The baseline the bars grow from is not the stylesheet's business: each
+   figure sets --base on its own .dg-bars group, next to the geometry that
+   defines where the axis actually is. */
+/* A data line draws itself from left to right. The dash pattern exists only
+   while the slide is active, so print and the PDF always show a solid line. */
+@keyframes draw-line { from { stroke-dashoffset: 1 } }
+.draw { --d: 0s; }
+.slide.is-active .dg-seq .draw {
+  stroke-dasharray: 1 1;
+  animation: draw-line 900ms ease-out backwards;
+  animation-delay: var(--d);
+}
+
+.seq-bar { --d: 0s; }
+.slide.is-active .dg-bars .seq-bar {
+  animation: bar-grow 480ms cubic-bezier(0.2, 0.7, 0.3, 1) backwards;
+  animation-delay: var(--d);
+}
+
+/* Every slide's body builds in reading order: a short cascade of its direct
+   children. This is the baseline motion for all fifteen lectures, so a slide
+   never simply appears. */
+.slide.is-active .slide-main > * {
+  animation: settle 240ms cubic-bezier(0.2, 0.7, 0.3, 1) backwards;
+}
+.slide.is-active .slide-main > *:nth-child(2) { animation-delay: 0.07s; }
+.slide.is-active .slide-main > *:nth-child(3) { animation-delay: 0.14s; }
+.slide.is-active .slide-main > *:nth-child(4) { animation-delay: 0.21s; }
+.slide.is-active .slide-main > *:nth-child(5) { animation-delay: 0.28s; }
+
+/* Rows of a trace table arriving in the order they were computed. */
+.slide.is-active .tbl--reveal tbody tr {
+  animation: row-in 260ms ease-out backwards;
+  animation-delay: var(--d, 0s);
+}
+.tbl--reveal tbody tr:nth-child(1) { --d: 0.05s; }
+.tbl--reveal tbody tr:nth-child(2) { --d: 0.13s; }
+.tbl--reveal tbody tr:nth-child(3) { --d: 0.21s; }
+.tbl--reveal tbody tr:nth-child(4) { --d: 0.29s; }
+.tbl--reveal tbody tr:nth-child(5) { --d: 0.37s; }
+.tbl--reveal tbody tr:nth-child(6) { --d: 0.45s; }
+.tbl--reveal tbody tr:nth-child(7) { --d: 0.53s; }
+.tbl--reveal tbody tr:nth-child(8) { --d: 0.61s; }
+
+/* ============================================================ PRINT =====
+   13.333in × 7.5in = 1280×720 px at 96 dpi. One slide per page, no chrome.
+   This is the file you hand to PowerPoint, Acrobat or a print shop.
+   ======================================================================== */
+
+@page { size: 13.333in 7.5in; margin: 0; }
+
+
+/* Documents are not decks. The exam, the lab sheets and the course home page
+   are printed and marked on: they get US Letter with a real margin, and blocks
+   that should not be split across a page break are kept whole. Decks stay on
+   the anonymous page above, which must have no margin at all. */
+@page doc { size: letter; margin: 0.6in 0.7in; }
+
+@media print {
+  html, body { background: #fff !important; margin: 0; padding: 0; }
+
+  /* --- document pages: Letter, and nothing split badly ------------------ */
+  .doc { page: doc; }
+  .doc table, .doc pre, .doc .note, .doc .callout, .doc .worked { break-inside: avoid; }
+  .doc h1, .doc h2, .doc h3 { break-after: avoid; }
+  .doc tr, .doc li { break-inside: avoid; }
+  .doc p, .doc li { orphans: 2; widows: 2; }
+  .doc footer { break-inside: avoid; }
+  /* the closing section starts its own page, so a short checklist or rule list
+     is never cut in half with its heading left behind (or a lone footer after) */
+  .doc main > section:last-of-type { break-before: page; }
+  /* a long command or JSON line would otherwise be clipped at the column edge
+     when the page is printed, so let it wrap instead of losing its tail */
+  .doc pre {
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+    font-size: 12.5px;
+  }
+
+  .ui, .notes-drawer, .skip-link { display: none !important; }
+
+  /* Animation off, so every page prints the finished state: the whole
+     traversal, every bar at full height, nothing mid-fade. */
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+  .tn-halo { display: none !important; }
+
+  .deck-stage {
+    display: block;
+    width: auto;
+    height: auto;
+    overflow: visible;
+  }
+
+  /* The scaling script writes inline transform, top and negative margins on
+     .deck. Under position: static those margins would still pull the canvas
+     up the page, so they are cancelled here as well as the transform. */
+  .deck {
+    width: 1280px;
+    height: 720px;
+    transform: none !important;
+    position: static;
+    top: auto !important;
+    left: auto !important;
+    margin: 0 !important;
+  }
+
+  .slide {
+    display: flex !important;
+    position: relative;
+    width: 1280px;
+    height: 720px;
+    page-break-after: always;
+    break-after: page;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+  .slide:last-of-type { page-break-after: auto; break-after: auto; }
+
+  a { color: var(--ink); text-decoration: underline; }
+
+  /* Keep ink-heavy fills from dropping out on cheap printers */
+  .panel, .code, .tbl thead th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
+
+
+/* ------------------------------------------------ learning resources slide */
+.resources {
+  list-style: none; margin: 0; padding: 0;
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px 40px;
+}
+.resources li { font-size: 18px; line-height: 1.35; }
+.resources a { font-weight: 650; }
+.resources .src { font-family: var(--sans); font-size: 15px; color: var(--muted); margin-left: 6px; }
+.resources p { margin: 4px 0 0; font-size: 17px; color: var(--muted); line-height: 1.4; }
+
+/* ------------------------------------------------------ course logistics */
+.facts-tbl th[scope="row"] { width: 200px; font-family: var(--sans); font-weight: 700;
+  font-size: 17px; color: var(--ink); vertical-align: top; }
+.facts-tbl td { font-size: 18px; }
+
+/* ====================================================== DOCUMENT MODE ===
+   The course home page and any handout. Same tokens, reading-first layout.
+   ======================================================================== */
+
+.doc {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 0 32px 96px;
+}
+
+.doc-masthead {
+  border-bottom: 3px solid var(--ink);
+  padding: 40px 0 24px;
+  margin-bottom: var(--s7);
+}
+
+.doc-masthead .inst {
+  font-size: 14px;
+  color: var(--muted);
+  margin-bottom: var(--s5);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+}
+
+.doc-masthead h1 {
+  font-size: 56px;
+  max-width: 26ch;
+  margin-bottom: var(--s4);
+}
+
+.doc-masthead .tagline {
+  font-size: 20px;
+  color: var(--muted);
+  max-width: 58ch;
+  line-height: 1.5;
+}
+
+.doc-masthead .instructor {
+  margin-top: var(--s5);
+  font-size: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 22px;
+}
+.doc-masthead .instructor span { color: var(--muted); }
+
+.doc section { margin-bottom: var(--s8); scroll-margin-top: 24px; }
+
+.doc h2 {
+  font-size: 32px;
+  padding-bottom: 10px;
+  border-bottom: 2px solid var(--cardinal);
+  margin-bottom: var(--s5);
+}
+
+.doc h3 {
+  font-family: var(--sans);
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--ink);
+  margin: var(--s5) 0 var(--s2);
+}
+
+.doc p, .doc li { font-size: 17px; line-height: 1.62; }
+.doc p, .doc ul, .doc ol { max-width: var(--measure); }
+.doc ul, .doc ol { padding-left: 1.3em; margin: 0 0 var(--s4); }
+.doc li { margin-bottom: 7px; }
+.doc li::marker { color: var(--cardinal); }
+
+.doc pre {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 14px;
+  line-height: 1.65;
+  background: #f7f8fa;
+  border: 1px solid #dfe3e8;
+  border-left: 3px solid var(--cardinal);
+  border-radius: 4px;
+  padding: 14px 16px;
+  overflow-x: auto;
+  margin: 0 0 var(--s4);
+  max-width: var(--measure);
+}
+
+/* assignment and examination sheets */
+.doc .muted { color: var(--muted); font-weight: 400; }
+
+/* The slide checklist draws a hollow ring in a 26px grid column. Inside a
+   document that reads as an unticked checkbox and sits ~35px deeper than every
+   other list, so give it a tick and ordinary list geometry. */
+.doc .objectives { display: block; padding-left: 0; margin: 0 0 var(--s4); }
+.doc .objectives li {
+  display: block;
+  position: relative;
+  padding-left: 24px;
+  margin-bottom: 9px;
+  font-size: 17px;
+  line-height: 1.55;
+}
+.doc .objectives li::before {
+  content: "✓";
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: auto;
+  height: auto;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--cardinal);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.7;
+}
+.doc h2 .muted, .doc h3 .muted { font-size: 0.66em; letter-spacing: 0; }
+.doc .qs { list-style: none; padding-left: 0; }
+.doc .qs > li { margin-bottom: var(--s5, 1.6rem); }
+.doc .qs > li::marker { content: none; }
+.doc .qs p { margin-bottom: 6px; }
+.doc .formulas { font-size: 15px; line-height: 1.7; }
+.doc .formulas li { margin-bottom: 5px; }
+
+.facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 1px;
+  background: var(--rule);
+  border: 1px solid var(--rule);
+  margin-bottom: var(--s6);
+}
+.facts > div { background: #fff; padding: 16px 18px; }
+.facts dt {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.facts dd {
+  margin: 0;
+  font-family: var(--display);
+  font-size: 19px;
+  color: var(--ink);
+  line-height: 1.3;
+}
+
+/* document tables */
+.doc .tbl { font-size: 15.5px; }
+.doc .tbl th, .doc .tbl td { padding: 10px 12px; }
+.doc .tbl tbody tr:hover { background: #fcfcfd; }
+.doc .tbl td.week { font-weight: 700; color: var(--ink); white-space: nowrap; }
+.doc .tbl td.date { color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.doc .tbl--schedule th { position: sticky; top: 0; background: #fff; }
+
+/* table of contents */
+.toc {
+  border: 1px solid var(--rule);
+  padding: 18px 22px;
+  background: #fcfcfd;
+  margin-bottom: var(--s7);
+}
+.toc h2 {
+  font-family: var(--sans);
+  font-size: 13px;
+  border: 0;
+  margin: 0 0 10px;
+  padding: 0;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+}
+.toc ol {
+  columns: 2;
+  column-gap: var(--s7);
+  margin: 0;
+  padding-left: 1.1em;
+  font-size: 15px;
+}
+.toc li { margin-bottom: 4px; }
+
+/* module cards on the home page */
+.modules { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 18px; }
+.module {
+  display: grid;
+  grid-template-columns: 46px 1fr;
+  gap: 14px;
+  border: 1px solid var(--rule);
+  border-left: 4px solid var(--cardinal);
+  padding: 16px 18px;
+  text-decoration: none;
+  color: inherit;
+  background: #fff;
+  min-height: 100%;
+}
+.module:hover { border-color: var(--rule-strong); border-left-color: var(--cardinal-deep); background: #fdfdfd; }
+.module:hover .module-title { text-decoration: underline; text-underline-offset: 3px; }
+.module .wk {
+  font-family: var(--display);
+  font-size: 26px;
+  color: var(--cardinal);
+  line-height: 1;
+  font-variant-numeric: lining-nums;
+}
+.module .module-title {
+  font-family: var(--display);
+  font-size: 19px;
+  color: var(--ink);
+  font-weight: 600;
+  line-height: 1.25;
+  display: block;
+  margin-bottom: 5px;
+}
+.module .module-meta { font-size: 13px; color: var(--muted); line-height: 1.4; display: block; }
+
+/* inline note blocks in the document */
+.note {
+  border-left: 3px solid var(--cardinal);
+  background: var(--cardinal-wash);
+  padding: 14px 18px;
+  margin: var(--s5) 0;
+}
+.note p, .note li { font-size: 16px; }
+.note > :last-child { margin-bottom: 0; }
+
+.note--info { border-left-color: var(--teal); background: var(--teal-wash); }
+
+.doc footer {
+  border-top: 1px solid var(--rule);
+  padding-top: var(--s4);
+  font-size: 14px;
+  color: var(--muted);
+}
+
+/* ======================================================== RESPONSIVE ==== */
+
+@media (max-width: 720px) {
+  .doc { padding: 0 18px 64px; }
+  .doc-masthead h1 { font-size: 38px; }
+  .doc-masthead .tagline { font-size: 18px; }
+  .doc h2 { font-size: 26px; }
+  .toc ol { columns: 1; }
+  .facts { grid-template-columns: 1fr 1fr; }
+  .modules { grid-template-columns: 1fr; }
+  .doc .tbl { font-size: 14px; }
+  .doc .tbl th, .doc .tbl td { padding: 8px; }
+}
+
+/* ================================================== MOTION & CONTRAST === */
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-delay: 0s !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@media (prefers-contrast: more) {
+  :root { --muted: #33383f; --rule: #b8bec7; --rule-strong: #8b929c; }
+  .slide > h2 { border-bottom-width: 3px; }
+}
+
+@media (forced-colors: active) {
+  .panel, .callout, .worked, .module { border: 1px solid CanvasText; }
+  .dg-box, .dg-box-a, .dg-box-t, .dg-line { stroke: CanvasText; }
+}
+
+/* ==================================================== SHARED FIGURES ===
+   Moved here from db.css in November 2026 so that the database course and
+   the AI course draw and animate their figures with exactly the same
+   vocabulary: .v-in, .v-draw, .v-grow, .v-move, .v-pulse, .v-dim, the
+   extra diagram colours, the small diagram text sizes, the title-slide
+   illustration and the sideways-scrolling figure box for phones.
+   ======================================================================== */
+
+/* ======================================================= VISUAL MOTION ===
+   Same two rules as course.css: the finished state is the element's own
+   style, and every animation fills "backwards", so print, reduced motion and
+   a page that never plays all show the finished picture. Slides play when
+   they become active (R replays); figures on a page play when they scroll
+   into view (.fig-anim.is-playing, set by viz.js) and have a Replay button.
+   Every sequence finishes inside five seconds.
+   ======================================================================== */
+
+@keyframes v-fade  { from { opacity: 0 } }
+@keyframes v-dim   { from { opacity: 1 } }
+@keyframes v-draw  { from { stroke-dashoffset: 1 } }
+@keyframes v-move  { from { transform: translate(var(--dx, 0px), var(--dy, 0px)); opacity: 0.2 } }
+@keyframes v-pulse { 0%, 100% { stroke-width: var(--sw, 2px) } 45% { stroke-width: calc(var(--sw, 2px) * 3) } }
+@keyframes v-grow  { from { width: 0 } }
+
+.v-in, .v-dim, .v-draw, .v-move, .v-pulse, .v-grow { --d: 0s; }
+.v-draw  { stroke-dasharray: 1; stroke-dashoffset: 0; }
+.v-dim   { opacity: var(--o, 0.28); }
+
+:is(.slide.is-active, .fig-anim.is-playing) .v-in    { animation: v-fade 420ms ease-out var(--d) backwards; }
+:is(.slide.is-active, .fig-anim.is-playing) .v-dim   { animation: v-dim 520ms ease-in-out var(--d) backwards; }
+:is(.slide.is-active, .fig-anim.is-playing) .v-draw  { animation: v-draw 560ms ease-out var(--d) backwards; }
+:is(.slide.is-active, .fig-anim.is-playing) .v-move  { animation: v-move 700ms cubic-bezier(0.2, 0.7, 0.3, 1) var(--d) backwards; }
+:is(.slide.is-active, .fig-anim.is-playing) .v-pulse { animation: v-pulse 700ms ease-in-out var(--d) 2; }
+:is(.slide.is-active, .fig-anim.is-playing) .v-grow  { animation: v-grow 640ms cubic-bezier(0.2, 0.7, 0.3, 1) var(--d) backwards; }
+
+/* Extra diagram colours. Each is paired with a text mark in the figure. */
+.dg-ok    { fill: #e6f2ea; stroke: #1d6b3a; stroke-width: 1.8; }
+.dg-bad   { fill: #fbebeb; stroke: #a1261b; stroke-width: 1.8; }
+.dg-warn  { fill: #fdf3dc; stroke: #8a5a00; stroke-width: 1.8; }
+.dg-hl    { fill: rgba(158, 27, 50, 0.10); stroke: var(--cardinal); stroke-width: 2; }
+.dg-hl-t  { fill: rgba(14, 90, 107, 0.10); stroke: var(--teal); stroke-width: 2; }
+.dg-txt-ok  { fill: #1d6b3a; }
+.dg-txt-bad { fill: #a1261b; }
+.dg-txt-warn{ fill: #8a5a00; }
+.dg-mono  { font-family: var(--mono, ui-monospace, Menlo, Consolas, monospace); }
+.dg-line-t { stroke: var(--teal); stroke-width: 1.8; fill: none; }
+.dg-line-a { stroke: var(--cardinal); stroke-width: 1.8; fill: none; }
+.dg-bar   { fill: var(--teal); }
+.dg-bar-a { fill: var(--cardinal); }
+
+/* A figure on a page that plays when seen, with a Replay button. */
+.fig-anim { position: relative; margin: 18px 0 22px; }
+.fig-anim svg { display: block; width: 100%; height: auto; max-width: 760px; }
+.fig-anim figcaption { font-size: 15px; color: var(--muted); margin-top: 8px; max-width: 72ch; }
+.fig-replay { margin-top: 8px; }
+
+/* Smaller diagram text for data-dense figures (still 14px or more on the slide). */
+.dg-sm  { font-family: var(--sans); font-size: calc(15px / var(--dg-k, 1)); fill: var(--ink); }
+.dg-sm-b{ font-family: var(--sans); font-size: calc(15px / var(--dg-k, 1)); fill: var(--ink); font-weight: 650; }
+.dg-xs  { font-family: var(--sans); font-size: calc(14px / var(--dg-k, 1)); fill: var(--ink); }
+.dg-big { font-family: var(--sans); font-size: calc(24px / var(--dg-k, 1)); font-weight: 700; }
+
+/* Title-slide illustration: decorative, drawn in on arrival. */
+.title-art { position: absolute; right: 72px; top: 300px; width: 340px; pointer-events: none; }
+.title-art svg { width: 100%; height: auto; display: block; }
+
+.fig-scroll { overflow-x: auto; overscroll-behavior-x: contain; }
+.fig-scroll:focus-visible { outline: 3px solid var(--cardinal); outline-offset: 2px; }
+.swipe-hint { font-size: 14px; color: var(--muted); margin: 6px 0 0; }
+.swipe-hint::before { content: "↔ "; }
+@media (max-width: 640px) {
+  .fig-scroll > svg { min-width: var(--fig-min, 0); max-width: none; }
+}
+
+/* ============================================================ OVERVIEW ===
+   Press O (or the Slides button) for every slide at once, as thumbnails.
+   The thumbnails are copies of the slides in their finished state: no
+   animation runs inside them, so the grid is still and prints nothing.
+   ======================================================================== */
+
+.ui-ov-icon {
+  display: inline-block;
+  width: 13px; height: 13px;
+  margin-right: 6px;
+  vertical-align: -1px;
+  background:
+    linear-gradient(currentColor, currentColor) 0 0 / 5px 5px no-repeat,
+    linear-gradient(currentColor, currentColor) 100% 0 / 5px 5px no-repeat,
+    linear-gradient(currentColor, currentColor) 0 100% / 5px 5px no-repeat,
+    linear-gradient(currentColor, currentColor) 100% 100% / 5px 5px no-repeat;
+}
+@media (max-width: 520px) {
+  .ui-ov-text { display: none; }
+  .ui-ov-icon { margin-right: 0; width: 15px; height: 15px; }
+}
+@media (forced-colors: active) {
+  .ui-ov-icon { forced-color-adjust: none; background-color: transparent; }
+}
+
+html.ov-is-open { overflow: hidden; }
+
+.ov {
+  --ov-scale: 0.2;
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0 0 24px;
+  border: 0;
+  background: var(--panel);
+  color: var(--body);
+  overflow: auto;
+  z-index: 100;
+}
+.ov::backdrop { background: rgba(22, 24, 29, 0.45); }
+.ov[open] { animation: fade-in 150ms ease-out both; }
+
+.ov-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 18px;
+  padding: 14px 24px;
+  background: #fff;
+  border-bottom: 2px solid var(--cardinal);
+}
+.ov-head h2 {
+  margin: 0;
+  font-family: var(--display);
+  font-size: 22px;
+  color: var(--ink);
+  border: 0;
+  padding: 0;
+}
+.ov-tip {
+  margin: 0;
+  flex: 1 1 auto;
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--muted);
+}
+.ov-close {
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  background: #fff;
+  border: 1.5px solid var(--rule-strong);
+  border-radius: 6px;
+  padding: 9px 15px;
+  min-height: 44px;
+  min-width: 44px;
+  cursor: pointer;
+}
+.ov-close:hover { border-color: var(--ink); }
+
+.ov-grid {
+  list-style: none;
+  margin: 0;
+  padding: 20px 24px 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(236px, 1fr));
+  gap: 18px;
+}
+.ov-grid > li { margin: 0; min-width: 0; }
+
+.ov-card {
+  display: block;
+  width: 100%;
+  padding: 0;
+  margin: 0;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  background: #fff;
+  border: 1.5px solid var(--rule-strong);
+  border-radius: 6px;
+  overflow: hidden;
+  cursor: pointer;
+}
+.ov-card:hover { border-color: var(--ink); }
+.ov-card:focus-visible,
+.ov-close:focus-visible {
+  outline: 3px solid var(--cardinal);
+  outline-offset: 3px;
+}
+.ov-card[aria-current="true"] {
+  border-color: var(--cardinal);
+  box-shadow: 0 0 0 2px var(--cardinal);
+}
+
+.ov-thumb {
+  display: block;
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  background: var(--paper);
+  border-bottom: 1px solid var(--rule);
+  pointer-events: none;
+}
+.ov-thumb > .ov-slide {
+  display: flex;
+  position: absolute;
+  top: 0; left: 0;
+  inset: auto;
+  width: 1280px;
+  height: 720px;
+  transform: scale(var(--ov-scale));
+  transform-origin: 0 0;
+}
+.ov-thumb, .ov-thumb * {
+  animation: none !important;
+  transition: none !important;
+}
+.ov-thumb .tn-halo { display: none; }
+
+.ov-label {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  padding: 8px 10px 10px;
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.35;
+  color: var(--ink);
+}
+.ov-num {
+  flex: 0 0 auto;
+  min-width: 1.6em;
+  font-weight: 700;
+  color: var(--cardinal-deep);
+}
+.ov-card[aria-current="true"] .ov-num::after {
+  content: " · now";
+  font-weight: 600;
+}
+
+@media (max-width: 520px) {
+  .ov-head { padding: 10px 14px; }
+  .ov-tip { display: none; }
+  .ov-grid { padding: 14px 14px 0; gap: 12px;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+  .ov-label { font-size: 13px; padding: 6px 8px 8px; }
+}
+
+@media print {
+  .ov { display: none !important; }
+}

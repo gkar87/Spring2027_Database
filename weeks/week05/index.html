@@ -1,0 +1,982 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Week 5 — SQL III: Changing Data, Tables, Constraints and Views · CS 4600/5200</title>
+<meta name="description" content="CS 4600/5200 week 5: transactions, INSERT, UPDATE and DELETE, CREATE and ALTER TABLE, data types, integrity constraints and foreign key actions, views, WITH RECURSIVE over course prerequisites, triggers, and privileges with GRANT and roles.">
+<link rel="stylesheet" href="../../assets/course.css">
+<link rel="stylesheet" href="../../assets/db.css">
+</head>
+<body>
+<a class="skip-link" href="#s1">Skip to the first slide</a>
+
+<div class="deck-stage">
+<main class="deck" aria-label="Week 5 lecture slides: changing data, defining tables, constraints, views, recursion, triggers and privileges">
+
+<!-- 1 ─────────────────────────────────────────────────────────── title -->
+<section class="slide slide--title" id="s1">
+  <p class="course-line">CS 4600/5200 · Database Theory and Applications · Week 5 of 15</p>
+  <h1>SQL III: Changing Data, Tables, Constraints and Views</h1>
+  <p class="subtitle">
+    So far we have only asked questions. Today we change the data, build tables of our own, and
+    write down the rules the data must keep, so that PostgreSQL refuses anything that breaks them.
+  </p>
+  <p class="byline">
+    Dr. Gorkem Kar
+    <span>University of Central Missouri</span>
+    <span>School of Computer Science and Cybersecurity</span>
+  </p>
+  <div class="title-art">
+<svg viewBox="0 0 380 330" aria-hidden="true" focusable="false" style="--dg-k:1">
+<rect class="dg-box" x="10" y="40" width="360" height="220" rx="4"/>
+<rect class="dg-box-m" x="10" y="40" width="360" height="44" rx="4"/>
+<text class="dg-sm-b" x="24" y="68">department</text>
+<path class="dg-line-q" d="M10 84 H370"/>
+<text class="dg-sm" x="24" y="112">Biology</text>
+<text class="dg-sm" x="190" y="112">Morrow</text>
+<path class="dg-line-q" d="M10 128 H370"/>
+<text class="dg-sm" x="24" y="156">History</text>
+<g class="v-dim" style="--d:1.40s"><text class="dg-sm" x="190" y="156">Linden</text></g>
+<g class="v-in" style="--d:1.60s"><text class="dg-sm dg-teal" x="280" y="156">Hale</text><path class="dg-line-t" d="M186 150 H260"/></g>
+<path class="dg-line-q" d="M10 172 H370"/>
+<text class="dg-sm" x="24" y="200">Music</text>
+<text class="dg-sm" x="190" y="200">Linden</text>
+<path class="dg-line-a v-draw" pathLength="1" style="--d:2.30s" stroke-width="3" d="M18 194 H362"/>
+<g class="v-in" style="--d:0.50s"><rect class="dg-hl-t" x="11" y="217" width="358" height="42"/><text class="dg-sm" x="24" y="244">Economics</text><text class="dg-sm" x="190" y="244">Watson</text></g>
+<g class="v-in" style="--d:0.50s"><text class="dg-sm-b dg-teal" x="10" y="300">INSERT</text></g>
+<g class="v-in" style="--d:1.60s"><text class="dg-sm-b dg-teal" x="130" y="300">UPDATE</text></g>
+<g class="v-in" style="--d:2.30s"><text class="dg-sm-b dg-teal" x="260" y="300">DELETE</text></g>
+</svg>
+  </div>
+  
+</section>
+
+<!-- 2 ─────────────────────────────────────────────── last week -->
+<section class="slide" id="s2">
+  <h2>Last week, in four lines</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <ol class="steps">
+        <li><span class="n" aria-hidden="true">1</span><div><strong>Aggregates skip NULLs; count(*) does not.</strong><p>Over no rows, count is 0 and the others are NULL.</p></div></li>
+        <li><span class="n" aria-hidden="true">2</span><div><strong>WHERE filters rows; HAVING filters groups.</strong><p>Every SELECT column is grouped or aggregated.</p></div></li>
+        <li><span class="n" aria-hidden="true">3</span><div><strong>NOT EXISTS answers "has none" and "every".</strong><p>It is never unknown; NOT IN and ALL can be.</p></div></li>
+        <li><span class="n" aria-hidden="true">4</span><div><strong>WITH names a step; windows rank without collapsing.</strong><p>Filter a window's result in an outer query.</p></div></li>
+      </ol>
+      <div class="fill" style="gap:16px">
+        <div class="panel panel--key">
+          <h3>Today: the statements that change things</h3>
+          <p>INSERT, UPDATE and DELETE change rows. CREATE, ALTER and DROP change tables. Constraints, views, triggers and privileges decide what may change, and who may see it.</p>
+        </div>
+        <div class="panel">
+          <h3>Reload the database this week</h3>
+          <p>One new table, <code>prereq</code>: which course must come before which. Download this week's <code>university.sql</code> and run it again; it puts the starting data back whenever you need it.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 3 ─────────────────────────────────────────────── section -->
+<section class="slide slide--section" id="s3">
+  <h2>Changing the data</h2>
+  <p>Transactions first, so every experiment can be undone; then INSERT, UPDATE and DELETE.</p>
+  
+</section>
+
+<!-- 4 ─────────────────────────────────────────────── transactions -->
+<section class="slide" id="s4">
+  <h2>Try changes safely: BEGIN, then COMMIT or ROLLBACK</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:1040px">
+<svg style="--dg-k:1" viewBox="0 0 1040 200" role="img" aria-labelledby="txt txd">
+<title id="txt">A transaction that is rolled back changes nothing</title>
+<desc id="txd">Five steps from left to right. BEGIN starts a transaction; takes has 22 rows. DELETE FROM takes removes all 22 rows. SELECT count(*) inside the transaction sees 0. ROLLBACK undoes the transaction. A SELECT afterwards sees 22 rows again, as if the DELETE never happened. With COMMIT instead of ROLLBACK, the 0 would have been permanent.</desc>
+<defs><marker id="txa" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#0e5a6b"/></marker></defs>
+<rect class="dg-wash v-in" style="--d:0.20s" x="8" y="26" width="604" height="120" rx="8"/>
+<text class="dg-lbl v-in" style="--d:0.20s" x="14" y="18">inside the transaction</text>
+<g class="v-in" style="--d:0.40s"><rect class="dg-box-t" x="14" y="44" width="180" height="40" rx="5"/><text class="dg-xs dg-mono" x="104.0" y="70" text-anchor="middle">BEGIN;</text><text class="dg-sm" x="104.0" y="114" text-anchor="middle">takes: 22 rows</text></g>
+<g class="v-in" style="--d:0.95s"><rect class="dg-box-a" x="220" y="44" width="180" height="40" rx="5"/><text class="dg-xs dg-mono" x="310.0" y="70" text-anchor="middle">DELETE FROM takes;</text><text class="dg-sm" x="310.0" y="114" text-anchor="middle">22 rows deleted</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:0.80s" d="M196 64 H216" marker-end="url(#txa)"/>
+<g class="v-in" style="--d:1.50s"><rect class="dg-box-a" x="426" y="44" width="180" height="40" rx="5"/><text class="dg-xs dg-mono" x="516.0" y="70" text-anchor="middle">SELECT count(*) …</text><text class="dg-sm" x="516.0" y="114" text-anchor="middle">sees 0</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.35s" d="M402 64 H422" marker-end="url(#txa)"/>
+<g class="v-in" style="--d:2.05s"><rect class="dg-box-t" x="632" y="44" width="180" height="40" rx="5"/><text class="dg-xs dg-mono" x="722.0" y="70" text-anchor="middle">ROLLBACK;</text><text class="dg-sm" x="722.0" y="114" text-anchor="middle">undo it all</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.90s" d="M608 64 H628" marker-end="url(#txa)"/>
+<g class="v-in" style="--d:2.60s"><rect class="dg-box-t" x="838" y="44" width="180" height="40" rx="5"/><text class="dg-xs dg-mono" x="928.0" y="70" text-anchor="middle">SELECT count(*) …</text><text class="dg-sm" x="928.0" y="114" text-anchor="middle">sees 22 again</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:2.45s" d="M814 64 H834" marker-end="url(#txa)"/>
+<text class="dg-txt-s v-in" style="--d:3.40s" x="14" y="186">ROLLBACK undoes every change since BEGIN. COMMIT would make them permanent.</text>
+</svg>
+      <figcaption><strong>Figure 5.1.</strong> A transaction groups statements into one unit. <code>ROLLBACK</code> undoes all of them; <code>COMMIT</code> keeps all of them. <a class="try" href="playground.html#dml">Run it, playground example 1.1</a></figcaption>
+    </figure>
+    <div class="cols-2">
+      <ul>
+        <li><strong>Atomic:</strong> all of a transaction's changes happen, or none do. A failed statement means none.</li>
+        <li>In psql, a statement outside BEGIN is its own transaction and is committed at once. There is no undo.</li>
+      </ul>
+      <div class="callout" style="margin:0">
+        <span class="mark" aria-hidden="true">!</span>
+        <p>Before you run an UPDATE or DELETE on real data, type <code>BEGIN;</code> first. Check the result, then decide.</p>
+      </div>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 5 ─────────────────────────────────────────────── insert -->
+<section class="slide" id="s5">
+  <h2>INSERT adds rows: listed values, or a query's result</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div>
+        <pre class="code"><span class="c">-- every column, in table order</span>
+<span class="k">INSERT</span> <span class="k">INTO</span> department
+<span class="k">VALUES</span> (<span class="s">'Art'</span>, <span class="s">'Morrow'</span>, 40000);
+
+<span class="c">-- named columns; the rest: DEFAULT or NULL</span>
+<span class="k">INSERT</span> <span class="k">INTO</span> student (id, name)
+<span class="k">VALUES</span> (<span class="s">'77777'</span>, <span class="s">'Pat Moreno'</span>);
+
+<span class="c">-- many rows from a query</span>
+<span class="k">INSERT</span> <span class="k">INTO</span> takes (id, course_id, semester, year)
+<span class="k">SELECT</span> id, <span class="s">'CS-101'</span>, <span class="s">'Fall'</span>, 2027
+<span class="k">FROM</span> student
+<span class="k">WHERE</span> dept_name <span class="k">IS</span> <span class="k">NULL</span>;</pre>
+      </div>
+      <div class="fill" style="gap:14px">
+        <ul>
+          <li>Name the columns. The statement then survives a new column, and a reader knows which value goes where.</li>
+          <li>Pat Moreno gets <code>dept_name</code> NULL and <code>tot_cred</code> 0, because <code>student</code> says <code>tot_cred integer DEFAULT 0</code>.</li>
+          <li>INSERT … SELECT adds one row per row of the query: here Emery Walsh and the new Pat Moreno, the two students with no department.</li>
+        </ul>
+        <div class="panel panel--definition">
+          <span class="term">DEFAULT</span>
+          <p>The value a column gets when an INSERT leaves it out. Without one, the default is NULL.</p>
+        </div>
+      </div>
+    </div>
+    <p><a class="try" href="playground.html#dml">Run all three in a transaction, playground example 1.2</a></p>
+  </div>
+  
+</section>
+
+<!-- 6 ─────────────────────────────────────────────── update -->
+<section class="slide" id="s6">
+  <h2>UPDATE changes values in the rows WHERE picks</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div>
+        <pre class="code"><span class="c">-- 3% at 90,000 or more, else 5%</span>
+<span class="k">UPDATE</span> instructor
+<span class="k">SET</span> salary = <span class="k">CASE</span>
+  <span class="k">WHEN</span> salary &gt;= 90000 <span class="k">THEN</span> salary * 1.03
+  <span class="k">ELSE</span> salary * 1.05
+<span class="k">END</span>;</pre>
+        <p style="margin-top:12px">11 rows updated: no WHERE means every row. Noor Haddad's NULL salary stays NULL, because NULL × 1.05 is NULL.</p>
+      </div>
+      <div class="fill" style="gap:14px">
+        <div class="panel panel--key">
+          <h3>Why one statement, not two</h3>
+          <p>Run "5% where salary &lt; 90,000" first and Maria Lopez goes from 87,000 to 91,350. Then "3% where salary ≥ 90,000" raises that salary again. One UPDATE with CASE decides every row from its old value.</p>
+        </div>
+        <div class="callout" style="margin:0">
+          <span class="mark" aria-hidden="true">!</span>
+          <p>An UPDATE or DELETE with no WHERE changes every row. Run the WHERE as a SELECT first to see which rows it picks.</p>
+        </div>
+      </div>
+    </div>
+    <p><a class="try" href="playground.html#dml">Run it, playground example 1.3</a></p>
+  </div>
+  
+</section>
+
+<!-- 7 ─────────────────────────────────────────────── snapshot -->
+<section class="slide" id="s7">
+  <h2>A subquery in UPDATE or DELETE sees the data from before</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:920px">
+<svg style="--dg-k:1" viewBox="0 0 960 400" role="img" aria-labelledby="snt snd">
+<title id="snt">The subquery in an UPDATE is computed once, before any row changes</title>
+<desc id="snd">UPDATE instructor SET salary = salary * 1.05 WHERE salary &lt; (SELECT avg(salary) FROM instructor). Bars show the ten known salaries, lowest first. A dashed line marks the average, 80,900, computed once before the update. The five bars below it, Lena Fischer 61,000, Tomas Novak 62,000, Diego Torres 72,000, Priya Raman 75,000 and Hana Sato 80,000, each grow by 5 percent: to 64,050, 65,100, 75,600, 78,750 and 84,000. The five above it do not change, and Noor Haddad&#x27;s NULL salary is not compared at all. Afterwards the average is 82,650, but the update still used 80,900; if it had recomputed the average after each row, the answer would depend on the order of the rows.</desc>
+<path class="dg-line" d="M60 330 H930"/>
+<text class="dg-xs" x="54" y="195.0" text-anchor="end">50k</text>
+<path class="dg-line-q" d="M60 190 H930"/>
+<text class="dg-xs" x="54" y="125.0" text-anchor="end">75k</text>
+<path class="dg-line-q" d="M60 120 H930"/>
+<text class="dg-xs" x="54" y="55.0" text-anchor="end">100k</text>
+<path class="dg-line-q" d="M60 50 H930"/>
+<rect class="dg-bar" x="80" y="159" width="62" height="171"/>
+<text class="dg-xs" x="111.0" y="350" text-anchor="middle">Lena</text>
+<rect class="dg-bar-a v-in" style="--d:1.60s" x="80" y="151" width="62" height="8.5"/>
+<text class="dg-xs v-in" style="--d:1.70s" x="111.0" y="143" text-anchor="middle" font-weight="700">64.05k</text>
+<rect class="dg-bar" x="164" y="156" width="62" height="174"/>
+<text class="dg-xs" x="195.0" y="350" text-anchor="middle">Tomas</text>
+<rect class="dg-bar-a v-in" style="--d:1.85s" x="164" y="148" width="62" height="8.7"/>
+<text class="dg-xs v-in" style="--d:1.95s" x="195.0" y="140" text-anchor="middle" font-weight="700">65.10k</text>
+<rect class="dg-bar" x="248" y="128" width="62" height="202"/>
+<text class="dg-xs" x="279.0" y="350" text-anchor="middle">Diego</text>
+<rect class="dg-bar-a v-in" style="--d:2.10s" x="248" y="118" width="62" height="10.1"/>
+<text class="dg-xs v-in" style="--d:2.20s" x="279.0" y="110" text-anchor="middle" font-weight="700">75.60k</text>
+<rect class="dg-bar" x="332" y="120" width="62" height="210"/>
+<text class="dg-xs" x="363.0" y="350" text-anchor="middle">Priya</text>
+<rect class="dg-bar-a v-in" style="--d:2.35s" x="332" y="110" width="62" height="10.5"/>
+<text class="dg-xs v-in" style="--d:2.45s" x="363.0" y="102" text-anchor="middle" font-weight="700">78.75k</text>
+<rect class="dg-bar" x="416" y="106" width="62" height="224"/>
+<text class="dg-xs" x="447.0" y="350" text-anchor="middle">Hana</text>
+<rect class="dg-bar-a v-in" style="--d:2.60s" x="416" y="95" width="62" height="11.2"/>
+<text class="dg-xs v-in" style="--d:2.70s" x="447.0" y="87" text-anchor="middle" font-weight="700">84.00k</text>
+<rect class="dg-bar" x="500" y="86" width="62" height="244"/>
+<text class="dg-xs" x="531.0" y="350" text-anchor="middle">Maria</text>
+<rect class="dg-bar" x="584" y="86" width="62" height="244"/>
+<text class="dg-xs" x="615.0" y="350" text-anchor="middle">Kofi</text>
+<rect class="dg-bar" x="668" y="72" width="62" height="258"/>
+<text class="dg-xs" x="699.0" y="350" text-anchor="middle">Jordan</text>
+<rect class="dg-bar" x="752" y="64" width="62" height="266"/>
+<text class="dg-xs" x="783.0" y="350" text-anchor="middle">Sam</text>
+<rect class="dg-bar" x="836" y="56" width="62" height="274"/>
+<text class="dg-xs" x="867.0" y="350" text-anchor="middle">Avery</text>
+<path class="dg-dash v-draw" pathLength="1" style="--d:0.50s" d="M60 103 H930" stroke-width="2.4"/>
+<text class="dg-xs v-in" style="--d:0.90s" x="74" y="95" font-weight="700">average, computed before: 80,900</text>
+<text class="dg-lbl" x="60" y="24">salary, with the 5% raise in red</text>
+<text class="dg-txt-s v-in" style="--d:3.40s" x="60" y="380">5 rows updated. The average is now 82,650, but the WHERE used 80,900 for every row.</text>
+</svg>
+      <figcaption><strong>Figure 5.2.</strong> <code>UPDATE instructor SET salary = salary * 1.05 WHERE salary &lt; (SELECT avg(salary) FROM instructor);</code> PostgreSQL computes the average once, then changes the rows. <a class="try" href="playground.html#dml">Run it, playground example 1.4</a></figcaption>
+    </figure>
+  </div>
+  
+</section>
+
+<!-- 8 ─────────────────────────────────────────────── delete -->
+<section class="slide" id="s8">
+  <h2>DELETE removes rows, unless another table still needs them</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div>
+        <pre class="code"><span class="c">-- the three enrollments with no grade yet</span>
+<span class="k">DELETE</span> <span class="k">FROM</span> takes <span class="k">WHERE</span> year = 2027;
+
+<span class="c">-- every row: the table stays, empty</span>
+<span class="k">DELETE</span> <span class="k">FROM</span> takes;
+
+<span class="c">-- refused: teaches still points at this row</span>
+<span class="k">DELETE</span> <span class="k">FROM</span> instructor <span class="k">WHERE</span> name = <span class="s">'Priya Raman'</span>;
+<span class="c">-- ERROR: update or delete on table "instructor"</span>
+<span class="c">-- violates foreign key constraint</span>
+<span class="c">-- "teaches_id_fkey" on table "teaches"</span></pre>
+      </div>
+      <div class="fill" style="gap:14px">
+        <table class="tbl tbl--compact">
+          <caption class="visually-hidden">Three ways to remove data</caption>
+          <thead><tr><th scope="col">Statement</th><th scope="col">What goes</th></tr></thead>
+          <tbody>
+            <tr><td><code>DELETE FROM t WHERE …</code></td><td>The rows WHERE picks. Constraints are checked row by row.</td></tr>
+            <tr><td><code>TRUNCATE t</code></td><td>Every row, fast. The table stays.</td></tr>
+            <tr><td><code>DROP TABLE t</code></td><td>The rows and the table itself.</td></tr>
+          </tbody>
+        </table>
+        <div class="panel">
+          <h3>The refusal is a feature</h3>
+          <p>Priya Raman teaches two sections. Deleting that row would leave rows in <code>teaches</code> pointing at nobody, so PostgreSQL refuses. Slide 15 shows the other choices.</p>
+        </div>
+      </div>
+    </div>
+    <p><a class="try" href="playground.html#dml">Run them, playground examples 1.5 and 1.6</a></p>
+  </div>
+  
+</section>
+
+<!-- 9 ─────────────────────────────────────────────── section -->
+<section class="slide slide--section" id="s9">
+  <h2>Defining tables</h2>
+  <p>CREATE TABLE, the types a column can have, and ALTER and DROP for tables that already hold data.</p>
+  
+</section>
+
+<!-- 10 ────────────────────────────────────────────── create table -->
+<section class="slide" id="s10">
+  <h2>CREATE TABLE: columns, types and the rules they keep</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div>
+        <pre class="code"><span class="k">CREATE</span> <span class="k">TABLE</span> prereq (
+  course_id  varchar(8) <span class="k">REFERENCES</span> course,
+  prereq_id  varchar(8) <span class="k">REFERENCES</span> course,
+  <span class="k">PRIMARY</span> <span class="k">KEY</span> (course_id, prereq_id),
+  <span class="k">CHECK</span> (course_id &lt;&gt; prereq_id)
+);
+
+<span class="k">INSERT</span> <span class="k">INTO</span> prereq <span class="k">VALUES</span>
+  (<span class="s">'CS-190'</span>, <span class="s">'CS-101'</span>),
+  (<span class="s">'CS-315'</span>, <span class="s">'CS-190'</span>),
+  (<span class="s">'CS-319'</span>, <span class="s">'CS-315'</span>);   <span class="c">-- and 3 more</span></pre>
+      </div>
+      <div class="fill" style="gap:12px">
+        <ol class="steps">
+          <li><span class="n" aria-hidden="true">1</span><div><strong>Each column has a name and a type.</strong><p>Both are course ids, so both use course's type, varchar(8).</p></div></li>
+          <li><span class="n" aria-hidden="true">2</span><div><strong>REFERENCES makes each a foreign key.</strong><p>A prereq row can only name courses that exist.</p></div></li>
+          <li><span class="n" aria-hidden="true">3</span><div><strong>The key is both columns together.</strong><p>A key of two columns is written as a table constraint, after the columns.</p></div></li>
+          <li><span class="n" aria-hidden="true">4</span><div><strong>CHECK states a rule about the row.</strong><p>A course cannot be its own prerequisite.</p></div></li>
+        </ol>
+      </div>
+    </div>
+    <p><a class="try" href="playground.html#ddl">Build a table of your own, playground example 2.1</a></p>
+  </div>
+  
+</section>
+
+<!-- 11 ────────────────────────────────────────────── types -->
+<section class="slide" id="s11">
+  <h2>Pick the type that says what the value is</h2>
+  <div class="slide-main">
+    <table class="tbl tbl--compact">
+      <caption class="visually-hidden">Common PostgreSQL column types and when to use them</caption>
+      <thead><tr><th scope="col">Type</th><th scope="col">Holds</th><th scope="col">Use it for</th></tr></thead>
+      <tbody>
+        <tr><td><code>char(n)</code>, <code>varchar(n)</code>, <code>text</code></td><td>Exactly n characters (padded); up to n; any length</td><td>Fixed-length codes such as our ids; names and titles; long notes</td></tr>
+        <tr><td><code>integer</code>, <code>bigint</code></td><td>Whole numbers</td><td>Counts, credits, years</td></tr>
+        <tr><td><code>numeric(p, s)</code></td><td>Exact decimals: p digits, s after the point</td><td>Money. <code>numeric(8,2)</code> holds up to 999,999.99</td></tr>
+        <tr><td><code>real</code>, <code>double precision</code></td><td>Approximate binary fractions</td><td>Measurements. Never money: 0.1 + 0.2 is 0.30000000000000004</td></tr>
+        <tr><td><code>boolean</code></td><td>true, false, or NULL</td><td>Flags such as <code>is_active</code></td></tr>
+        <tr><td><code>date</code>, <code>timestamp</code>, <code>interval</code></td><td>A day; a moment; a length of time</td><td><code>DATE '2027-02-09' + 7</code> is February 16</td></tr>
+      </tbody>
+    </table>
+    <div class="callout">
+      <span class="mark" aria-hidden="true">!</span>
+      <p>Integer division truncates: <code>7 / 2</code> is 3, and <code>7 / 2.0</code> is 3.5. Week 4's averages were numeric because <code>avg</code> returns numeric for integer input.</p>
+    </div>
+    <p><a class="try" href="playground.html#ddl">Try each, playground example 2.2</a></p>
+  </div>
+  
+</section>
+
+<!-- 12 ────────────────────────────────────────────── alter / drop -->
+<section class="slide" id="s12">
+  <h2>ALTER TABLE changes a table that already holds rows</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div>
+        <pre class="code"><span class="c">-- new column: existing rows get NULL</span>
+<span class="k">ALTER</span> <span class="k">TABLE</span> department
+  <span class="k">ADD</span> <span class="k">COLUMN</span> phone varchar(12);
+<span class="c">-- ... or the DEFAULT, if you give one</span>
+<span class="k">ALTER</span> <span class="k">TABLE</span> course
+  <span class="k">ADD</span> <span class="k">COLUMN</span> active boolean <span class="k">DEFAULT</span> true;
+<span class="c">-- rename, and remove</span>
+<span class="k">ALTER</span> <span class="k">TABLE</span> department
+  <span class="k">RENAME</span> <span class="k">COLUMN</span> phone <span class="k">TO</span> office;
+<span class="k">ALTER</span> <span class="k">TABLE</span> department <span class="k">DROP</span> <span class="k">COLUMN</span> office;
+<span class="c">-- a table, and the views built on it</span>
+<span class="k">DROP</span> <span class="k">TABLE</span> <span class="k">IF</span> <span class="k">EXISTS</span> club <span class="k">CASCADE</span>;</pre>
+      </div>
+      <div class="fill" style="gap:14px">
+        <ul>
+          <li>Each ALTER is checked against the rows already there. Adding <code>NOT NULL</code> to a column that holds a NULL fails.</li>
+          <li><code>IF EXISTS</code> turns "no such table" from an error into a notice, so a script can run twice.</li>
+          <li><code>CASCADE</code> also drops what depends on the table, such as views and other tables' foreign keys. Read what it says it dropped.</li>
+        </ul>
+        <div class="panel panel--key">
+          <h3>DDL is transactional in PostgreSQL</h3>
+          <p>CREATE, ALTER and DROP inside BEGIN … ROLLBACK are undone too. Not every database can do this.</p>
+        </div>
+      </div>
+    </div>
+    <p><a class="try" href="playground.html#ddl">Run it, playground example 2.3</a></p>
+  </div>
+  
+</section>
+
+<!-- 13 ────────────────────────────────────────────── section -->
+<section class="slide slide--section" id="s13">
+  <h2>Integrity constraints</h2>
+  <p>Rules written once, in the table, and enforced on every change from every program.</p>
+  
+</section>
+
+<!-- 14 ────────────────────────────────────────────── constraints -->
+<section class="slide" id="s14">
+  <h2>Four constraints on a single table</h2>
+  <div class="slide-main">
+    <table class="tbl tbl--compact">
+      <caption class="visually-hidden">Single-table constraints, an example of each, and the error PostgreSQL gives</caption>
+      <thead><tr><th scope="col">Constraint</th><th scope="col">Says</th><th scope="col">Breaking it on our database</th></tr></thead>
+      <tbody>
+        <tr><td><code>NOT NULL</code></td><td>A value is required</td><td><code>null value in column "name" of relation "instructor" violates not-null constraint</code></td></tr>
+        <tr><td><code>UNIQUE</code></td><td>No two rows share the value; NULLs do not count</td><td><code>duplicate key value violates unique constraint …</code></td></tr>
+        <tr><td><code>PRIMARY KEY</code></td><td>UNIQUE and NOT NULL; one per table</td><td>Inserting id 10101 again: <code>… unique constraint "instructor_pkey"</code></td></tr>
+        <tr><td><code>CHECK (…)</code></td><td>The condition must not be false</td><td>A salary of 20,000: <code>violates check constraint "instructor_salary_check"</code></td></tr>
+      </tbody>
+    </table>
+    <div class="callout">
+      <span class="mark" aria-hidden="true">!</span>
+      <p>CHECK rejects only <strong>false</strong>. For a NULL salary, <code>salary &gt; 29000</code> is unknown, so the row is accepted. That is how Noor Haddad got in. If a value is required, say NOT NULL as well.</p>
+    </div>
+    <p><a class="try" href="playground.html#constraints">Break each one, playground examples 3.1 and 3.2</a></p>
+  </div>
+  
+</section>
+
+<!-- 15 ────────────────────────────────────────────── foreign keys -->
+<section class="slide" id="s15">
+  <h2>A foreign key decides what happens when its row is deleted</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:900px">
+<svg style="--dg-k:1" viewBox="0 0 960 340" role="img" aria-labelledby="fkt fkd">
+<title id="fkt">What deleting a referenced row does under three foreign key actions</title>
+<desc id="fkd">The statement is DELETE FROM department WHERE dept_name = &#x27;History&#x27;. Two instructors, Lena Fischer and Tomas Novak, reference History. Left, NO ACTION, the default, also called RESTRICT: the delete is refused with an error, and both rows are unchanged. Middle, ON DELETE CASCADE: the department is deleted, and both instructor rows are deleted with it. Right, ON DELETE SET NULL: the department is deleted, and both instructors stay with dept_name set to NULL.</desc>
+<g class="v-in" style="--d:0.10s"><rect class="dg-box-a" x="190" y="6" width="580" height="38" rx="5"/><text class="dg-sm dg-mono" x="480" y="31" text-anchor="middle">DELETE FROM department WHERE dept_name = &#x27;History&#x27;;</text></g>
+<g class="v-in" style="--d:0.60s"><text class="dg-sm-b" x="20" y="82">NO ACTION (default)</text></g>
+<rect class="dg-box v-in" style="--d:0.60s" x="20" y="96" width="290" height="96"/>
+<rect class="dg-box-m v-in" style="--d:0.60s" x="20" y="96" width="290" height="32"/>
+<g class="v-in" style="--d:0.60s"><text class="dg-xs" x="30" y="117" font-weight="700">name</text><text class="dg-xs" x="170" y="117" font-weight="700">dept_name</text></g>
+
+<g class="v-in" style="--d:0.60s"><text class="dg-xs" x="30" y="150">Lena Fischer</text></g>
+<g class="v-in" style="--d:0.60s"><text class="dg-xs" x="170" y="150">History</text></g>
+<path class="dg-line-q" d="M20 160 H310"/>
+<g class="v-in" style="--d:0.60s"><text class="dg-xs" x="30" y="182">Tomas Novak</text></g>
+<g class="v-in" style="--d:0.60s"><text class="dg-xs" x="170" y="182">History</text></g>
+<text class="dg-xs dg-txt-bad v-in" style="--d:1.20s" x="20" y="222" font-weight="700">✗ refused: rows still point at History</text>
+<g class="v-in" style="--d:1.20s"><rect class="dg-bad" x="20" y="236" width="290" height="34" rx="4"/><text class="dg-xs" x="32" y="258">department keeps 7 rows</text></g>
+<g class="v-in" style="--d:1.50s"><text class="dg-sm-b" x="336" y="82">ON DELETE CASCADE</text></g>
+<rect class="dg-box v-in" style="--d:1.50s" x="336" y="96" width="290" height="96"/>
+<rect class="dg-box-m v-in" style="--d:1.50s" x="336" y="96" width="290" height="32"/>
+<g class="v-in" style="--d:1.50s"><text class="dg-xs" x="346" y="117" font-weight="700">name</text><text class="dg-xs" x="486" y="117" font-weight="700">dept_name</text></g>
+
+<g class="v-in" style="--d:1.50s"><text class="dg-xs" x="346" y="150">Lena Fischer</text></g>
+<g class="v-in" style="--d:1.50s"><text class="dg-xs" x="486" y="150">History</text></g>
+<path class="dg-line-a v-draw" pathLength="1" style="--d:1.90s" stroke-width="2.5" d="M342 144 H620"/>
+<path class="dg-line-q" d="M336 160 H626"/>
+<g class="v-in" style="--d:1.50s"><text class="dg-xs" x="346" y="182">Tomas Novak</text></g>
+<g class="v-in" style="--d:1.50s"><text class="dg-xs" x="486" y="182">History</text></g>
+<path class="dg-line-a v-draw" pathLength="1" style="--d:2.05s" stroke-width="2.5" d="M342 176 H620"/>
+<text class="dg-xs dg-txt-ok v-in" style="--d:2.10s" x="336" y="222" font-weight="700">✓ History deleted, and its instructors too</text>
+<g class="v-in" style="--d:2.10s"><rect class="dg-ok" x="336" y="236" width="290" height="34" rx="4"/><text class="dg-xs" x="348" y="258">department has 6 rows</text></g>
+<g class="v-in" style="--d:2.40s"><text class="dg-sm-b" x="652" y="82">ON DELETE SET NULL</text></g>
+<rect class="dg-box v-in" style="--d:2.40s" x="652" y="96" width="290" height="96"/>
+<rect class="dg-box-m v-in" style="--d:2.40s" x="652" y="96" width="290" height="32"/>
+<g class="v-in" style="--d:2.40s"><text class="dg-xs" x="662" y="117" font-weight="700">name</text><text class="dg-xs" x="802" y="117" font-weight="700">dept_name</text></g>
+
+<g class="v-in" style="--d:2.40s"><text class="dg-xs" x="662" y="150">Lena Fischer</text></g>
+<g class="v-dim" style="--d:2.80s"><text class="dg-xs" x="802" y="150">History</text></g>
+<text class="dg-xs dg-txt-warn v-in" style="--d:2.90s" x="882" y="150" font-style="italic">NULL</text>
+<path class="dg-line-q" d="M652 160 H942"/>
+<g class="v-in" style="--d:2.40s"><text class="dg-xs" x="662" y="182">Tomas Novak</text></g>
+<g class="v-dim" style="--d:2.80s"><text class="dg-xs" x="802" y="182">History</text></g>
+<text class="dg-xs dg-txt-warn v-in" style="--d:2.90s" x="882" y="182" font-style="italic">NULL</text>
+<text class="dg-xs dg-txt-ok v-in" style="--d:3.00s" x="652" y="222" font-weight="700">✓ History deleted; instructors kept</text>
+<g class="v-in" style="--d:3.00s"><rect class="dg-ok" x="652" y="236" width="290" height="34" rx="4"/><text class="dg-xs" x="664" y="258">department has 6 rows</text></g>
+<text class="dg-txt-s v-in" style="--d:3.60s" x="20" y="318">The action belongs to the foreign key: REFERENCES department ON DELETE CASCADE.</text>
+</svg>
+      <figcaption><strong>Figure 5.3.</strong> The same DELETE under three foreign key actions. Our tables use the default, so slide 8's DELETE was refused. <a class="try" href="playground.html#constraints">Try all three, playground section 3</a></figcaption>
+    </figure>
+    <pre class="code">dept_name varchar(20) <span class="k">REFERENCES</span> department <span class="k">ON</span> <span class="k">DELETE</span> <span class="k">SET</span> <span class="k">NULL</span> <span class="k">ON</span> <span class="k">UPDATE</span> <span class="k">CASCADE</span></pre>
+  </div>
+  
+</section>
+
+<!-- 16 ────────────────────────────────────────────── named constraints -->
+<section class="slide" id="s16">
+  <h2>Name your constraints, and add them later if you must</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div>
+        <pre class="code"><span class="k">ALTER</span> <span class="k">TABLE</span> course
+  <span class="k">ADD</span> <span class="k">CONSTRAINT</span> credits_range
+  <span class="k">CHECK</span> (credits <span class="k">BETWEEN</span> 1 <span class="k">AND</span> 6);
+
+<span class="k">INSERT</span> <span class="k">INTO</span> course
+<span class="k">VALUES</span> (<span class="s">'CS-999'</span>, <span class="s">'Marathon'</span>, <span class="s">'Comp. Sci.'</span>, 8);
+<span class="c">-- ERROR: new row for relation "course"</span>
+<span class="c">-- violates check constraint "credits_range"</span>
+
+<span class="k">ALTER</span> <span class="k">TABLE</span> course <span class="k">DROP</span> <span class="k">CONSTRAINT</span> credits_range;</pre>
+      </div>
+      <div class="fill" style="gap:14px">
+        <ul>
+          <li>A name you chose tells the reader which rule failed. PostgreSQL's own names, such as <code>course_credits_check</code>, are guessable but not chosen.</li>
+          <li>Adding a constraint checks every existing row. If one breaks it, the ALTER fails and nothing changes.</li>
+          <li>Drop or replace a rule by its name.</li>
+        </ul>
+        <div class="panel panel--key">
+          <h3>Why in the database, not the app?</h3>
+          <p>The registrar's web form, a Python script and a tired person in psql all go through the same table. A rule in the table holds for all three.</p>
+        </div>
+      </div>
+    </div>
+    <p><a class="try" href="playground.html#constraints">Run it, playground example 3.3</a></p>
+  </div>
+  
+</section>
+
+<!-- 17 ────────────────────────────────────────────── section -->
+<section class="slide slide--section" id="s17">
+  <h2>Views</h2>
+  <p>A query with a name, used like a table: to hide columns, to save typing, and to give each reader the slice they need.</p>
+  
+</section>
+
+<!-- 18 ────────────────────────────────────────────── a view -->
+<section class="slide" id="s18">
+  <h2>A view is a stored query, not stored rows</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:960px">
+<svg style="--dg-k:1" viewBox="0 0 960 330" role="img" aria-labelledby="vwt vwd">
+<title id="vwt">A view stores a query, not rows</title>
+<desc id="vwd">Left, the instructor table with four columns: id, name, dept_name and salary. Middle, the view faculty, defined as SELECT id, name, dept_name FROM instructor; it is stored as that query only. Right, the result of SELECT * FROM faculty: the same rows with three columns, salary left out. Each time the view is read, PostgreSQL runs the stored query again on the current rows, so a new instructor appears in the view at once.</desc>
+<defs><marker id="vwa" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#0e5a6b"/></marker></defs>
+<text class="dg-sm-b" x="20" y="50">instructor (a table: rows on disk)</text>
+<rect class="dg-box" x="20" y="60" width="362" height="160"/>
+<rect class="dg-box-m" x="20" y="60" width="362" height="32"/>
+<text class="dg-xs" font-weight="700" x="28" y="82">id</text>
+<text class="dg-xs" font-weight="700" x="90" y="82">name</text>
+<text class="dg-xs" font-weight="700" x="206" y="82">dept_name</text>
+<text class="dg-xs" font-weight="700" x="314" y="82">salary</text>
+<g>
+<text class="dg-xs" x="28" y="114">10101</text>
+<text class="dg-xs" x="90" y="114">Avery Chen</text>
+<text class="dg-xs" x="206" y="114">Comp. Sci.</text>
+<text class="dg-xs dg-txt-s" x="314" y="114">98,000</text>
+</g>
+<path class="dg-line-q" d="M20 124 H382"/>
+<g>
+<text class="dg-xs" x="28" y="146">12121</text>
+<text class="dg-xs" x="90" y="146">Jordan Patel</text>
+<text class="dg-xs" x="206" y="146">Comp. Sci.</text>
+<text class="dg-xs dg-txt-s" x="314" y="146">92,000</text>
+</g>
+<path class="dg-line-q" d="M20 156 H382"/>
+<g>
+<text class="dg-xs" x="28" y="178">15151</text>
+<text class="dg-xs" x="90" y="178">Maria Lopez</text>
+<text class="dg-xs" x="206" y="178">Mathematics</text>
+<text class="dg-xs dg-txt-s" x="314" y="178">87,000</text>
+</g>
+<path class="dg-line-q" d="M20 188 H382"/>
+<g>
+<text class="dg-xs" x="28" y="210">22222</text>
+<text class="dg-xs" x="90" y="210">Sam Okafor</text>
+<text class="dg-xs" x="206" y="210">Physics</text>
+<text class="dg-xs dg-txt-s" x="314" y="210">95,000</text>
+</g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:0.80s" d="M390 140 H434" marker-end="url(#vwa)"/>
+<g class="v-in" style="--d:1.00s"><rect class="dg-box-t" x="440" y="76" width="210" height="130" rx="6"/><text class="dg-sm-b" x="454" y="102">view faculty</text><text class="dg-xs dg-mono" x="454" y="130">SELECT id, name,</text><text class="dg-xs dg-mono" x="454" y="150">       dept_name</text><text class="dg-xs dg-mono" x="454" y="170">FROM instructor</text><text class="dg-xs dg-teal" x="454" y="194">stored: the query only</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.60s" d="M656 140 H694" marker-end="url(#vwa)"/>
+<text class="dg-sm-b" x="700" y="50">SELECT * FROM faculty</text>
+<rect class="dg-box" x="700" y="60" width="286" height="160"/>
+<rect class="dg-box-m" x="700" y="60" width="286" height="32"/>
+<text class="dg-xs" font-weight="700" x="708" y="82">id</text>
+<text class="dg-xs" font-weight="700" x="770" y="82">name</text>
+<text class="dg-xs" font-weight="700" x="886" y="82">dept_name</text>
+<rect class="dg-hl-t v-in" style="--d:1.90s" x="701" y="93" width="284" height="30"/>
+<g>
+<text class="dg-xs" x="708" y="114">10101</text>
+<text class="dg-xs" x="770" y="114">Avery Chen</text>
+<text class="dg-xs" x="886" y="114">Comp. Sci.</text>
+</g>
+<rect class="dg-hl-t v-in" style="--d:2.05s" x="701" y="125" width="284" height="30"/>
+<path class="dg-line-q" d="M700 124 H986"/>
+<g>
+<text class="dg-xs" x="708" y="146">12121</text>
+<text class="dg-xs" x="770" y="146">Jordan Patel</text>
+<text class="dg-xs" x="886" y="146">Comp. Sci.</text>
+</g>
+<rect class="dg-hl-t v-in" style="--d:2.20s" x="701" y="157" width="284" height="30"/>
+<path class="dg-line-q" d="M700 156 H986"/>
+<g>
+<text class="dg-xs" x="708" y="178">15151</text>
+<text class="dg-xs" x="770" y="178">Maria Lopez</text>
+<text class="dg-xs" x="886" y="178">Mathematics</text>
+</g>
+<rect class="dg-hl-t v-in" style="--d:2.35s" x="701" y="189" width="284" height="30"/>
+<path class="dg-line-q" d="M700 188 H986"/>
+<g>
+<text class="dg-xs" x="708" y="210">22222</text>
+<text class="dg-xs" x="770" y="210">Sam Okafor</text>
+<text class="dg-xs" x="886" y="210">Physics</text>
+</g>
+<text class="dg-txt-s v-in" style="--d:3.00s" x="20" y="262">Every read reruns the stored query on the current rows: no copy to keep in step.</text>
+<text class="dg-txt-s v-in" style="--d:3.30s" x="20" y="292">GRANT SELECT ON faculty, and not on instructor, and the salary column stays private.</text>
+</svg>
+      <figcaption><strong>Figure 5.4.</strong> <code>CREATE VIEW faculty AS SELECT id, name, dept_name FROM instructor;</code> Reading the view runs its query on today's rows. <a class="try" href="playground.html#views">Run it, playground example 4.1</a></figcaption>
+    </figure>
+  </div>
+  
+</section>
+
+<!-- 19 ────────────────────────────────────────────── views for questions -->
+<section class="slide" id="s19">
+  <h2>Name a question once, then ask it like a table</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div>
+        <pre class="code"><span class="k">CREATE</span> <span class="k">VIEW</span> dept_summary <span class="k">AS</span>
+<span class="k">SELECT</span> d.dept_name,
+       count(i.id)         <span class="k">AS</span> instructors,
+       round(avg(i.salary)) <span class="k">AS</span> avg_salary
+<span class="k">FROM</span> department d
+<span class="k">LEFT</span> <span class="k">JOIN</span> instructor i <span class="k">ON</span> i.dept_name = d.dept_name
+<span class="k">GROUP</span> <span class="k">BY</span> d.dept_name;
+
+<span class="k">SELECT</span> * <span class="k">FROM</span> dept_summary <span class="k">WHERE</span> instructors = 0;</pre>
+        <table class="tbl tbl--result" style="margin-top:14px">
+          <caption>Result: 1 row</caption>
+          <thead><tr><th scope="col">dept_name</th><th scope="col" class="num">instructors</th><th scope="col" class="num">avg_salary</th></tr></thead>
+          <tbody><tr><td>Economics</td><td class="num">0</td><td class="null">NULL</td></tr></tbody>
+        </table>
+      </div>
+      <div class="fill" style="gap:14px">
+        <ul>
+          <li>The hard part, the outer join and <code>count(i.id)</code> from week 4, is written once.</li>
+          <li>A view can use other views. <code>DROP VIEW</code> removes the query, never the data.</li>
+        </ul>
+        <div class="panel">
+          <h3>Materialized views store the rows</h3>
+          <p><code>CREATE MATERIALIZED VIEW</code> runs the query once and keeps the result, which is fast to read but goes stale. <code>REFRESH MATERIALIZED VIEW dept_summary_m;</code> runs it again. Use one for slow reports that may be a little out of date.</p>
+        </div>
+      </div>
+    </div>
+    <p><a class="try" href="playground.html#views">Run it, playground example 4.2</a></p>
+  </div>
+  
+</section>
+
+<!-- 20 ────────────────────────────────────────────── updating through a view -->
+<section class="slide" id="s20">
+  <h2>Some views can be changed, and WITH CHECK OPTION guards them</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div>
+        <pre class="code"><span class="k">CREATE</span> <span class="k">VIEW</span> cs_faculty <span class="k">AS</span>
+<span class="k">SELECT</span> id, name, dept_name <span class="k">FROM</span> instructor
+<span class="k">WHERE</span> dept_name = <span class="s">'Comp. Sci.'</span>
+<span class="k">WITH</span> <span class="k">CHECK</span> <span class="k">OPTION</span>;
+
+<span class="c">-- ok: salary is NULL</span>
+<span class="k">INSERT</span> <span class="k">INTO</span> cs_faculty
+<span class="k">VALUES</span> (<span class="s">'99998'</span>, <span class="s">'Ben Ortiz'</span>, <span class="s">'Comp. Sci.'</span>);
+
+<span class="k">INSERT</span> <span class="k">INTO</span> cs_faculty
+<span class="k">VALUES</span> (<span class="s">'99997'</span>, <span class="s">'Ana Silva'</span>, <span class="s">'Music'</span>);
+<span class="c">-- ERROR: new row violates check option</span>
+<span class="c">-- for view "cs_faculty"</span></pre>
+      </div>
+      <div class="fill" style="gap:14px">
+        <ul>
+          <li>A view over one table, with no GROUP BY, DISTINCT, aggregate or set operation, is <strong>updatable</strong>: PostgreSQL turns an INSERT, UPDATE or DELETE on it into one on the table.</li>
+          <li>Columns the view leaves out get their DEFAULT or NULL.</li>
+          <li><code>dept_summary</code> is not updatable: which instructor would "set instructors = 5" change?</li>
+        </ul>
+        <div class="panel panel--key">
+          <h3>WITH CHECK OPTION</h3>
+          <p>Without it, the Ana Silva row would go into instructor and then be invisible through the very view that inserted it.</p>
+        </div>
+      </div>
+    </div>
+    <p><a class="try" href="playground.html#views">Run it, playground example 4.3</a></p>
+  </div>
+  
+</section>
+
+<!-- 21 ────────────────────────────────────────────── section -->
+<section class="slide slide--section" id="s21">
+  <h2>Recursion over prerequisites</h2>
+  <p>A query that refers to itself, to follow a chain of any length.</p>
+  
+</section>
+
+<!-- 22 ────────────────────────────────────────────── recursion figure -->
+<section class="slide" id="s22">
+  <h2>What must a student take before CS-319?</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:940px">
+<svg style="--dg-k:1" viewBox="0 0 960 400" role="img" aria-labelledby="rct rcd">
+<title id="rct">WITH RECURSIVE finds every prerequisite of CS-319, round by round</title>
+<desc id="rcd">Left, the prerequisite graph: an arrow from a course points to a course it requires. CS-319 requires CS-315 and MA-201; CS-315 requires CS-190; CS-190 requires CS-101; CS-347 requires CS-101 and MA-201. Right, the rounds of the recursive query for CS-319. Round 1, the base query, finds CS-315 and MA-201. Round 2 joins those to prereq and finds CS-190; MA-201 has no prerequisites. Round 3 finds CS-101. Round 4 finds nothing new, so the recursion stops with four courses.</desc>
+<defs><marker id="rca" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#0e5a6b"/></marker></defs>
+<text class="dg-lbl" x="40" y="26">prereq as a graph: an arrow means requires</text>
+<path class="dg-line-t" d="M100 100 V154" marker-end="url(#rca)"/>
+<path class="dg-line-t" d="M160 80 H280 V154" marker-end="url(#rca)"/>
+<path class="dg-line-t" d="M100 200 V254" marker-end="url(#rca)"/>
+<path class="dg-line-t" d="M100 300 V344" marker-end="url(#rca)"/>
+<path class="dg-line-t" d="M280 300 V370 H166" marker-end="url(#rca)"/>
+<path class="dg-line-t" d="M280 260 V206" marker-end="url(#rca)"/>
+<rect class="dg-box" x="40" y="60" width="120" height="40" rx="5"/><text class="dg-sm dg-mono" x="100.0" y="86" text-anchor="middle">CS-319</text>
+<g class="v-in" style="--d:0.20s"><rect class="dg-box-a" x="40" y="60" width="120" height="40" rx="5"/><text class="dg-sm dg-mono" x="100.0" y="86" text-anchor="middle">CS-319</text></g>
+<rect class="dg-box" x="40" y="160" width="120" height="40" rx="5"/><text class="dg-sm dg-mono" x="100.0" y="186" text-anchor="middle">CS-315</text>
+<g class="v-in" style="--d:1.00s"><rect class="dg-hl-t" x="40" y="160" width="120" height="40" rx="5"/><text class="dg-sm dg-mono" x="100.0" y="186" text-anchor="middle">CS-315</text></g>
+<rect class="dg-box" x="220" y="160" width="120" height="40" rx="5"/><text class="dg-sm dg-mono" x="280.0" y="186" text-anchor="middle">MA-201</text>
+<g class="v-in" style="--d:1.00s"><rect class="dg-hl-t" x="220" y="160" width="120" height="40" rx="5"/><text class="dg-sm dg-mono" x="280.0" y="186" text-anchor="middle">MA-201</text></g>
+<rect class="dg-box" x="40" y="260" width="120" height="40" rx="5"/><text class="dg-sm dg-mono" x="100.0" y="286" text-anchor="middle">CS-190</text>
+<g class="v-in" style="--d:1.90s"><rect class="dg-hl-t" x="40" y="260" width="120" height="40" rx="5"/><text class="dg-sm dg-mono" x="100.0" y="286" text-anchor="middle">CS-190</text></g>
+<rect class="dg-box" x="40" y="350" width="120" height="40" rx="5"/><text class="dg-sm dg-mono" x="100.0" y="376" text-anchor="middle">CS-101</text>
+<g class="v-in" style="--d:2.80s"><rect class="dg-hl-t" x="40" y="350" width="120" height="40" rx="5"/><text class="dg-sm dg-mono" x="100.0" y="376" text-anchor="middle">CS-101</text></g>
+<rect class="dg-box" x="220" y="260" width="120" height="40" rx="5"/><text class="dg-sm dg-mono" x="280.0" y="286" text-anchor="middle">CS-347</text>
+<text class="dg-lbl" x="420" y="26">WITH RECURSIVE needs: the rounds</text>
+<rect class="dg-box" x="420" y="48" width="520" height="220"/>
+<rect class="dg-box-m" x="420" y="48" width="520" height="44"/>
+<text class="dg-xs" font-weight="700" x="428" y="78">round</text>
+<text class="dg-xs" font-weight="700" x="498" y="78">the step looks up</text>
+<text class="dg-xs" font-weight="700" x="748" y="78">adds</text>
+<rect class="dg-hl-t v-in" style="--d:1.00s" x="421" y="93" width="518" height="42"/>
+<g>
+<text class="dg-xs" x="428" y="122">1</text>
+<text class="dg-xs" x="498" y="122">base: prereqs of CS-319</text>
+<text class="dg-xs dg-mono" x="748" y="122">CS-315, MA-201</text>
+</g>
+<rect class="dg-hl-t v-in" style="--d:1.90s" x="421" y="137" width="518" height="42"/>
+<path class="dg-line-q" d="M420 136 H940"/>
+<g>
+<text class="dg-xs" x="428" y="166">2</text>
+<text class="dg-xs" x="498" y="166">prereqs of CS-315, MA-201</text>
+<text class="dg-xs dg-mono" x="748" y="166">CS-190</text>
+</g>
+<rect class="dg-hl-t v-in" style="--d:2.80s" x="421" y="181" width="518" height="42"/>
+<path class="dg-line-q" d="M420 180 H940"/>
+<g>
+<text class="dg-xs" x="428" y="210">3</text>
+<text class="dg-xs" x="498" y="210">prereqs of CS-190</text>
+<text class="dg-xs dg-mono" x="748" y="210">CS-101</text>
+</g>
+<path class="dg-line-q" d="M420 224 H940"/>
+<g>
+<text class="dg-xs" x="428" y="254">4</text>
+<text class="dg-xs" x="498" y="254">prereqs of CS-101</text>
+<text class="dg-xs dg-txt-bad" x="748" y="254">nothing new: stop</text>
+</g>
+<text class="dg-txt-s v-in" style="--d:3.90s" x="420" y="300">Result: CS-315, MA-201, CS-190, CS-101.</text>
+<text class="dg-txt-s v-in" style="--d:4.10s" x="420" y="328">Each round uses only the rows the round before it added.</text>
+<text class="dg-txt-s v-in" style="--d:4.30s" x="420" y="356">UNION drops repeats, so a cycle cannot run forever.</text>
+</svg>
+      <figcaption><strong>Figure 5.5.</strong> One join finds the direct prerequisites. The chain can be any length, so a fixed number of joins cannot follow it; recursion repeats the step until nothing new appears. <a class="try" href="playground.html#recursive">Step through it, playground section 5</a></figcaption>
+    </figure>
+  </div>
+  
+</section>
+
+<!-- 23 ────────────────────────────────────────────── the query -->
+<section class="slide" id="s23">
+  <h2>WITH RECURSIVE: a base query, UNION, and a step</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div>
+        <pre class="code"><span class="k">WITH</span> <span class="k">RECURSIVE</span> needs(prereq_id, depth) <span class="k">AS</span> (
+  <span class="c">-- base: the direct prerequisites</span>
+  <span class="k">SELECT</span> prereq_id, 1
+  <span class="k">FROM</span> prereq <span class="k">WHERE</span> course_id = <span class="s">'CS-319'</span>
+  <span class="k">UNION</span>
+  <span class="c">-- step: prerequisites of what we have</span>
+  <span class="k">SELECT</span> p.prereq_id, n.depth + 1
+  <span class="k">FROM</span> prereq p
+  <span class="k">JOIN</span> needs n <span class="k">ON</span> p.course_id = n.prereq_id
+)
+<span class="k">SELECT</span> prereq_id, min(depth) <span class="k">AS</span> depth
+<span class="k">FROM</span> needs
+<span class="k">GROUP</span> <span class="k">BY</span> prereq_id
+<span class="k">ORDER</span> <span class="k">BY</span> depth, prereq_id;</pre>
+      </div>
+      <div class="fill" style="gap:14px">
+        <table class="tbl tbl--result">
+          <caption>Result: 4 rows</caption>
+          <thead><tr><th scope="col">prereq_id</th><th scope="col" class="num">depth</th></tr></thead>
+          <tbody>
+            <tr><td>CS-315</td><td class="num">1</td></tr>
+            <tr><td>MA-201</td><td class="num">1</td></tr>
+            <tr><td>CS-190</td><td class="num">2</td></tr>
+            <tr><td>CS-101</td><td class="num">3</td></tr>
+          </tbody>
+        </table>
+        <ul>
+          <li>In the step, <code>needs</code> means only the rows the last round added.</li>
+          <li>It stops when a round adds nothing. A cycle in the data would never stop while depth keeps growing, so real code adds a guard such as <code>WHERE n.depth &lt; 20</code>.</li>
+        </ul>
+      </div>
+    </div>
+    <p><a class="try" href="playground.html#recursive">Run it, playground examples 5.1 and 5.2</a></p>
+  </div>
+  
+</section>
+
+<!-- 24 ────────────────────────────────────────────── section -->
+<section class="slide slide--section" id="s24">
+  <h2>Triggers and privileges</h2>
+  <p>Code that runs when rows change, and rules about who may read or change what.</p>
+  
+</section>
+
+<!-- 25 ────────────────────────────────────────────── a trigger -->
+<section class="slide" id="s25">
+  <h2>A trigger runs your function when a row changes</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div>
+        <pre class="code"><span class="k">CREATE</span> <span class="k">OR</span> <span class="k">REPLACE</span> <span class="k">FUNCTION</span> credits_earned()
+<span class="k">RETURNS</span> trigger <span class="k">LANGUAGE</span> plpgsql <span class="k">AS</span> $$
+<span class="k">BEGIN</span>
+  <span class="k">UPDATE</span> student
+  <span class="k">SET</span> tot_cred = tot_cred +
+      (<span class="k">SELECT</span> credits <span class="k">FROM</span> course
+       <span class="k">WHERE</span> course_id = NEW.course_id)
+  <span class="k">WHERE</span> id = NEW.id;
+  <span class="k">RETURN</span> NEW;
+<span class="k">END</span> $$;
+
+<span class="k">CREATE</span> <span class="k">TRIGGER</span> credits_earned
+<span class="k">AFTER</span> <span class="k">UPDATE</span> OF grade <span class="k">ON</span> takes
+FOR <span class="k">EACH</span> <span class="k">ROW</span>
+<span class="k">WHEN</span> ((OLD.grade <span class="k">IS</span> <span class="k">NULL</span> <span class="k">OR</span> OLD.grade = <span class="s">'F'</span>)
+      <span class="k">AND</span> NEW.grade <span class="k">IS</span> <span class="k">NOT</span> <span class="k">NULL</span> <span class="k">AND</span> NEW.grade &lt;&gt; <span class="s">'F'</span>)
+<span class="k">EXECUTE</span> <span class="k">FUNCTION</span> credits_earned();</pre>
+      </div>
+      <div class="fill" style="gap:12px">
+        <ol class="steps">
+          <li><span class="n" aria-hidden="true">1</span><div><strong>When:</strong><p>AFTER an UPDATE of the grade column on takes.</p></div></li>
+          <li><span class="n" aria-hidden="true">2</span><div><strong>For which rows:</strong><p>Each changed row whose grade went from nothing or F to a pass.</p></div></li>
+          <li><span class="n" aria-hidden="true">3</span><div><strong>What:</strong><p>The function adds the course's credits to that student. <code>OLD</code> and <code>NEW</code> are the row before and after.</p></div></li>
+        </ol>
+        <p>PostgreSQL writes trigger functions in PL/pgSQL. The <code>$$ … $$</code> quotes the function body.</p>
+      </div>
+    </div>
+    <p><a class="try" href="playground.html#triggers">Run it, playground example 6.1</a></p>
+  </div>
+  
+</section>
+
+<!-- 26 ────────────────────────────────────────────── trigger at work -->
+<section class="slide" id="s26">
+  <h2>One UPDATE becomes two, and the second is invisible</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:960px">
+<svg style="--dg-k:1" viewBox="0 0 960 270" role="img" aria-labelledby="tgt tgd">
+<title id="tgt">A trigger turns one UPDATE into two</title>
+<desc id="tgd">Step 1: the application runs UPDATE takes SET grade = &#x27;B&#x27; for Quinn Davis in CS-347, Spring 2027. Step 2: the change matches the trigger credits_earned, which fires after an update of grade when the old grade was NULL or F and the new grade is a pass. Step 3: the trigger&#x27;s function runs UPDATE student SET tot_cred = tot_cred + 3, the credits of CS-347. Step 4: Quinn Davis&#x27;s tot_cred goes from 0 to 3. Both updates belong to the same transaction: if either fails, neither happens.</desc>
+<defs><marker id="tga" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#0e5a6b"/></marker></defs>
+<g class="v-in" style="--d:0.30s"><text class="dg-lbl" x="14" y="34">1. your statement</text><rect class="dg-box-t" x="14" y="50" width="210" height="120" rx="6"/><text class="dg-xs dg-mono" x="28" y="84">UPDATE takes</text><text class="dg-xs dg-mono" x="28" y="112">SET grade = &#x27;B&#x27;</text><text class="dg-xs dg-mono" x="28" y="140">WHERE id = &#x27;70557&#x27; …</text></g>
+<g class="v-in" style="--d:1.10s"><text class="dg-lbl" x="260" y="34">2. trigger fires</text><rect class="dg-box-a" x="260" y="50" width="210" height="120" rx="6"/><text class="dg-xs dg-mono" x="274" y="84">credits_earned</text><text class="dg-xs dg-mono" x="274" y="112">AFTER UPDATE OF grade</text><text class="dg-xs dg-mono" x="274" y="140">WHEN NULL/F → a pass</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:0.90s" d="M228 110 H254" marker-end="url(#tga)"/>
+<g class="v-in" style="--d:1.90s"><text class="dg-lbl" x="506" y="34">3. its function runs</text><rect class="dg-box-t" x="506" y="50" width="210" height="120" rx="6"/><text class="dg-xs dg-mono" x="520" y="84">UPDATE student</text><text class="dg-xs dg-mono" x="520" y="112">SET tot_cred =</text><text class="dg-xs dg-mono" x="520" y="140">  tot_cred + 3</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.70s" d="M474 110 H500" marker-end="url(#tga)"/>
+<g class="v-in" style="--d:2.70s"><text class="dg-lbl" x="752" y="34">4. the result</text><rect class="dg-box-t" x="752" y="50" width="210" height="120" rx="6"/><text class="dg-xs dg-mono" x="766" y="84">Quinn Davis</text><text class="dg-xs dg-mono" x="766" y="112">tot_cred: 0 → 3</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:2.50s" d="M720 110 H746" marker-end="url(#tga)"/>
+<text class="dg-txt-s v-in" style="--d:3.40s" x="14" y="214">You wrote one UPDATE; PostgreSQL ran two, in one transaction.</text>
+<text class="dg-txt-s v-in" style="--d:3.60s" x="14" y="244">If the second fails, the first is undone too.</text>
+</svg>
+      <figcaption><strong>Figure 5.6.</strong> Quinn Davis passes CS-347. Nothing in the UPDATE mentions <code>student</code>, yet tot_cred changes. <a class="try" href="playground.html#triggers">Watch it, playground example 6.1</a></figcaption>
+    </figure>
+    <div class="callout">
+      <span class="mark" aria-hidden="true">!</span>
+      <p>Use a constraint when one can say it; a trigger only for what constraints cannot, such as keeping a total or a log. Hidden work surprises the next programmer, and triggers that fire triggers are hard to debug.</p>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 27 ────────────────────────────────────────────── privileges -->
+<section class="slide" id="s27">
+  <h2>GRANT gives a role a privilege; REVOKE takes it back</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div>
+        <pre class="code"><span class="k">CREATE</span> <span class="k">ROLE</span> ta;
+<span class="k">GRANT</span> <span class="k">SELECT</span> <span class="k">ON</span> faculty <span class="k">TO</span> ta;           <span class="c">-- a view</span>
+<span class="k">GRANT</span> <span class="k">SELECT</span>, <span class="k">UPDATE</span> (grade) <span class="k">ON</span> takes <span class="k">TO</span> ta;
+
+<span class="k">SET</span> <span class="k">ROLE</span> ta;                <span class="c">-- act as ta</span>
+<span class="k">SELECT</span> * <span class="k">FROM</span> faculty;      <span class="c">-- allowed</span>
+<span class="k">SELECT</span> salary <span class="k">FROM</span> instructor;
+<span class="c">-- ERROR: permission denied for table instructor</span>
+RESET <span class="k">ROLE</span>;                 <span class="c">-- back to the owner</span>
+
+<span class="k">REVOKE</span> <span class="k">UPDATE</span> (grade) <span class="k">ON</span> takes <span class="k">FROM</span> ta;</pre>
+      </div>
+      <div class="fill" style="gap:14px">
+        <ul>
+          <li>Privileges: SELECT, INSERT, UPDATE, DELETE, REFERENCES, and more. UPDATE can be limited to columns.</li>
+          <li>A <strong>role</strong> is a user or a group. Grant to a group role, then <code>GRANT ta TO kim;</code></li>
+          <li>The owner of a table has every privilege on it; everyone else has none until granted.</li>
+        </ul>
+        <div class="panel panel--key">
+          <h3>A view plus a grant</h3>
+          <p>ta can read <code>faculty</code> but not <code>instructor</code>: the view shows the columns, the missing grant hides the salaries.</p>
+        </div>
+      </div>
+    </div>
+    <p><a class="try" href="playground.html#triggers">Run it, playground example 6.2</a></p>
+  </div>
+  
+</section>
+
+<!-- 28 ────────────────────────────────────────────── takeaways -->
+<section class="slide" id="s28">
+  <h2>What to take away</h2>
+  <div class="slide-main">
+    <ol class="steps">
+      <li><span class="n" aria-hidden="true">1</span><div><strong>BEGIN first; COMMIT or ROLLBACK after you look.</strong><p>A transaction is all or nothing.</p></div></li>
+      <li><span class="n" aria-hidden="true">2</span><div><strong>Run an UPDATE's or DELETE's WHERE as a SELECT first.</strong><p>No WHERE means every row. Subqueries see the data from before.</p></div></li>
+      <li><span class="n" aria-hidden="true">3</span><div><strong>Write the rules into the table, and name them.</strong><p>CHECK rejects only false, so NULL passes: add NOT NULL when a value is required.</p></div></li>
+      <li><span class="n" aria-hidden="true">4</span><div><strong>Choose each foreign key's ON DELETE.</strong><p>NO ACTION refuses, CASCADE deletes, SET NULL keeps the row.</p></div></li>
+      <li><span class="n" aria-hidden="true">5</span><div><strong>Views name queries; WITH RECURSIVE follows chains.</strong><p>Triggers and grants decide what else happens, and who may do it.</p></div></li>
+    </ol>
+  </div>
+  
+</section>
+
+<!-- 29 ────────────────────────────────────────────── this week -->
+<section class="slide" id="s29">
+  <h2>This week's work</h2>
+  <div class="slide-main">
+    <div class="week-work">
+      <div>
+        <h3>Read</h3>
+        <ul>
+          <li>Silberschatz, Korth and Sudarshan, <em>Database System Concepts</em>, 7th ed., sections 3.9 (modifying the database), 4.2–4.7 (views, transactions, constraints, types, authorization) and 5.3–5.4 (triggers, recursive queries).</li>
+          <li>Chapter 6, E-R modeling, before week 6.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Do</h3>
+        <ul>
+          <li>Lab 4: build a table, change data, add constraints, write two views and a recursive query, with two short written answers.</li>
+          <li>Week 5 playground: the eight exercises. Not graded, but quiz 6 assumes them.</li>
+          <li>Project: choose your domain and your partner, if any. Milestone 1 is due in week 6.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Due</h3>
+        <ul>
+          <li><span class="due">Sunday, February 14, 11:59 p.m. CT</span>: Lab 4, one zip file in Brightspace.</li>
+          <li>Quiz 5: in class today; online section within 48 hours of the recording.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="callout" style="margin-top:auto">
+      <span class="mark" aria-hidden="true">→</span>
+      <p><strong>Next week:</strong> E-R modeling. Before writing CREATE TABLE for your project, we draw it: entities, relationships, cardinalities, and how a diagram becomes tables.</p>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 30 ────────────────────────────────────────────── resources -->
+<section class="slide" id="s30">
+  <h2>Free resources</h2>
+  <div class="slide-main">
+    <ul class="resources">
+      <li><a href="playground.html">Week 5 playground</a><span class="src">this course</span><p>Every statement from today's slides, a foreign key explorer, a step-by-step recursion explorer, and eight checked exercises.</p></li>
+      <li><a href="https://www.postgresql.org/docs/current/dml.html">Data manipulation</a><span class="src">postgresql.org</span><p>INSERT, UPDATE and DELETE, with RETURNING.</p></li>
+      <li><a href="https://www.postgresql.org/docs/current/ddl-constraints.html">Constraints</a><span class="src">postgresql.org</span><p>CHECK, NOT NULL, UNIQUE, primary and foreign keys, and the ON DELETE actions.</p></li>
+      <li><a href="https://www.postgresql.org/docs/current/sql-createview.html">CREATE VIEW</a><span class="src">postgresql.org</span><p>Updatable views and WITH CHECK OPTION.</p></li>
+      <li><a href="https://www.postgresql.org/docs/current/plpgsql-trigger.html">Trigger functions</a><span class="src">postgresql.org</span><p>PL/pgSQL triggers, NEW and OLD, with examples.</p></li>
+      <li><a href="https://www.postgresql.org/docs/current/ddl-priv.html">Privileges</a><span class="src">postgresql.org</span><p>GRANT, REVOKE and what each privilege allows.</p></li>
+    </ul>
+    <div class="callout" style="margin-top:20px">
+      <span class="mark" aria-hidden="true">→</span>
+      <p>Stuck on Lab 4? Office hours are Tuesday and Wednesday 12:00–3:00 p.m., MIC room D159, or post in the week 5 discussion in Brightspace.</p>
+    </div>
+  </div>
+  
+</section>
+
+</main>
+</div>
+<script src="../../assets/deck.js"></script>
+</body>
+</html>

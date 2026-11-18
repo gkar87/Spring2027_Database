@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Term Project · CS 4600/5200</title>
+<meta name="description" content="CS 4600/5200 term project: design, build and tune a PostgreSQL database application for a domain you choose, in four milestones worth 25% of the grade.">
+<link rel="stylesheet" href="../assets/course.css">
+<link rel="stylesheet" href="../assets/db.css">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to the project</a>
+
+<div class="doc">
+<header class="doc-masthead">
+  <p class="inst"><span>CS 4600/5200 · Database Theory and Applications</span><span>Spring 2027</span><span><a href="../index.html">Course home</a></span></p>
+  <h1>Term project: a database application of your own</h1>
+  <p class="tagline">Over the semester you design a database for a domain you choose, build it in PostgreSQL, put a small Python application on top of it, and then make it fast and explain how. Each milestone uses what the weeks before it taught.</p>
+</header>
+
+<dl class="facts">
+  <div><dt>Worth</dt><dd>25% of the course grade, over four milestones</dd></div>
+  <div><dt>Team</dt><dd>On your own, or with one partner</dd></div>
+  <div><dt>Submit</dt><dd>One zip file per milestone, uploaded to Brightspace</dd></div>
+  <div><dt>Ends with</dt><dd>A 10-minute demo and code walkthrough</dd></div>
+</dl>
+
+<main id="main">
+
+<section id="milestones" aria-labelledby="ms-h">
+  <h2 id="ms-h">The four milestones</h2>
+  <p>Every deadline is a Sunday at 11:59 p.m. CT, except the demo, which is in class.</p>
+  <div class="fig-scroll" tabindex="0" role="region" aria-label="Project milestones, due dates and points">
+  <table class="tbl">
+    <caption>Project milestones, due dates and points</caption>
+    <thead><tr><th scope="col">Milestone</th><th scope="col">What you hand in</th><th scope="col">Due</th></tr></thead>
+    <tbody>
+      <tr><td><a href="milestone1.html">1. E-R design</a><br><span class="muted">5 points</span></td><td>Requirements, business rules, an E-R diagram and design notes</td><td>Sunday, February 21 (week 6)</td></tr>
+      <tr><td><a href="milestone2.html">2. Schema and DDL</a><br><span class="muted">5 points</span></td><td>Tables normalized and justified, the CREATE TABLE statements with their constraints, and sample data</td><td>Sunday, March 7 (week 8)</td></tr>
+      <tr><td><a href="milestone3.html">3. Working application</a><br><span class="muted">7 points</span></td><td>A Python program that reads and changes your database through parameterized queries</td><td>Sunday, April 4 (week 11)</td></tr>
+      <tr><td><a href="milestone4.html">4. Tuning, demo and walkthrough</a><br><span class="muted">8 points</span></td><td>A report on indexes, query plans and transactions, then a live demo and walkthrough of your code, 10 minutes per team</td><td>Report Sunday, April 25; demo Tuesday, April 27 (week 15)</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Each milestone's handout is posted here when its week begins. Milestones 2 to 4 build on the one before, so feedback on each one is worth reading before you start the next.</p>
+</section>
+
+<section id="domain" aria-labelledby="dom-h">
+  <h2 id="dom-h">Choosing a domain</h2>
+  <p>Pick something you know well enough to ask good questions about: a club you belong to, a job you have had, a hobby. It should have at least six kinds of things worth storing and real rules about how they relate. A few that work well: a community food pantry, a climbing gym, a used car lot, a youth sports league, a recording studio's bookings, a small veterinary clinic.</p>
+  <p>The university and the library are off limits, because the course uses them as examples. If you are unsure whether a domain is big enough, bring it to office hours in week 6.</p>
+</section>
+
+<section id="teams" aria-labelledby="team-h">
+  <h2 id="team-h">Working alone or in a pair</h2>
+  <ul>
+    <li>A team has one or two people. Tell me by the end of week 6 if you are working with a partner; you keep the same team all semester.</li>
+    <li>A team uploads one zip per milestone, named with both last names, and both partners get the same grade.</li>
+    <li>In the walkthrough each partner explains part of the code, and either may be asked about any of it.</li>
+    <li>A CS 4600 student and a CS 5200 student may work together. The team then does the graduate work as well.</li>
+  </ul>
+</section>
+
+<section id="grad" aria-labelledby="grad-h">
+  <h2 id="grad-h">CS 5200: the graduate part</h2>
+  <p>Graduate students do two more things, graded inside the same 25 points:</p>
+  <ul>
+    <li><strong>A NoSQL feature:</strong> one part of your data stored and queried in a document or key-value form (for example PostgreSQL's <code>jsonb</code>, or a document store), with a short argument for why that part suits it. You sketch it in milestone 1 and build it by milestone 4.</li>
+    <li><strong>A paper critique:</strong> two pages on a research paper about databases, chosen from <a href="papers.html">the paper list</a> by April 4 and due with milestone 4.</li>
+  </ul>
+</section>
+
+<section id="ai" aria-labelledby="ai-h">
+  <h2 id="ai-h">AI tools and the walkthrough</h2>
+  <p>The course's limited-use AI policy applies: you may ask an AI tool to explain an error, a keyword or an idea, but the design, the SQL and the code must be your own. Every milestone ends with a short note saying how you used AI, if at all. The walkthrough in week 15 is where this matters: you explain your code line by line and answer questions about it, and a part you cannot explain earns no credit.</p>
+</section>
+
+<section id="late" aria-labelledby="late-h">
+  <h2 id="late-h">Late work</h2>
+  <p>A milestone loses 10% per day for up to three days and is not accepted after that. The demo and walkthrough cannot be late: if you will miss April 27, tell me before then and we will find another time that week. Online students book a call in week 15 instead of demoing in class.</p>
+</section>
+</main>
+
+<footer>
+  <p>CS 4600/5200 · Database Theory and Applications · University of Central Missouri · Dr. Gorkem Kar · Spring 2027</p>
+</footer>
+</div>
+</body>
+</html>

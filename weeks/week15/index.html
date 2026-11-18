@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Week 15 — NoSQL and Distributed Data · CS 4600/5200</title>
+<meta name="description" content="CS 4600/5200 week 15: semi-structured data and JSON; the four families of NoSQL store; jsonb, its operators and GIN indexes in PostgreSQL; embedding versus referencing; key-value stores; sharding by hash and choosing a shard key; replication, read and write quorums; CAP and eventual consistency; two-phase commit; and the milestone 4 demos.">
+<link rel="stylesheet" href="../../assets/course.css">
+<link rel="stylesheet" href="../../assets/db.css">
+</head>
+<body>
+<a class="skip-link" href="#s1">Skip to the first slide</a>
+
+<div class="deck-stage">
+<main class="deck" aria-label="Week 15 lecture slides: NoSQL and distributed data">
+
+<!-- 1 ─────────────────────────────────────────────────────────── title -->
+<section class="slide slide--title" id="s1">
+  <p class="course-line">CS 4600/5200 · Database Theory and Applications · Week 15 of 15</p>
+  <h1>NoSQL and Distributed Data</h1>
+  <p class="subtitle">
+    Some data has no fixed shape, and some data won't fit on one machine. This week: documents and
+    key-value stores, what PostgreSQL can already do with them, and what changes when the data is split and
+    copied across many machines. Then, your demos.
+  </p>
+  <p class="byline">
+    Dr. Gorkem Kar
+    <span>University of Central Missouri</span>
+    <span>School of Computer Science and Cybersecurity</span>
+  </p>
+  <div class="title-art">
+<svg viewBox="0 0 380 330" aria-hidden="true" focusable="false" style="--dg-k:1">
+<path class="dg-line-q v-draw" pathLength="1" style="--d:0.20s" d="M190 60 L80 250"/>
+<path class="dg-line-q v-draw" pathLength="1" style="--d:0.40s" d="M190 60 L300 250"/>
+<path class="dg-line-q v-draw" pathLength="1" style="--d:0.60s" d="M80 250 L300 250"/>
+<g class="v-in" style="--d:0.80s"><rect class="dg-box-t" x="134" y="24" width="112" height="72" rx="6"/><rect class="dg-box" x="150" y="36" width="80" height="9" rx="2"/><rect class="dg-box" x="150" y="52" width="62" height="9" rx="2"/><rect class="dg-box" x="150" y="68" width="44" height="9" rx="2"/></g>
+<g class="v-in" style="--d:1.05s"><rect class="dg-box-a" x="24" y="214" width="112" height="72" rx="6"/><rect class="dg-box" x="40" y="226" width="80" height="9" rx="2"/><rect class="dg-box" x="40" y="242" width="62" height="9" rx="2"/><rect class="dg-box" x="40" y="258" width="44" height="9" rx="2"/></g>
+<g class="v-in" style="--d:1.30s"><rect class="dg-box-m" x="244" y="214" width="112" height="72" rx="6"/><rect class="dg-box" x="260" y="226" width="80" height="9" rx="2"/><rect class="dg-box" x="260" y="242" width="62" height="9" rx="2"/><rect class="dg-box" x="260" y="258" width="44" height="9" rx="2"/></g>
+</svg>
+  </div>
+  
+</section>
+
+<!-- 2 ─────────────────────────────────────────────── where we are -->
+<section class="slide" id="s2">
+  <h2>Where we are</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div>
+        <h3>All semester</h3>
+        <ul>
+          <li>One relational database, on one server.</li>
+          <li>A fixed schema, normalized, queried with SQL.</li>
+          <li>Transactions that keep ACID's promises, even through a crash.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Today</h3>
+        <ul>
+          <li>Data without a fixed shape: documents and key-value pairs.</li>
+          <li>Data on many machines: shards, replicas and their trade-offs.</li>
+          <li>After a break: the milestone 4 demos and walkthroughs.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="callout">
+      <span class="mark" aria-hidden="true">→</span>
+      <p>"NoSQL" is a family of trade-offs, not a replacement for what you learned. Each system gives up something relational databases promise, in exchange for something they find hard.</p>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 3 ─────────────────────────────────────────────── strains -->
+<section class="slide" id="s3">
+  <h2>Where one relational server strains</h2>
+  <div class="slide-main">
+    <div class="fig-scroll" tabindex="0" role="region" aria-label="Where one relational server strains">
+    <table class="tbl tbl--compact">
+      <caption>Four pressures, and the kind of answer each one led to</caption>
+      <thead><tr><th scope="col">Pressure</th><th scope="col">Example</th><th scope="col">The usual answer</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Shape changes often</strong></td><td>Review forms gain a question every term</td><td>Documents: each record carries its own structure</td></tr>
+        <tr><td><strong>Nested data, read whole</strong></td><td>A product page with its options and photos</td><td>Documents: one read instead of a join</td></tr>
+        <tr><td><strong>Huge volume of simple reads and writes</strong></td><td>Sessions, carts, counters for millions of users</td><td>Key-value stores, split over many machines</td></tr>
+        <tr><td><strong>Must stay up everywhere</strong></td><td>A shopping cart that must accept items during a network fault</td><td>Replicas that answer even when they disagree for a while</td></tr>
+      </tbody>
+    </table>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 4 ─────────────────────────────────────────────── section -->
+<section class="slide slide--section" id="s4">
+  <h2>Documents</h2>
+  <p>Semi-structured data, and how to store it.</p>
+  
+</section>
+
+<!-- 5 ─────────────────────────────────────────────── semi-structured -->
+<section class="slide" id="s5">
+  <h2>Semi-structured data</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:1000px">
+<svg style="--dg-k:1" viewBox="0 0 1000 380" role="img" aria-labelledby="dst dsd">
+<title id="dst">One review as a document, and the same review in tables</title>
+<desc id="dsd">On the left, a course review, shortened, as one JSON document: course_id CS-315, rating 4, an array of tags holding exams and projects, a nested workload object with hours 12 and exams 3, and a comment, Fast pace. On the right, the same facts in two relational tables. Table review has one row with columns id, course, rating, hours, exams and comment; table review_tag has one row per tag, (4, exams) and (4, projects). Another review with no workload would leave hours and exams NULL. Reading the document is one lookup; reading the tables takes a join. A new kind of answer is a new key in the document, but a new column or table for the relational design.</desc>
+<defs><marker id="dsa" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#0e5a6b"/></marker></defs>
+<g class="v-in" style="--d:0.10s"><text class="dg-sm-b" x="40" y="30" text-anchor="start">A document: one value, nested</text></g>
+<g class="v-in" style="--d:0.30s"><rect class="dg-box-t" x="40" y="46" width="360" height="250" rx="4"/><text class="dg-xs dg-mono" x="60" y="76" xml:space="preserve" style="white-space:pre">{</text><text class="dg-xs dg-mono" x="60" y="102" xml:space="preserve" style="white-space:pre">  &quot;course_id&quot;: &quot;CS-315&quot;,</text><text class="dg-xs dg-mono" x="60" y="128" xml:space="preserve" style="white-space:pre">  &quot;rating&quot;: 4,</text><text class="dg-xs dg-mono" x="60" y="154" xml:space="preserve" style="white-space:pre">  &quot;tags&quot;: [&quot;exams&quot;, &quot;projects&quot;],</text><text class="dg-xs dg-mono" x="60" y="180" xml:space="preserve" style="white-space:pre">  &quot;workload&quot;: {</text><text class="dg-xs dg-mono" x="60" y="206" xml:space="preserve" style="white-space:pre">    &quot;hours&quot;: 12, &quot;exams&quot;: 3</text><text class="dg-xs dg-mono" x="60" y="232" xml:space="preserve" style="white-space:pre">  },</text><text class="dg-xs dg-mono" x="60" y="258" xml:space="preserve" style="white-space:pre">  &quot;comment&quot;: &quot;Fast pace.&quot;</text><text class="dg-xs dg-mono" x="60" y="284" xml:space="preserve" style="white-space:pre">}</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.20s" d="M412 170 H486" marker-end="url(#dsa)"/>
+<g class="v-in" style="--d:1.30s"><text class="dg-xs" x="449" y="156" text-anchor="middle">same facts</text></g>
+<g class="v-in" style="--d:1.40s"><text class="dg-sm-b" x="500" y="30" text-anchor="start">Tables: flat rows, joined by id</text></g>
+<g class="v-in" style="--d:1.60s"><text class="dg-xs dg-mono" x="500" y="52">review</text><rect class="dg-box" x="500" y="60" width="458" height="64"/><rect class="dg-box-m" x="500" y="60" width="458" height="32"/><text class="dg-xs" font-weight="700" x="508" y="82">id</text><text class="dg-xs" font-weight="700" x="558" y="82">course</text><text class="dg-xs" font-weight="700" x="648" y="82">rating</text><text class="dg-xs" font-weight="700" x="718" y="82">hours</text><text class="dg-xs" font-weight="700" x="782" y="82">exams</text><text class="dg-xs" font-weight="700" x="846" y="82">comment</text><g><text class="dg-xs" x="508" y="114">4</text><text class="dg-xs" x="558" y="114">CS-315</text><text class="dg-xs" x="648" y="114">4</text><text class="dg-xs" x="718" y="114">12</text><text class="dg-xs" x="782" y="114">3</text><text class="dg-xs" x="846" y="114">Fast pace.</text></g></g>
+<g class="v-in" style="--d:2.00s"><text class="dg-xs dg-mono" x="500" y="164">review_tag</text><rect class="dg-box" x="500" y="172" width="180" height="96"/><rect class="dg-box-m" x="500" y="172" width="180" height="32"/><text class="dg-xs" font-weight="700" x="508" y="194">id</text><text class="dg-xs" font-weight="700" x="558" y="194">tag</text><g><text class="dg-xs" x="508" y="226">4</text><text class="dg-xs" x="558" y="226">exams</text></g><path class="dg-line-q" d="M500 236 H680"/><g><text class="dg-xs" x="508" y="258">4</text><text class="dg-xs" x="558" y="258">projects</text></g></g>
+<g class="v-in" style="--d:2.20s"><text class="dg-xs" x="700" y="212" text-anchor="start">one row per tag</text></g>
+<g class="v-in" style="--d:2.60s"><rect class="dg-box-m" x="40" y="318" width="920" height="48" rx="4"/><text class="dg-sm" x="500" y="348" text-anchor="middle">Document: one read, and a new question is just a new key. Tables: a join, and a new column.</text></g>
+</svg>
+      <figcaption><strong>Figure 15.1.</strong> The same review as one nested document and as two flat tables.</figcaption>
+    </figure>
+    <ul>
+      <li><strong>Schema on read:</strong> the database stores whatever shape it is given; the program that reads it must cope with missing keys.</li>
+      <li>JSON is the common format today; XML came before it (textbook 8.1).</li>
+    </ul>
+    <p><a class="try" href="playground.html#docs">Playground examples 1.1 to 1.4</a></p>
+  </div>
+  
+</section>
+
+<!-- 6 ─────────────────────────────────────────────── families -->
+<section class="slide" id="s6">
+  <h2>Four families of NoSQL store</h2>
+  <div class="slide-main">
+    <div class="fig-scroll" tabindex="0" role="region" aria-label="Four families of NoSQL store">
+    <table class="tbl tbl--compact">
+      <caption>What each family stores, what it is good at, and some examples</caption>
+      <thead><tr><th scope="col">Family</th><th scope="col">Stores</th><th scope="col">Good at</th><th scope="col">Examples</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Key-value</strong></td><td>A value under a key; the value is opaque</td><td>Very fast get and put, easy to spread</td><td>Redis, DynamoDB</td></tr>
+        <tr><td><strong>Document</strong></td><td>JSON-like documents, queried by their contents</td><td>Nested records that change shape</td><td>MongoDB, Couchbase</td></tr>
+        <tr><td><strong>Wide-column</strong></td><td>Rows with families of columns, sorted by key</td><td>Enormous tables, heavy writes</td><td>Bigtable, Cassandra, HBase</td></tr>
+        <tr><td><strong>Graph</strong></td><td>Nodes and edges with properties</td><td>Following many links: friends of friends</td><td>Neo4j</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <ul>
+      <li>PostgreSQL covers the first two well enough for most projects: <code>jsonb</code> for documents, a two-column table for keys.</li>
+    </ul>
+  </div>
+  
+</section>
+
+<!-- 7 ─────────────────────────────────────────────── jsonb -->
+<section class="slide" id="s7">
+  <h2>Documents in PostgreSQL: <code>jsonb</code></h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <pre class="code"><span class="k">CREATE</span> <span class="k">TABLE</span> review (
+  id  integer <span class="k">PRIMARY</span> <span class="k">KEY</span>,
+  doc jsonb <span class="k">NOT</span> <span class="k">NULL</span>
+);
+
+<span class="k">SELECT</span> doc -&gt;&gt; <span class="s">'course_id'</span> <span class="k">AS</span> course,
+       avg((doc -&gt;&gt; <span class="s">'rating'</span>)::int)
+<span class="k">FROM</span> review
+<span class="k">WHERE</span> doc @&gt; <span class="s">'{"tags": ["labs"]}'</span>
+<span class="k">GROUP</span> <span class="k">BY</span> 1;</pre>
+      <ul>
+        <li><code>jsonb</code> stores parsed JSON: keys sorted, duplicates dropped, quick to search.</li>
+        <li><code>-&gt;</code> gives JSON, <code>-&gt;&gt;</code> gives text, <code>#&gt;&gt;</code> follows a path.</li>
+        <li><code>@&gt;</code>: does the document contain this? <code>?</code>: does the key exist?</li>
+        <li>Mix freely with ordinary columns, joins and transactions.</li>
+      </ul>
+    </div>
+    <p><a class="try" href="playground.html#docs">Playground sections 1 and 2</a></p>
+  </div>
+  
+</section>
+
+<!-- 8 ─────────────────────────────────────────────── inside -->
+<section class="slide" id="s8">
+  <h2>Looking inside: arrays and paths</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <pre class="code"><span class="c">-- one row per tag</span>
+<span class="k">SELECT</span> t, count(*)
+<span class="k">FROM</span> review,
+     jsonb_array_elements_text(doc -&gt; <span class="s">'tags'</span>) <span class="k">AS</span> t
+<span class="k">GROUP</span> <span class="k">BY</span> t;
+
+<span class="c">-- a JSON path: heavy workloads</span>
+<span class="k">SELECT</span> count(*) <span class="k">FROM</span> review
+<span class="k">WHERE</span> doc @? <span class="s">'$.workload ? (@.hours &gt; 10)'</span>;</pre>
+      <ul>
+        <li>A set-returning function in <code>FROM</code> turns an array into rows, so <code>GROUP BY</code> works on its elements.</li>
+        <li>SQL/JSON paths come from the SQL standard: <code>$</code> is the document, <code>@</code> the item being tested.</li>
+        <li><code>jsonb_build_object</code> and <code>jsonb_agg</code> go the other way, from rows to documents.</li>
+      </ul>
+    </div>
+    <p><a class="try" href="playground.html#inside">Playground examples 2.1 to 2.4</a></p>
+  </div>
+  
+</section>
+
+<!-- 9 ─────────────────────────────────────────────── GIN -->
+<section class="slide" id="s9">
+  <h2>Indexing documents: GIN</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:1000px">
+<svg style="--dg-k:1" viewBox="0 0 1000 400" role="img" aria-labelledby="gnt gnd">
+<title id="gnt">A GIN index on review documents</title>
+<desc id="gnd">On the right, three review documents: review 4 (student S0358, course CS-315, tags exams and projects), review 27 (student S0695, course MU-199, a TA named Emery) and review 140 (student S0042, course BIO-101, tags labs and projects). In the middle, a GIN index with jsonb_path_ops: one entry for each path and value found in any document, in sorted order, each with the list of rows that hold it. course_id CS-315 lists row 4; student S0042 lists row 140; tags projects lists rows 4 and 140; ta name Emery lists row 27. On the left, the query doc @&gt; {student: S0042} looks up one entry, finds row 140, and reads only that row instead of all 3,000.</desc>
+<defs><marker id="gna" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#0e5a6b"/></marker><marker id="gnb" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#9e1b32"/></marker></defs>
+<g class="v-in" style="--d:0.10s"><rect class="dg-box-a" x="20" y="150" width="200" height="90" rx="4"/><text class="dg-xs dg-mono" x="120" y="180" text-anchor="middle">WHERE doc @&gt;</text><text class="dg-xs dg-mono" x="120" y="206" text-anchor="middle">{&quot;student&quot;: &quot;S0042&quot;}</text><text class="dg-xs" x="120" y="230" text-anchor="middle">the query</text></g>
+<g class="v-in" style="--d:0.30s"><text class="dg-sm-b" x="470" y="26" text-anchor="middle">GIN index: path and value, then rows</text></g>
+<g class="v-in" style="--d:0.50s"><rect class="dg-box" x="300" y="44" width="260" height="34" rx="3"/><text class="dg-xs dg-mono" x="312" y="67">course_id: CS-315</text><rect class="dg-box-m" x="568" y="44" width="80" height="34" rx="3"/><text class="dg-xs dg-mono" x="608" y="67" text-anchor="middle">4</text></g>
+<g class="v-in" style="--d:0.62s"><rect class="dg-box" x="300" y="86" width="260" height="34" rx="3"/><text class="dg-xs dg-mono" x="312" y="109">course_id: MU-199</text><rect class="dg-box-m" x="568" y="86" width="80" height="34" rx="3"/><text class="dg-xs dg-mono" x="608" y="109" text-anchor="middle">27</text></g>
+<g class="v-in" style="--d:0.74s"><rect class="dg-hl" x="300" y="128" width="260" height="34" rx="3"/><text class="dg-xs dg-mono" x="312" y="151">student: S0042</text><rect class="dg-box-m" x="568" y="128" width="80" height="34" rx="3"/><text class="dg-xs dg-mono" x="608" y="151" text-anchor="middle">140</text></g>
+<g class="v-in" style="--d:0.86s"><rect class="dg-box" x="300" y="170" width="260" height="34" rx="3"/><text class="dg-xs dg-mono" x="312" y="193">student: S0358</text><rect class="dg-box-m" x="568" y="170" width="80" height="34" rx="3"/><text class="dg-xs dg-mono" x="608" y="193" text-anchor="middle">4</text></g>
+<g class="v-in" style="--d:0.98s"><rect class="dg-box" x="300" y="212" width="260" height="34" rx="3"/><text class="dg-xs dg-mono" x="312" y="235">ta.name: Emery</text><rect class="dg-box-m" x="568" y="212" width="80" height="34" rx="3"/><text class="dg-xs dg-mono" x="608" y="235" text-anchor="middle">27</text></g>
+<g class="v-in" style="--d:1.10s"><rect class="dg-box" x="300" y="254" width="260" height="34" rx="3"/><text class="dg-xs dg-mono" x="312" y="277">tags: labs</text><rect class="dg-box-m" x="568" y="254" width="80" height="34" rx="3"/><text class="dg-xs dg-mono" x="608" y="277" text-anchor="middle">140</text></g>
+<g class="v-in" style="--d:1.22s"><rect class="dg-box" x="300" y="296" width="260" height="34" rx="3"/><text class="dg-xs dg-mono" x="312" y="319">tags: projects</text><rect class="dg-box-m" x="568" y="296" width="80" height="34" rx="3"/><text class="dg-xs dg-mono" x="608" y="319" text-anchor="middle">4, 140</text></g>
+<path class="dg-line-a v-draw" pathLength="1" style="--d:1.60s" d="M222 195 C260 195, 262 147, 294 147" marker-end="url(#gnb)"/>
+<g class="v-in" style="--d:0.40s"><rect class="dg-box-t" x="720" y="60" width="260" height="84" rx="4"/><text class="dg-sm-b" x="736" y="86">row 4</text><text class="dg-xs" x="736" y="110">S0358 · CS-315</text><text class="dg-xs" x="736" y="132">tags: exams, projects, …</text></g>
+<g class="v-in" style="--d:0.60s"><rect class="dg-box-t" x="720" y="164" width="260" height="84" rx="4"/><text class="dg-sm-b" x="736" y="190">row 27</text><text class="dg-xs" x="736" y="214">S0695 · MU-199</text><text class="dg-xs" x="736" y="236">ta: Emery</text></g>
+<g class="v-in" style="--d:0.80s"><rect class="dg-box-a" x="720" y="268" width="260" height="84" rx="4"/><text class="dg-sm-b" x="736" y="294">row 140</text><text class="dg-xs" x="736" y="318">S0042 · BIO-101</text><text class="dg-xs" x="736" y="340">tags: labs, projects, …</text></g>
+<path class="dg-line-a v-draw" pathLength="1" style="--d:2.20s" d="M650 145 C690 145, 690 308, 714 308" marker-end="url(#gnb)"/>
+<g class="v-in" style="--d:2.80s"><text class="dg-sm" x="500" y="360" text-anchor="middle">one lookup, one row read, instead of a scan of all 3,000</text></g>
+<g class="v-in" style="--d:3.00s"><text class="dg-xs" x="500" y="386" text-anchor="middle">simplified; a real index also hashes long values</text></g>
+</svg>
+      <figcaption><strong>Figure 15.2.</strong> An inverted index lists, for each path and value, the rows that hold it.</figcaption>
+    </figure>
+    <ul>
+      <li>Serves <code>@&gt;</code>, <code>?</code> and <code>@?</code>; not <code>doc -&gt;&gt; 'student' = …</code>, which needs an index on that expression.</li>
+    </ul>
+    <p><a class="try" href="playground.html#gin">Playground examples 3.1 to 3.3</a></p>
+  </div>
+  
+</section>
+
+<!-- 10 ────────────────────────────────────────────── embed or reference -->
+<section class="slide" id="s10">
+  <h2>Embed or reference?</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:1000px">
+<svg style="--dg-k:1" viewBox="0 0 1000 400" role="img" aria-labelledby="ebt ebd">
+<title id="ebt">Embedding versus referencing</title>
+<desc id="ebd">Two ways to store a student&#x27;s transcript as documents. On the left, embedded: the student document for Riley Adams holds an array of two transcript entries, each with the course id, the course title, the term and the grade. One read returns the whole page, but the title Database System Concepts is copied into every transcript that includes CS-347. On the right, referenced: the student document holds only course ids and grades, and arrows point to separate course documents, CS-101 Intro to Computer Science and CS-347 Database System Concepts, each stored once. Changing a title touches one document, but showing the page needs a second read or a join.</desc>
+<defs><marker id="eba" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#0e5a6b"/></marker></defs>
+<g class="v-in" style="--d:0.10s"><text class="dg-sm-b" x="40" y="28" text-anchor="start">Embed</text></g>
+<g class="v-in" style="--d:0.30s"><rect class="dg-box-t" x="40" y="44" width="420" height="236" rx="4"/><text class="dg-xs dg-mono" x="56" y="72" xml:space="preserve" style="white-space:pre">{&quot;name&quot;: &quot;Riley Adams&quot;,</text><text class="dg-xs dg-mono" x="56" y="98" xml:space="preserve" style="white-space:pre"> &quot;transcript&quot;: [</text><text class="dg-xs dg-mono" x="56" y="124" xml:space="preserve" style="white-space:pre">  {&quot;course&quot;: &quot;CS-101&quot;,</text><text class="dg-xs dg-mono" x="56" y="150" xml:space="preserve" style="white-space:pre">   &quot;title&quot;: &quot;Intro to Computer Science&quot;,</text><text class="dg-xs dg-mono" x="56" y="176" xml:space="preserve" style="white-space:pre">   &quot;grade&quot;: &quot;A&quot;},</text><text class="dg-xs dg-mono" x="56" y="202" xml:space="preserve" style="white-space:pre">  {&quot;course&quot;: &quot;CS-347&quot;,</text><text class="dg-xs dg-mono" x="56" y="228" xml:space="preserve" style="white-space:pre">   &quot;title&quot;: &quot;Database System Concepts&quot;,</text><text class="dg-xs dg-mono" x="56" y="254" xml:space="preserve" style="white-space:pre">   &quot;grade&quot;: &quot;A-&quot;}]}</text></g>
+<rect class="dg-hl v-in" style="--d:1.00s" x="50" y="210" width="380" height="26" rx="3"/>
+<g class="v-in" style="--d:1.20s"><text class="dg-xs dg-txt-ok" x="40" y="306" text-anchor="start">one read shows the whole page</text></g>
+<g class="v-in" style="--d:1.40s"><text class="dg-xs dg-txt-bad" x="40" y="330" text-anchor="start">the title is copied into every transcript</text></g>
+<g class="v-in" style="--d:1.80s"><text class="dg-sm-b" x="540" y="28" text-anchor="start">Reference</text></g>
+<g class="v-in" style="--d:2.00s"><rect class="dg-box-t" x="540" y="44" width="420" height="128" rx="4"/><text class="dg-xs dg-mono" x="556" y="72" xml:space="preserve" style="white-space:pre">{&quot;name&quot;: &quot;Riley Adams&quot;,</text><text class="dg-xs dg-mono" x="556" y="98" xml:space="preserve" style="white-space:pre"> &quot;transcript&quot;: [</text><text class="dg-xs dg-mono" x="556" y="124" xml:space="preserve" style="white-space:pre">  {&quot;course&quot;: &quot;CS-101&quot;, &quot;grade&quot;: &quot;A&quot;},</text><text class="dg-xs dg-mono" x="556" y="150" xml:space="preserve" style="white-space:pre">  {&quot;course&quot;: &quot;CS-347&quot;, &quot;grade&quot;: &quot;A-&quot;}]}</text></g>
+<g class="v-in" style="--d:2.40s"><rect class="dg-box" x="540" y="214" width="200" height="66" rx="4"/><text class="dg-xs" x="552" y="240" xml:space="preserve" style="white-space:pre">CS-101</text><text class="dg-xs" x="552" y="264" xml:space="preserve" style="white-space:pre">Intro to Comp. Sci.</text></g>
+<g class="v-in" style="--d:2.50s"><rect class="dg-box" x="760" y="214" width="200" height="66" rx="4"/><text class="dg-xs" x="772" y="240" xml:space="preserve" style="white-space:pre">CS-347</text><text class="dg-xs" x="772" y="264" xml:space="preserve" style="white-space:pre">Database System …</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:2.70s" d="M640 174 V208" marker-end="url(#eba)"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:2.80s" d="M860 174 V208" marker-end="url(#eba)"/>
+<g class="v-in" style="--d:3.00s"><text class="dg-xs dg-txt-ok" x="540" y="306" text-anchor="start">each title is stored once</text></g>
+<g class="v-in" style="--d:3.20s"><text class="dg-xs dg-txt-bad" x="540" y="330" text-anchor="start">showing the page takes a second read</text></g>
+<g class="v-in" style="--d:3.60s"><rect class="dg-box-m" x="40" y="348" width="920" height="44" rx="4"/><text class="dg-xs" x="500" y="376" text-anchor="middle">Embed what is read together and owned by one parent; reference what is shared or changes alone.</text></g>
+</svg>
+      <figcaption><strong>Figure 15.3.</strong> Embedding copies data into the document that reads it; referencing stores it once and looks it up.</figcaption>
+    </figure>
+    <p><a class="try" href="playground.html#embed">Playground examples 4.1 to 4.3</a></p>
+  </div>
+  
+</section>
+
+<!-- 11 ────────────────────────────────────────────── key-value -->
+<section class="slide" id="s11">
+  <h2>Key-value stores</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <pre class="code"><span class="c">-- get</span>
+<span class="k">SELECT</span> value <span class="k">FROM</span> kv
+<span class="k">WHERE</span> key = <span class="s">'session:8f3a'</span>;
+
+<span class="c">-- put: insert, or update if present</span>
+<span class="k">INSERT</span> <span class="k">INTO</span> kv
+<span class="k">VALUES</span> (<span class="s">'counter:logins:2027-04-27'</span>, <span class="s">'1'</span>)
+<span class="k">ON</span> CONFLICT (key) DO <span class="k">UPDATE</span>
+  <span class="k">SET</span> value = to_jsonb(kv.value::int + 1);
+
+<span class="c">-- delete</span>
+<span class="k">DELETE</span> <span class="k">FROM</span> kv <span class="k">WHERE</span> key = <span class="s">'session:91bc'</span>;</pre>
+      <ul>
+        <li>Three operations: get, put, delete, always by key.</li>
+        <li>Every request names its key, so keys spread over many machines easily (next section).</li>
+        <li>A question about values ("whose sessions?") means reading everything, or keeping a second key by hand.</li>
+      </ul>
+    </div>
+    <p><a class="try" href="playground.html#kv">Playground examples 5.1 to 5.3</a></p>
+  </div>
+  
+</section>
+
+<!-- 12 ────────────────────────────────────────────── section -->
+<section class="slide slide--section" id="s12">
+  <h2>Data on many machines</h2>
+  <p>Split it, copy it, and keep the copies honest.</p>
+  
+</section>
+
+<!-- 13 ────────────────────────────────────────────── why distribute -->
+<section class="slide" id="s13">
+  <h2>Up or out?</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div>
+        <h3>Scale up</h3>
+        <ul>
+          <li>A bigger server: more cores, memory, faster disks.</li>
+          <li>Nothing in the database changes.</li>
+          <li>Takes most applications a long way, then gets very expensive, and is still one machine that can fail.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Scale out</h3>
+        <ul>
+          <li>Many ordinary servers, each with part of the work.</li>
+          <li><strong>Partition</strong> (shard) the data to share the load.</li>
+          <li><strong>Replicate</strong> each part to survive failures and serve more reads.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="callout">
+      <span class="mark" aria-hidden="true">→</span>
+      <p>Partitioning answers "too much data or too many writes". Replication answers "too many reads" and "a machine died". Real systems do both.</p>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 14 ────────────────────────────────────────────── sharding -->
+<section class="slide" id="s14">
+  <h2>Sharding by hash</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:1000px">
+<svg style="--dg-k:1" viewBox="0 0 1000 380" role="img" aria-labelledby="sht shd">
+<title id="sht">Sharding the reviews by a hash of the student</title>
+<desc id="shd">On the left, three reviews keyed by student: S0042, S0101 and S0358. Each key goes through hash(student) mod 3, which sends it to one of three shards on three machines. In the playground&#x27;s three hash partitions, shard 0 holds 1,025 reviews, shard 1 holds 973 and shard 2 holds 1,002, and every review by S0042 is on shard 0, by S0101 on shard 1 and by S0358 on shard 2. Below, two queries. WHERE student = S0042 goes to shard 0 only. WHERE course_id = CS-347 must go to all three shards, and their answers are combined.</desc>
+<defs><marker id="sha" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#0e5a6b"/></marker><marker id="shb" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#9e1b32"/></marker></defs>
+<g class="v-in" style="--d:0.10s"><rect class="dg-box" x="30" y="40" width="130" height="40" rx="4"/><text class="dg-sm dg-mono" x="95" y="66" text-anchor="middle">S0042</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:0.60s" d="M162 60 C200 60, 200 116, 226 116" marker-end="url(#sha)"/>
+<g class="v-in" style="--d:0.25s"><rect class="dg-box" x="30" y="96" width="130" height="40" rx="4"/><text class="dg-sm dg-mono" x="95" y="122" text-anchor="middle">S0101</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:0.70s" d="M162 116 C200 116, 200 116, 226 116" marker-end="url(#sha)"/>
+<g class="v-in" style="--d:0.40s"><rect class="dg-box" x="30" y="152" width="130" height="40" rx="4"/><text class="dg-sm dg-mono" x="95" y="178" text-anchor="middle">S0358</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:0.80s" d="M162 172 C200 172, 200 116, 226 116" marker-end="url(#sha)"/>
+<g class="v-in" style="--d:0.90s"><rect class="dg-box-m" x="232" y="84" width="210" height="64" rx="4"/><text class="dg-sm dg-mono" x="337" y="112" text-anchor="middle">hash(student)</text><text class="dg-sm dg-mono" x="337" y="136" text-anchor="middle">mod 3</text></g>
+<g class="v-in" style="--d:1.30s"><rect class="dg-box-a" x="520" y="40" width="140" height="140" rx="6"/><text class="dg-sm-b" x="590" y="68" text-anchor="middle">Shard 0</text><text class="dg-xs" x="590" y="96" text-anchor="middle">machine 1</text><text class="dg-xs" x="590" y="130" text-anchor="middle">1,025 reviews</text><text class="dg-xs dg-mono" x="590" y="156" text-anchor="middle">S0042, …</text></g>
+<path class="dg-line-q v-draw" pathLength="1" style="--d:1.10s" d="M444 100 C470 18, 560 10, 590 34" marker-end="url(#sha)"/>
+<g class="v-in" style="--d:1.45s"><rect class="dg-box-t" x="680" y="40" width="140" height="140" rx="6"/><text class="dg-sm-b" x="750" y="68" text-anchor="middle">Shard 1</text><text class="dg-xs" x="750" y="96" text-anchor="middle">machine 2</text><text class="dg-xs" x="750" y="130" text-anchor="middle">973 reviews</text><text class="dg-xs dg-mono" x="750" y="156" text-anchor="middle">S0101, …</text></g>
+<path class="dg-line-q v-draw" pathLength="1" style="--d:1.20s" d="M444 100 C470 18, 720 10, 750 34" marker-end="url(#sha)"/>
+<g class="v-in" style="--d:1.60s"><rect class="dg-box-t" x="840" y="40" width="140" height="140" rx="6"/><text class="dg-sm-b" x="910" y="68" text-anchor="middle">Shard 2</text><text class="dg-xs" x="910" y="96" text-anchor="middle">machine 3</text><text class="dg-xs" x="910" y="130" text-anchor="middle">1,002 reviews</text><text class="dg-xs dg-mono" x="910" y="156" text-anchor="middle">S0358, …</text></g>
+<path class="dg-line-q v-draw" pathLength="1" style="--d:1.30s" d="M444 100 C470 18, 880 10, 910 34" marker-end="url(#sha)"/>
+<g class="v-in" style="--d:2.20s"><rect class="dg-box" x="30" y="240" width="340" height="48" rx="4"/><text class="dg-sm dg-mono" x="46" y="270">WHERE student = &#x27;S0042&#x27;</text></g>
+<g class="v-in" style="--d:2.60s"><rect class="dg-box" x="30" y="310" width="340" height="48" rx="4"/><text class="dg-sm dg-mono" x="46" y="340">WHERE course_id = &#x27;CS-347&#x27;</text></g>
+<g class="v-in" style="--d:2.40s"><rect class="dg-box-a" x="550" y="248" width="80" height="32" rx="3"/><text class="dg-xs" x="590" y="270" text-anchor="middle">asked</text></g>
+<g class="v-in" style="--d:2.80s"><rect class="dg-box-a" x="550" y="318" width="80" height="32" rx="3"/><text class="dg-xs" x="590" y="340" text-anchor="middle">asked</text></g>
+<g class="v-in" style="--d:2.45s"><rect class="dg-box-m" x="710" y="248" width="80" height="32" rx="3"/><text class="dg-xs" x="750" y="270" text-anchor="middle">skipped</text></g>
+<g class="v-in" style="--d:2.90s"><rect class="dg-box-a" x="710" y="318" width="80" height="32" rx="3"/><text class="dg-xs" x="750" y="340" text-anchor="middle">asked</text></g>
+<g class="v-in" style="--d:2.50s"><rect class="dg-box-m" x="870" y="248" width="80" height="32" rx="3"/><text class="dg-xs" x="910" y="270" text-anchor="middle">skipped</text></g>
+<g class="v-in" style="--d:3.00s"><rect class="dg-box-a" x="870" y="318" width="80" height="32" rx="3"/><text class="dg-xs" x="910" y="340" text-anchor="middle">asked</text></g>
+<g class="v-in" style="--d:2.50s"><text class="dg-xs dg-txt-ok" x="384" y="270" text-anchor="start">1 shard</text></g>
+<g class="v-in" style="--d:3.10s"><text class="dg-xs dg-txt-bad" x="384" y="340" text-anchor="start">all 3, then combine</text></g>
+</svg>
+      <figcaption><strong>Figure 15.4.</strong> A query that names the shard key goes to one shard; any other query goes to all of them.</figcaption>
+    </figure>
+    <p><a class="try" href="playground.html#shard">Playground examples 6.1 and 6.2</a></p>
+  </div>
+  
+</section>
+
+<!-- 15 ────────────────────────────────────────────── shard key -->
+<section class="slide" id="s15">
+  <h2>Choosing a shard key</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <ul>
+        <li><strong>Spread evenly.</strong> Many distinct values, none much more common than the rest. A hot key, such as one celebrity's posts, overloads its shard (skew).</li>
+        <li><strong>Keep queries local.</strong> Shard by what most queries name: reviews by student, if most pages show one student.</li>
+        <li><strong>Keep transactions local.</strong> A transaction across shards needs two-phase commit.</li>
+      </ul>
+      <ul>
+        <li><strong>Hash</strong> spreads well but scatters ranges; <strong>range</strong> keeps neighbours together but can pile new keys on one shard.</li>
+        <li>With <em>hash mod n</em>, adding a machine moves most keys. <strong>Consistent hashing</strong> moves only about 1/n of them.</li>
+      </ul>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 16 ────────────────────────────────────────────── quorums -->
+<section class="slide" id="s16">
+  <h2>Replicas and quorums</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:1000px">
+<svg style="--dg-k:1" viewBox="0 0 1000 360" role="img" aria-labelledby="qrt qrd">
+<title id="qrt">Read and write quorums with three replicas</title>
+<desc id="qrd">Three replicas, A, B and C, each hold a copy of the same item, so N is 3. A write with W = 2 is confirmed once A and B have the new version, version 2; C still holds version 1. A read with R = 2 asks B and C. Because R + W = 4 is more than N = 3, the two sets must share at least one replica, here B, so the read sees version 2 and returns it. On the right, the contrast: with W = 1 and R = 1, a write may reach only A and a read may ask only C, and the read returns the old version 1.</desc>
+<defs><marker id="qra" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#0e5a6b"/></marker><marker id="qrb" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#9e1b32"/></marker></defs>
+<g class="v-in" style="--d:0.10s"><rect class="dg-box-t" x="60" y="120" width="170" height="96" rx="6"/><text class="dg-sm-b" x="145" y="154" text-anchor="middle">Replica A</text><text class="dg-sm dg-mono" x="145" y="186" text-anchor="middle">version 2</text></g>
+<g class="v-in" style="--d:0.20s"><rect class="dg-box-t" x="260" y="120" width="170" height="96" rx="6"/><text class="dg-sm-b" x="345" y="154" text-anchor="middle">Replica B</text><text class="dg-sm dg-mono" x="345" y="186" text-anchor="middle">version 2</text></g>
+<g class="v-in" style="--d:0.30s"><rect class="dg-box" x="460" y="120" width="170" height="96" rx="6"/><text class="dg-sm-b" x="545" y="154" text-anchor="middle">Replica C</text><text class="dg-sm dg-mono" x="545" y="186" text-anchor="middle">version 1</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:0.70s" d="M60 104 V88 H430 V104"/>
+<g class="v-in" style="--d:0.90s"><text class="dg-sm-b" x="245" y="76" text-anchor="middle">write, W = 2: confirmed by A and B</text></g>
+<path class="dg-line-a v-draw" pathLength="1" style="--d:1.50s" d="M260 232 V250 H630 V232"/>
+<g class="v-in" style="--d:1.70s"><text class="dg-sm-b" x="445" y="274" text-anchor="middle">read, R = 2: asks B and C</text></g>
+<rect class="dg-hl v-in" style="--d:2.20s" x="254" y="114" width="182" height="108" rx="8"/>
+<g class="v-in" style="--d:2.40s"><text class="dg-sm dg-txt-ok" x="345" y="312" text-anchor="middle">B is in both sets, so the read sees version 2</text></g>
+<g class="v-in" style="--d:2.60s"><text class="dg-xs" x="345" y="338" text-anchor="middle">R + W = 4 &gt; N = 3: the two sets always overlap</text></g>
+<g class="v-in" style="--d:3.00s"><rect class="dg-box-m" x="730" y="110" width="250" height="150" rx="4"/><text class="dg-sm-b" x="746" y="140">W = 1, R = 1</text><text class="dg-xs" x="746" y="168" xml:space="preserve" style="white-space:pre">write reaches A only</text><text class="dg-xs" x="746" y="194" xml:space="preserve" style="white-space:pre">read asks C only</text><text class="dg-xs" x="746" y="220" xml:space="preserve" style="white-space:pre">returns version 1: stale</text></g>
+</svg>
+      <figcaption><strong>Figure 15.5.</strong> With N copies, a write waits for W of them and a read asks R; if R + W &gt; N, every read meets the latest write.</figcaption>
+    </figure>
+    <p><a class="try" href="playground.html#replicas">Playground section 7: try W and R yourself</a></p>
+  </div>
+  
+</section>
+
+<!-- 17 ────────────────────────────────────────────── CAP -->
+<section class="slide" id="s17">
+  <h2>CAP and eventual consistency</h2>
+  <div class="slide-main">
+    <p>When the network <strong>partitions</strong> the replicas into groups that can't reach each other, each request must either wait or risk being stale.</p>
+    <div class="cols-2">
+      <div>
+        <h3>Stay consistent</h3>
+        <ul>
+          <li>Refuse or delay requests on the minority side until the network heals.</li>
+          <li>Every read sees the latest write.</li>
+          <li>Banking, inventory, registration.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Stay available</h3>
+        <ul>
+          <li>Every replica keeps answering.</li>
+          <li><strong>Eventual consistency:</strong> once writes stop, the replicas agree. Conflicts must be merged later.</li>
+          <li>Shopping carts, likes, feeds.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 18 ────────────────────────────────────────────── 2PC -->
+<section class="slide" id="s18">
+  <h2>A transaction across shards: two-phase commit</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:1000px">
+<svg style="--dg-k:1" viewBox="0 0 1000 400" role="img" aria-labelledby="tpt tpd">
+<title id="tpt">Two-phase commit</title>
+<desc id="tpd">A time diagram, time running down. A coordinator on the left and two shards on the right, each with a vertical line. Phase 1, voting: the coordinator sends prepare T to both shards. Each shard writes its changes and a ready record to its own log, on disk, and answers ready. Phase 2, decision: with every answer ready, the coordinator writes commit T to its log; at that moment T has committed. It sends commit T to both shards, which commit and answer with an acknowledgement. If any shard had answered no, or not answered, the coordinator would decide abort instead. A shard that has said ready must wait for the decision, even if the coordinator crashes: that is when two-phase commit blocks.</desc>
+<defs><marker id="tpa" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#0e5a6b"/></marker><marker id="tpb" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#9e1b32"/></marker></defs>
+<g class="v-in" style="--d:0.10s"><rect class="dg-box-m" x="50" y="20" width="160" height="40" rx="4"/><text class="dg-sm-b" x="130" y="46" text-anchor="middle">Coordinator</text><path class="dg-line-q" d="M130 60 V390"/></g>
+<g class="v-in" style="--d:0.20s"><rect class="dg-box-m" x="480" y="20" width="160" height="40" rx="4"/><text class="dg-sm-b" x="560" y="46" text-anchor="middle">Shard 1</text><path class="dg-line-q" d="M560 60 V390"/></g>
+<g class="v-in" style="--d:0.30s"><rect class="dg-box-m" x="760" y="20" width="160" height="40" rx="4"/><text class="dg-sm-b" x="840" y="46" text-anchor="middle">Shard 2</text><path class="dg-line-q" d="M840 60 V390"/></g>
+<g class="v-in" style="--d:0.40s"><path class="dg-dash" d="M20 214 H980"/><text class="dg-lbl" x="24" y="90">Phase 1: vote</text><text class="dg-lbl" x="24" y="238">Phase 2: decide</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:0.70s" d="M130 100 L554 120" marker-end="url(#tpa)"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:0.80s" d="M130 100 L834 120" marker-end="url(#tpa)"/>
+<g class="v-in" style="--d:0.90s"><text class="dg-xs" x="330" y="98" text-anchor="middle">prepare T</text></g>
+<g class="v-in" style="--d:1.30s"><rect class="dg-box-t" x="486" y="128" width="148" height="30" rx="3"/><text class="dg-xs dg-mono" x="560" y="148" text-anchor="middle">log &lt;ready T&gt;</text></g>
+<g class="v-in" style="--d:1.40s"><rect class="dg-box-t" x="766" y="128" width="148" height="30" rx="3"/><text class="dg-xs dg-mono" x="840" y="148" text-anchor="middle">log &lt;ready T&gt;</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.80s" d="M560 160 L136 188" marker-end="url(#tpa)"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.90s" d="M840 160 L136 188" marker-end="url(#tpa)"/>
+<g class="v-in" style="--d:2.00s"><text class="dg-xs" x="330" y="196" text-anchor="middle">ready</text></g>
+<g class="v-in" style="--d:2.40s"><rect class="dg-box-a" x="40" y="246" width="180" height="34" rx="3"/><text class="dg-xs dg-mono" x="130" y="268" text-anchor="middle">log &lt;commit T&gt;</text></g>
+<g class="v-in" style="--d:2.60s"><text class="dg-xs" x="230" y="268" text-anchor="start">T has committed</text></g>
+<path class="dg-line-a v-draw" pathLength="1" style="--d:2.90s" d="M130 290 L554 312" marker-end="url(#tpb)"/>
+<path class="dg-line-a v-draw" pathLength="1" style="--d:3.00s" d="M130 290 L834 312" marker-end="url(#tpb)"/>
+<g class="v-in" style="--d:3.10s"><text class="dg-xs" x="380" y="292" text-anchor="middle">commit T</text></g>
+<g class="v-in" style="--d:3.40s"><rect class="dg-box-t" x="486" y="318" width="148" height="30" rx="3"/><text class="dg-xs dg-mono" x="560" y="338" text-anchor="middle">log &lt;commit T&gt;</text></g>
+<path class="dg-line-q v-draw" pathLength="1" style="--d:3.80s" d="M560 352 L136 376" marker-end="url(#tpa)"/>
+<g class="v-in" style="--d:3.50s"><rect class="dg-box-t" x="766" y="318" width="148" height="30" rx="3"/><text class="dg-xs dg-mono" x="840" y="338" text-anchor="middle">log &lt;commit T&gt;</text></g>
+<path class="dg-line-q v-draw" pathLength="1" style="--d:3.90s" d="M840 352 L136 376" marker-end="url(#tpa)"/>
+<g class="v-in" style="--d:4.00s"><text class="dg-xs" x="330" y="384" text-anchor="middle">ack</text></g>
+</svg>
+      <figcaption><strong>Figure 15.6.</strong> Every shard votes, and one log record at the coordinator decides.</figcaption>
+    </figure>
+    <ul>
+      <li>A shard that voted ready must wait for the decision, holding its locks, even if the coordinator crashes: 2PC <strong>blocks</strong>.</li>
+    </ul>
+  </div>
+  
+</section>
+
+<!-- 19 ────────────────────────────────────────────── choosing -->
+<section class="slide" id="s19">
+  <h2>Choosing a store</h2>
+  <div class="slide-main">
+    <div class="fig-scroll" tabindex="0" role="region" aria-label="Choosing a store">
+    <table class="tbl tbl--compact">
+      <caption>A rough guide, to start the argument rather than end it</caption>
+      <thead><tr><th scope="col">If the data…</th><th scope="col">Consider</th></tr></thead>
+      <tbody>
+        <tr><td>has relationships, constraints and transactions that matter</td><td>A relational database (most of the time)</td></tr>
+        <tr><td>is mostly relational, with a part whose shape varies</td><td>PostgreSQL with a <code>jsonb</code> column</td></tr>
+        <tr><td>is read and written whole, by key, at huge volume</td><td>A key-value or document store</td></tr>
+        <tr><td>needs SQL and transactions across many machines</td><td>A distributed SQL database: Spanner, CockroachDB</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <div class="callout">
+      <span class="mark" aria-hidden="true">→</span>
+      <p>Your project's NoSQL feature asks the same question at small scale: why does <em>this</em> part suit a document or a key better than a table?</p>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 20 ────────────────────────────────────────────── takeaways -->
+<section class="slide" id="s20">
+  <h2>Takeaways</h2>
+  <div class="slide-main">
+    <ol class="steps">
+      <li><span class="n" aria-hidden="true">1</span><div><strong>Documents fit data that is read whole and changes shape.</strong><p>The schema moves into the program that reads them.</p></div></li>
+      <li><span class="n" aria-hidden="true">2</span><div><strong>PostgreSQL does documents too.</strong><p><code>jsonb</code>, its operators and a GIN index, beside your tables and inside your transactions.</p></div></li>
+      <li><span class="n" aria-hidden="true">3</span><div><strong>Embed what is read together; reference what is shared.</strong><p>Every copy is an update anomaly waiting to happen.</p></div></li>
+      <li><span class="n" aria-hidden="true">4</span><div><strong>Shard to share the load, replicate to survive.</strong><p>The shard key decides which queries stay on one machine.</p></div></li>
+      <li><span class="n" aria-hidden="true">5</span><div><strong>Copies cost consistency or waiting.</strong><p>Quorums with R + W &gt; N, or eventual consistency; two-phase commit for transactions across shards.</p></div></li>
+    </ol>
+  </div>
+  
+</section>
+
+<!-- 21 ────────────────────────────────────────────── demos -->
+<section class="slide" id="s21">
+  <h2>Now: demos and walkthroughs</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div>
+        <h3>Each team, 10 minutes</h3>
+        <ul>
+          <li><strong>Demo, 3 minutes:</strong> your application running on your own data, start to finish.</li>
+          <li><strong>Walkthrough, 6 minutes:</strong> I pick parts of your code and SQL; each partner explains one, and either may be asked about any of it.</li>
+          <li>One minute to swap laptops.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Be ready</h3>
+        <ul>
+          <li>Laptop charged, database loaded, the program already open.</li>
+          <li>Your milestone 4 report open, for its query plans.</li>
+          <li>The order is posted in Brightspace. Online students: your booked call this week.</li>
+        </ul>
+      </div>
+    </div>
+    <p><a class="try" href="../../project/milestone4.html">Milestone 4: what the demo and walkthrough are graded on</a></p>
+  </div>
+  
+</section>
+
+<!-- 22 ────────────────────────────────────────────── this week -->
+<section class="slide" id="s22">
+  <h2>This week's work</h2>
+  <div class="slide-main">
+    <div class="week-work">
+      <div>
+        <h3>Read</h3>
+        <ul>
+          <li>Section 8.1 (semi-structured data), 10.1 and 10.2 (big data storage), 23.1, 23.2 and 23.6 (distributed transactions, weak consistency).</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Do</h3>
+        <ul>
+          <li>The <a href="playground.html">week 15 playground</a>: the quorum widget and 8 exercises.</li>
+          <li>Quiz 15 in Brightspace.</li>
+          <li><span class="tag-grad">Graduate (CS 5200)</span> <a href="lab9.html">Lab 9</a>: a document store of campus events.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Due</h3>
+        <ul>
+          <li><span class="due">Today, in class</span>: <a href="../../project/milestone4.html">milestone 4</a> demo and walkthrough.</li>
+          <li><span class="due">Sunday, May 2, 11:59 p.m. CT</span>: Lab 9 (CS 5200).</li>
+          <li><span class="due">May 3 to 7</span>: comprehensive final exam.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 23 ────────────────────────────────────────────── resources -->
+<section class="slide" id="s23">
+  <h2>Free resources</h2>
+  <div class="slide-main">
+    <ul class="resources">
+      <li><a href="https://www.postgresql.org/docs/current/datatype-json.html">JSON types</a><span class="src">PostgreSQL documentation</span><p>json and jsonb, containment, and GIN indexes on documents.</p></li>
+      <li><a href="https://www.postgresql.org/docs/current/functions-json.html">JSON functions and operators</a><span class="src">PostgreSQL documentation</span><p>Every operator and function, and the SQL/JSON path language.</p></li>
+      <li><a href="https://www.postgresql.org/docs/current/ddl-partitioning.html">Table partitioning</a><span class="src">PostgreSQL documentation</span><p>Hash, range and list partitions, and partition pruning.</p></li>
+      <li><a href="https://www.allthingsdistributed.com/files/amazon-dynamo-sosp2007.pdf">Dynamo: Amazon's highly available key-value store</a><span class="src">DeCandia et al., SOSP 2007</span><p>Consistent hashing, quorums and eventual consistency in one system.</p></li>
+      <li><a href="playground.html">Week 15 playground</a><span class="src">this course</span><p>Documents, shards and the quorum widget, in your browser.</p></li>
+    </ul>
+  </div>
+  
+</section>
+
+</main>
+</div>
+<script src="../../assets/deck.js"></script>
+</body>
+</html>

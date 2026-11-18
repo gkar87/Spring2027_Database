@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CS 4600/5200 Database Theory and Applications · Spring 2027</title>
+<meta name="description" content="Course home for CS 4600/5200 Database Theory and Applications, Spring 2027, University of Central Missouri: schedule, weekly slides, SQL playgrounds and labs.">
+<link rel="stylesheet" href="assets/course.css">
+<link rel="stylesheet" href="assets/db.css">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to the course content</a>
+<div class="doc">
+<header class="doc-masthead">
+  <p class="inst"><span>University of Central Missouri</span><span>School of Computer Science and Cybersecurity</span><span>Spring 2027</span></p>
+  <h1>CS 4600/5200 Database Theory and Applications</h1>
+  <p class="tagline">Use databases, design them, then look under the hood: the relational model and SQL, E-R design and normalization, a Python application on PostgreSQL, and how indexes, query plans, transactions and recovery work.</p>
+  <p class="instructor">Dr. Gorkem Kar <span>kar@ucmo.edu</span> <span>(660) 543-6612</span></p>
+</header>
+
+<main id="main">
+<dl class="facts">
+  <div><dt>Class</dt><dd>Tuesdays 3:00–5:40 p.m. CT, MIC (room to be announced)</dd></div>
+  <div><dt>Online section</dt><dd>Recorded lecture each Tuesday</dd></div>
+  <div><dt>Office hours</dt><dd>Tue and Wed 12:00–3:00 p.m., MIC D159</dd></div>
+  <div><dt>Deadlines</dt><dd>Sundays 11:59 p.m. CT</dd></div>
+</dl>
+
+<section id="weeks" aria-labelledby="weeks-h">
+  <h2 id="weeks-h">Weeks</h2>
+  <p>Each week has slides, a SQL playground that runs in your browser, and a lab. Weeks are added here as they are released.</p>
+  <p>The <a href="project/index.html">term project</a> runs alongside the labs, in four milestones; its page has the dates and what each one asks.</p>
+  <p>You submit every lab as one zip file in Brightspace, named <code>labN_lastname_firstname.zip</code>. It holds a plain-text answers file with your name and written answers, plus the SQL and output files the lab asks for. Each lab handout lists exactly what goes in it.</p>
+  <div class="modules">
+    <a class="module" href="weeks/week01/index.html">
+      <span class="wk" aria-hidden="true">1</span>
+      <span><span class="module-title">Why databases, and the relational model</span>
+      <span class="module-meta">January 12 · slides</span></span>
+    </a>
+    <a class="module" href="weeks/week01/playground.html">
+      <span class="wk" aria-hidden="true">1</span>
+      <span><span class="module-title">Week 1 SQL playground</span>
+      <span class="module-meta">15 runnable examples · 6 exercises</span></span>
+    </a>
+    <a class="module" href="weeks/week01/lab0.html">
+      <span class="wk" aria-hidden="true">1</span>
+      <span><span class="module-title">Lab 0: set up PostgreSQL</span>
+      <span class="module-meta">Due Sunday, January 17</span></span>
+    </a>
+    <a class="module" href="weeks/week02/index.html">
+      <span class="wk" aria-hidden="true">2</span>
+      <span><span class="module-title">Relational algebra: the math under SQL</span>
+      <span class="module-meta">January 19 · slides</span></span>
+    </a>
+    <a class="module" href="weeks/week02/playground.html">
+      <span class="wk" aria-hidden="true">2</span>
+      <span><span class="module-title">Week 2 algebra playground</span>
+      <span class="module-meta">19 runnable examples · 8 exercises</span></span>
+    </a>
+    <a class="module" href="weeks/week02/lab1.html">
+      <span class="wk" aria-hidden="true">2</span>
+      <span><span class="module-title">Lab 1: relational algebra, then SQL</span>
+      <span class="module-meta">Due Sunday, January 24</span></span>
+    </a>
+    <a class="module" href="weeks/week03/index.html">
+      <span class="wk" aria-hidden="true">3</span>
+      <span><span class="module-title">SQL I: queries, joins and NULLs</span>
+      <span class="module-meta">January 26 · slides</span></span>
+    </a>
+    <a class="module" href="weeks/week03/playground.html">
+      <span class="wk" aria-hidden="true">3</span>
+      <span><span class="module-title">Week 3 SQL playground</span>
+      <span class="module-meta">18 runnable examples · join explorer · 8 exercises</span></span>
+    </a>
+    <a class="module" href="weeks/week03/lab2.html">
+      <span class="wk" aria-hidden="true">3</span>
+      <span><span class="module-title">Lab 2: queries, joins and NULLs</span>
+      <span class="module-meta">Due Sunday, January 31</span></span>
+    </a>
+    <a class="module" href="weeks/week04/index.html">
+      <span class="wk" aria-hidden="true">4</span>
+      <span><span class="module-title">SQL II: aggregates, subqueries and windows</span>
+      <span class="module-meta">February 2 · slides</span></span>
+    </a>
+    <a class="module" href="weeks/week04/playground.html">
+      <span class="wk" aria-hidden="true">4</span>
+      <span><span class="module-title">Week 4 SQL playground</span>
+      <span class="module-meta">17 runnable examples · GROUP BY explorer · 8 exercises</span></span>
+    </a>
+    <a class="module" href="weeks/week04/lab3.html">
+      <span class="wk" aria-hidden="true">4</span>
+      <span><span class="module-title">Lab 3: aggregates, subqueries and windows</span>
+      <span class="module-meta">Due Sunday, February 7</span></span>
+    </a>
+    <a class="module" href="weeks/week05/index.html">
+      <span class="wk" aria-hidden="true">5</span>
+      <span><span class="module-title">SQL III: changing data, constraints and views</span>
+      <span class="module-meta">February 9 · slides</span></span>
+    </a>
+    <a class="module" href="weeks/week05/playground.html">
+      <span class="wk" aria-hidden="true">5</span>
+      <span><span class="module-title">Week 5 SQL playground</span>
+      <span class="module-meta">22 runnable examples · foreign key and recursion explorers · 8 exercises</span></span>
+    </a>
+    <a class="module" href="weeks/week05/lab4.html">
+      <span class="wk" aria-hidden="true">5</span>
+      <span><span class="module-title">Lab 4: changing data, constraints and views</span>
+      <span class="module-meta">Due Sunday, February 14</span></span>
+    </a>
+    <a class="module" href="weeks/week06/index.html">
+      <span class="wk" aria-hidden="true">6</span>
+      <span><span class="module-title">E-R modeling: from requirements to tables</span>
+      <span class="module-meta">February 16 · slides</span></span>
+    </a>
+    <a class="module" href="weeks/week06/playground.html">
+      <span class="wk" aria-hidden="true">6</span>
+      <span><span class="module-title">Week 6 design studio</span>
+      <span class="module-meta">9 runnable examples · E-R to tables explorer · 8 exercises</span></span>
+    </a>
+    <a class="module" href="project/milestone1.html">
+      <span class="wk" aria-hidden="true">6</span>
+      <span><span class="module-title">Project milestone 1: E-R design</span>
+      <span class="module-meta">Due Sunday, February 21 · no lab this week</span></span>
+    </a>
+    <a class="module" href="weeks/week07/index.html">
+      <span class="wk" aria-hidden="true">7</span>
+      <span><span class="module-title">Relational design: functional dependencies and normal forms</span>
+      <span class="module-meta">February 23 · slides</span></span>
+    </a>
+    <a class="module" href="weeks/week07/playground.html">
+      <span class="wk" aria-hidden="true">7</span>
+      <span><span class="module-title">Week 7 SQL playground</span>
+      <span class="module-meta">10 runnable examples · closure and normal form explorer · 8 exercises</span></span>
+    </a>
+    <a class="module" href="weeks/week07/lab5.html">
+      <span class="wk" aria-hidden="true">7</span>
+      <span><span class="module-title">Lab 5: normalizing a sign-in sheet</span>
+      <span class="module-meta">Due Sunday, February 28</span></span>
+    </a>
+    <a class="module" href="weeks/week08/index.html">
+      <span class="wk" aria-hidden="true">8</span>
+      <span><span class="module-title">Midterm review: weeks 1 to 7</span>
+      <span class="module-meta">March 2 · slides · midterm in class after the review</span></span>
+    </a>
+    <a class="module" href="weeks/week08/playground.html">
+      <span class="wk" aria-hidden="true">8</span>
+      <span><span class="module-title">Week 8 review playground</span>
+      <span class="module-meta">10 checked exercises from weeks 3 to 7</span></span>
+    </a>
+    <a class="module" href="weeks/week08/practice.html">
+      <span class="wk" aria-hidden="true">8</span>
+      <span><span class="module-title">Practice midterm</span>
+      <span class="module-meta">Five parts, with answers</span></span>
+    </a>
+    <a class="module" href="project/milestone2.html">
+      <span class="wk" aria-hidden="true">8</span>
+      <span><span class="module-title">Project milestone 2: schema and DDL</span>
+      <span class="module-meta">Due Sunday, March 7 · no lab this week</span></span>
+    </a>
+    <a class="module" href="weeks/week09/index.html">
+      <span class="wk" aria-hidden="true">9</span>
+      <span><span class="module-title">Application development with Python</span>
+      <span class="module-meta">March 16 · slides</span></span>
+    </a>
+    <a class="module" href="weeks/week09/playground.html">
+      <span class="wk" aria-hidden="true">9</span>
+      <span><span class="module-title">Week 9 SQL playground</span>
+      <span class="module-meta">10 runnable examples · injection explorer · 8 exercises</span></span>
+    </a>
+    <a class="module" href="weeks/week09/lab6.html">
+      <span class="wk" aria-hidden="true">9</span>
+      <span><span class="module-title">Lab 6: a registration helper in Python</span>
+      <span class="module-meta">Due Sunday, March 21</span></span>
+    </a>
+    <a class="module" href="project/papers.html">
+      <span class="wk" aria-hidden="true">9</span>
+      <span><span class="module-title">CS 5200 paper critique: the reading list</span>
+      <span class="module-meta">Choose by April 4 · due with milestone 4</span></span>
+    </a>
+    <a class="module" href="weeks/week10/index.html">
+      <span class="wk" aria-hidden="true">10</span>
+      <span><span class="module-title">Storage, the buffer pool and indexes</span>
+      <span class="module-meta">March 23 · slides</span></span>
+    </a>
+    <a class="module" href="weeks/week10/playground.html">
+      <span class="wk" aria-hidden="true">10</span>
+      <span><span class="module-title">Week 10 SQL playground</span>
+      <span class="module-meta">12 runnable examples · page viewer · B+-tree explorer · 8 exercises · no lab this week</span></span>
+    </a>
+    <a class="module" href="weeks/week11/index.html">
+      <span class="wk" aria-hidden="true">11</span>
+      <span><span class="module-title">Query processing</span>
+      <span class="module-meta">March 30 · slides</span></span>
+    </a>
+    <a class="module" href="weeks/week11/playground.html">
+      <span class="wk" aria-hidden="true">11</span>
+      <span><span class="module-title">Week 11 SQL playground</span>
+      <span class="module-meta">12 runnable examples · join explorer · 8 exercises</span></span>
+    </a>
+    <a class="module" href="weeks/week11/lab7.html">
+      <span class="wk" aria-hidden="true">11</span>
+      <span><span class="module-title">Lab 7: predict the cost, then measure it</span>
+      <span class="module-meta">Due Sunday, April 11</span></span>
+    </a>
+    <a class="module" href="project/milestone3.html">
+      <span class="wk" aria-hidden="true">11</span>
+      <span><span class="module-title">Project milestone 3: a working application</span>
+      <span class="module-meta">Due Sunday, April 4</span></span>
+    </a>
+    <a class="module" href="weeks/week12/index.html">
+      <span class="wk" aria-hidden="true">12</span>
+      <span><span class="module-title">Query optimization</span>
+      <span class="module-meta">April 6 · slides</span></span>
+    </a>
+    <a class="module" href="weeks/week12/playground.html">
+      <span class="wk" aria-hidden="true">12</span>
+      <span><span class="module-title">Week 12 SQL playground</span>
+      <span class="module-meta">15 runnable examples · join order explorer · 8 exercises · no lab this week</span></span>
+    </a>
+    <a class="module" href="weeks/week13/index.html">
+      <span class="wk" aria-hidden="true">13</span>
+      <span><span class="module-title">Transactions and concurrency</span>
+      <span class="module-meta">April 13 · slides</span></span>
+    </a>
+    <a class="module" href="weeks/week13/playground.html">
+      <span class="wk" aria-hidden="true">13</span>
+      <span><span class="module-title">Week 13 SQL playground</span>
+      <span class="module-meta">15 runnable examples · two-session replay · 8 exercises</span></span>
+    </a>
+    <a class="module" href="weeks/week13/lab8.html">
+      <span class="wk" aria-hidden="true">13</span>
+      <span><span class="module-title">Lab 8: two sessions at once</span>
+      <span class="module-meta">Due Sunday, April 18</span></span>
+    </a>
+    <a class="module" href="weeks/week14/index.html">
+      <span class="wk" aria-hidden="true">14</span>
+      <span><span class="module-title">Recovery and administration</span>
+      <span class="module-meta">April 20 · slides</span></span>
+    </a>
+    <a class="module" href="weeks/week14/playground.html">
+      <span class="wk" aria-hidden="true">14</span>
+      <span><span class="module-title">Week 14 SQL playground</span>
+      <span class="module-meta">15 runnable examples · crash recovery replay · 8 exercises · no lab this week</span></span>
+    </a>
+    <a class="module" href="project/milestone4.html">
+      <span class="wk" aria-hidden="true">14</span>
+      <span><span class="module-title">Project milestone 4: tuning, demo and walkthrough</span>
+      <span class="module-meta">Report due Sunday, April 25 · demo April 27</span></span>
+    </a>
+    <a class="module" href="weeks/week15/index.html">
+      <span class="wk" aria-hidden="true">15</span>
+      <span><span class="module-title">NoSQL and distributed data</span>
+      <span class="module-meta">April 27 · slides</span></span>
+    </a>
+    <a class="module" href="weeks/week15/playground.html">
+      <span class="wk" aria-hidden="true">15</span>
+      <span><span class="module-title">Week 15 SQL playground</span>
+      <span class="module-meta">19 runnable examples · quorum widget · 8 exercises</span></span>
+    </a>
+    <a class="module" href="weeks/week15/lab9.html">
+      <span class="wk" aria-hidden="true">15</span>
+      <span><span class="module-title">Lab 9: a document store of campus events</span>
+      <span class="module-meta">CS 5200 only · Due Sunday, May 2</span></span>
+    </a>
+  </div>
+</section>
+
+<section id="schedule" aria-labelledby="sched-h">
+  <h2 id="sched-h">Schedule</h2>
+  <div class="fig-scroll" tabindex="0" role="region" aria-label="Spring 2027 schedule">
+  <table class="tbl tbl--schedule">
+    <caption>Spring 2027 schedule. Readings are from Silberschatz, Korth and Sudarshan, Database System Concepts, 7th edition.</caption>
+    <thead><tr><th scope="col">Week</th><th scope="col">Tuesday</th><th scope="col">Topic</th><th scope="col">Reading</th><th scope="col">Lab and project</th></tr></thead>
+    <tbody>
+      <tr><td class="week">1</td><td class="date">Jan 12</td><td>Why databases; DBMS architecture; the relational model; keys</td><td>Ch 1–2</td><td>Lab 0: set up PostgreSQL</td></tr>
+      <tr><td class="week">2</td><td class="date">Jan 19</td><td>Relational algebra</td><td>Ch 2</td><td>Lab 1: relational algebra, then SQL</td></tr>
+      <tr><td class="week">3</td><td class="date">Jan 26</td><td>SQL I: SELECT, joins, outer joins, NULLs, set operations</td><td>Ch 3</td><td>Lab 2: queries, joins and NULLs</td></tr>
+      <tr><td class="week">4</td><td class="date">Feb 2</td><td>SQL II: aggregation, subqueries, CTEs, window functions</td><td>Ch 3, 5.4–5.5</td><td>Lab 3: aggregates, subqueries and windows</td></tr>
+      <tr><td class="week">5</td><td class="date">Feb 9</td><td>SQL III: DDL, constraints, views, triggers, roles</td><td>Ch 4–5</td><td>Lab 4: changing data, constraints and views</td></tr>
+      <tr><td class="week">6</td><td class="date">Feb 16</td><td>E-R and EER modeling</td><td>Ch 6</td><td><a href="project/milestone1.html">Project milestone 1</a> (no lab)</td></tr>
+      <tr><td class="week">7</td><td class="date">Feb 23</td><td>Functional dependencies and normal forms</td><td>Ch 7</td><td>Lab 5: normalizing a sign-in sheet</td></tr>
+      <tr><td class="week">8</td><td class="date">Mar 2</td><td>Review and midterm</td><td>Ch 1–7</td><td><a href="project/milestone2.html">Project milestone 2</a></td></tr>
+      <tr><td class="week">–</td><td class="date">Mar 9</td><td>Spring break, no class</td><td></td><td></td></tr>
+      <tr><td class="week">9</td><td class="date">Mar 16</td><td>Application development with Python</td><td>5.1, 9.7–9.8</td><td><a href="weeks/week09/lab6.html">Lab 6</a></td></tr>
+      <tr><td class="week">10</td><td class="date">Mar 23</td><td>Storage, buffer pool and indexes</td><td>13.1–13.5, 14.1–14.3, 14.6–14.7</td><td></td></tr>
+      <tr><td class="week">11</td><td class="date">Mar 30</td><td>Query processing</td><td>15.1–15.7</td><td><a href="weeks/week11/lab7.html">Lab 7</a>; <a href="project/milestone3.html">project milestone 3</a></td></tr>
+      <tr><td class="week">12</td><td class="date">Apr 6</td><td>Query optimization</td><td>16.1–16.5</td><td></td></tr>
+      <tr><td class="week">13</td><td class="date">Apr 13</td><td>Transactions and concurrency control</td><td>17.1–17.10, 18.1–18.2, 18.7–18.8</td><td><a href="weeks/week13/lab8.html">Lab 8</a></td></tr>
+      <tr><td class="week">14</td><td class="date">Apr 20</td><td>Recovery and administration</td><td>19.1–19.5, 19.7, 19.9</td><td></td></tr>
+      <tr><td class="week">15</td><td class="date">Apr 27</td><td>NoSQL and distributed data</td><td>8.1, 10.1–10.2, 23.1–23.2, 23.6</td><td><a href="weeks/week15/lab9.html">Lab 9</a> <span class="tag-grad">Graduate (CS 5200)</span>; <a href="project/milestone4.html">project milestone 4</a> and walkthrough</td></tr>
+      <tr><td class="week">16</td><td class="date">May 3–7</td><td>Comprehensive final exam</td><td></td><td></td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+</main>
+
+<footer>
+  <p>CS 4600/5200 · University of Central Missouri · Spring 2027. Every page on this site is built to meet WCAG 2.1 AA. If something is hard to use, please tell me.</p>
+</footer>
+</div>
+</body>
+</html>

@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Project Milestone 2 — Schema and DDL · CS 4600/5200</title>
+<meta name="description" content="CS 4600/5200 project milestone 2: map your E-R design to tables, list each table's functional dependencies and argue its normal form, write the CREATE TABLE statements with their constraints, load sample data and answer five of your questions in SQL. Five points, due Sunday, March 7.">
+<link rel="stylesheet" href="../assets/course.css">
+<link rel="stylesheet" href="../assets/db.css">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to the milestone</a>
+
+<div class="doc">
+<header class="doc-masthead">
+  <p class="inst"><span>CS 4600/5200 · Database Theory and Applications</span><span>Week 8 · <a href="index.html">Term project</a></span><span><a href="../index.html">Course home</a></span></p>
+  <h1>Milestone 2: tables, keys and data</h1>
+  <p class="tagline">Your diagram becomes a database. Map it to tables as in week 6, test each table against its dependencies as in week 7, write it in SQL with every rule the database can enforce, and prove it works by answering your own questions from milestone 1.</p>
+</header>
+
+<dl class="facts">
+  <div><dt>Due</dt><dd>Sunday, March 7, 11:59 p.m. CT</dd></div>
+  <div><dt>Time</dt><dd>About 6 to 8 hours</dd></div>
+  <div><dt>Submit</dt><dd>One zip file per team, uploaded to Brightspace</dd></div>
+  <div><dt>Worth</dt><dd>5 of the project's 25 points</dd></div>
+</dl>
+
+<nav class="toc" aria-labelledby="toc-h">
+  <h2 id="toc-h">On this page</h2>
+  <ol>
+    <li><a href="#map">Part A: from diagram to tables</a></li>
+    <li><a href="#nf">Part B: dependencies and normal forms</a></li>
+    <li><a href="#ddl">Part C: the CREATE TABLE statements</a></li>
+    <li><a href="#data">Part D: sample data and five queries</a></li>
+    <li><a href="#grad">Part E: CS 5200 only</a></li>
+    <li><a href="#submit">What to submit and how it is graded</a></li>
+    <li><a href="#help">Questions people usually ask</a></li>
+  </ol>
+</nav>
+
+<main id="main">
+
+<section id="map" aria-labelledby="map-h">
+  <h2 id="map-h">Part A: from diagram to tables</h2>
+  <p>Start from your milestone 1 diagram, with the feedback on it applied. If you changed the diagram, include the new version and say in a sentence or two what changed and why.</p>
+  <p>Then list every table as a relation schema, with its primary key underlined and its foreign keys named, like <code>appointment(<u>appt_id</u>, patient_id → patient, doctor_id → doctor, date_time, reason)</code>. Use the week 6 mapping rules (slides 21 to 24): one table per strong entity set, the owner's key plus the discriminator for a weak one, a column for a many-to-one relationship, a table for a many-to-many, and a table for each multivalued attribute.</p>
+</section>
+
+<section id="nf" aria-labelledby="nf-h">
+  <h2 id="nf-h">Part B: dependencies and normal forms</h2>
+  <p>For each table, write its non-trivial functional dependencies, as business rules you would defend to a user. Then say whether the table is in BCNF, using closures where it is not obvious (week 7, slides 12 to 17).</p>
+  <ul>
+    <li>If a table is not in BCNF, decompose it and show the steps, or keep it in 3NF and explain which rule a BCNF split would lose (slides 20 to 23).</li>
+    <li>At least one table must have a dependency worth discussing: a second candidate key, a composite key, or a rule you chose not to enforce. If your design has none, say which table came closest and why.</li>
+    <li>Data can only disprove a dependency. For one table, write the GROUP BY query that would find rows breaking one of its rules, and run it on your sample data in Part D.</li>
+  </ul>
+</section>
+
+<section id="ddl" aria-labelledby="ddl-h">
+  <h2 id="ddl-h">Part C: the CREATE TABLE statements</h2>
+  <p>Write <code>m2_schema.sql</code>: one CREATE TABLE per table, in an order in which every foreign key refers to a table that already exists. It must start by dropping every table it creates, so it can run again (as <code>tutoring.sql</code> in Lab 5 does), and it must run with no errors on PostgreSQL. Include:</p>
+  <ul>
+    <li>A primary key on every table, and a foreign key for every reference.</li>
+    <li>A deliberate ON DELETE action on every foreign key: say in a comment why it is NO ACTION, CASCADE or SET NULL (week 5, slide 8).</li>
+    <li>NOT NULL wherever a rule says a value must exist, including total participation.</li>
+    <li>At least one UNIQUE that is not the primary key, and at least three CHECK constraints from your business rules.</li>
+  </ul>
+</section>
+
+<section id="data" aria-labelledby="data-h">
+  <h2 id="data-h">Part D: sample data and five queries</h2>
+  <p>Write <code>m2_data.sql</code> with INSERT statements: at least 5 rows in every table and at least 15 in the two or three busiest, enough that each query below returns something interesting. Invent the data; never use real people's personal details.</p>
+  <p>Then write <code>m2_queries.sql</code>, which loads the other two files and answers <strong>five of your milestone 1 questions</strong>, each under a comment that quotes the question. Use at least one outer join, one GROUP BY with HAVING, one subquery or CTE, and one window function among the five. Also add the dependency check from Part B, and one INSERT that a constraint should refuse, so the output shows it being refused.</p>
+<pre>-- m2_queries.sql starts with these lines, then your queries
+\ir m2_schema.sql
+\ir m2_data.sql</pre>
+  <p>Run it the same way as a lab, and keep the output:</p>
+<pre>psql -d project -e -f m2_queries.sql &gt; m2_output.txt 2&gt;&amp;1</pre>
+  <p>Create the <code>project</code> database once with <code>createdb project</code> (on Windows, <code>createdb -U postgres project</code>). The week 8 review playground's scratch pad also runs your CREATE TABLE statements, if you want to try them in a browser first.</p>
+</section>
+
+<section id="grad" aria-labelledby="grad-h">
+  <h2 id="grad-h">Part E: CS 5200 only</h2>
+  <p>Turn the NoSQL paragraph from milestone 1 into a first version: add a <code>jsonb</code> column to the table that holds the data whose shape varies, insert at least five rows with documents of at least two different shapes, and add one query that reads a field inside the documents (<code>-&gt;&gt;</code> or <code>@&gt;</code>). In the design notes, say which rules the database can no longer check for that data, and how you will handle that by milestone 4. These count toward the DDL and query points; week 15 covers document stores in depth.</p>
+</section>
+
+<section id="submit" aria-labelledby="sub-h">
+  <h2 id="sub-h">What to submit and how it is graded</h2>
+  <p>Upload <strong>one zip file</strong> to the Milestone 2 assignment in Brightspace. Name it <code>m2_lastname_firstname.zip</code>; a team uses both last names, like <code>m2_rivera_nguyen.zip</code>, and only one partner uploads it. Put these files in it:</p>
+  <ul>
+    <li><code>m2_design.pdf</code>: your names, Part A (with the diagram if it changed), Part B, a short note on what you changed since milestone 1, and one line on how you used AI tools, if at all.</li>
+    <li><code>m2_schema.sql</code>, <code>m2_data.sql</code> and <code>m2_queries.sql</code>.</li>
+    <li><code>m2_output.txt</code>: what psql printed when you ran <code>m2_queries.sql</code>.</li>
+  </ul>
+  <div class="fig-scroll" tabindex="0" role="region" aria-label="Milestone 2 rubric, 5 points">
+  <table class="tbl">
+    <caption>Milestone 2 rubric, 5 points</caption>
+    <thead><tr><th scope="col">Item</th><th scope="col">What earns full credit</th><th scope="col" class="num">Points</th></tr></thead>
+    <tbody>
+      <tr><td>Mapping</td><td>Every entity set, relationship and multivalued attribute has a home, with keys and foreign keys right; changes since milestone 1 explained.</td><td class="num">1</td></tr>
+      <tr><td>Normal forms</td><td>Each table's dependencies listed and its normal form argued, with closures or a decomposition where needed, and the dependency check run.</td><td class="num">1.5</td></tr>
+      <tr><td>DDL</td><td>Runs cleanly from scratch, twice in a row; keys, foreign keys with reasoned ON DELETE actions, NOT NULL, UNIQUE and three CHECKs.</td><td class="num">1</td></tr>
+      <tr><td>Data and queries</td><td>Enough data; five of your questions answered correctly, using the four required features; the refused INSERT shows its error.</td><td class="num">1</td></tr>
+      <tr><td>Notes</td><td>Clear, short design notes and the AI line.</td><td class="num">0.5</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Late work loses 10% per day for up to three days and is not accepted after that.</p>
+</section>
+
+<section id="help" aria-labelledby="help-h">
+  <h2 id="help-h">Questions people usually ask</h2>
+  <ul>
+    <li><strong>My milestone 1 feedback says the diagram needs changes.</strong> Make them here; that is what this milestone is for. Say what changed in the notes.</li>
+    <li><strong>Do I need surrogate keys like <code>appt_id</code>?</strong> Use one when the natural key is long, can change, or is several columns that other tables would have to copy. Say which you chose and why; both are defensible.</li>
+    <li><strong>"relation … does not exist" when creating a table</strong>: a foreign key refers to a table created later in the file. Reorder the CREATE TABLE statements.</li>
+    <li><strong>"cannot drop table … because other objects depend on it"</strong>: drop with <code>DROP TABLE IF EXISTS a, b, c CASCADE;</code> at the top of the schema file.</li>
+    <li><strong>Can I use a different database system?</strong> No: milestones 3 and 4 run on PostgreSQL, and the grader runs your files there.</li>
+    <li><strong>Anything else</strong>: office hours, Tuesday and Wednesday 12:00–3:00 p.m., MIC room D159, or the project discussion in Brightspace.</li>
+  </ul>
+</section>
+</main>
+
+<footer>
+  <p>CS 4600/5200 · Database Theory and Applications · University of Central Missouri · Dr. Gorkem Kar · Spring 2027</p>
+</footer>
+</div>
+</body>
+</html>

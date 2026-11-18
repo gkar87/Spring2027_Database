@@ -1,0 +1,93 @@
+CS 4600/5200 Lab 1: answers
+===========================
+
+Name:
+Student ID:
+Course (CS 4600 or CS 5200):
+Section (online or face to face):
+
+Save this file as plain text. Under each question, write your relational
+algebra expression and the number of tuples the playground returned. You may
+use the symbols (σ π ρ ∪ ∩ − × ⋈ ÷ ← ∧ ∨ ¬ ≠ ≤ ≥) or the words the playground
+accepts (select, project, rename, union, intersect, minus, cross, join,
+divide, <-, and, or, not, <>, <=, >=). Leave the headings as they are.
+
+
+Q1. The name and salary of every instructor in the Comp. Sci. department.
+
+Algebra:
+Tuples:
+
+
+Q2. The titles of the courses offered by departments housed in Hale.
+
+Algebra:
+Tuples:
+
+
+Q3. The names of instructors who earn more than 85,000 and work in a
+    department whose budget is under 100,000.
+
+Algebra:
+Tuples:
+
+
+Q4. The names of students who took a course in Fall 2025 and also a course
+    in Spring 2026.
+
+Algebra:
+Tuples:
+
+
+Q5. The departments where no instructor earns less than 80,000.
+
+Algebra:
+Tuples:
+
+
+Q6. Each student's name with the title of every course they took outside
+    their own department.
+
+Algebra:
+Tuples:
+
+
+Q7. Every pair of different students in the same department, each pair
+    listed once (two names per tuple).
+
+Algebra:
+Tuples:
+
+
+Q8. Run π[name](instructor ⋈ student) in the playground.
+    (a) How many tuples does it return, and why? Name the attributes the
+        join matches on. (2 or 3 sentences)
+
+Answer:
+
+    (b) Write an expression that pairs each instructor's name with the
+        name of every student in the same department.
+
+Algebra:
+Tuples:
+
+
+Q9a. (Everyone) The names of students who took every 4-credit course
+     offered by the Comp. Sci. department, using ÷.
+
+Algebra:
+Tuples:
+
+
+Q9b. (CS 5200 only; CS 4600 students may leave this blank) The same
+     question using only σ, π, ×, − and joins, without ÷. Its SQL goes in
+     lab1.sql.
+
+Algebra:
+Tuples:
+
+
+AI use. Did you use a generative AI tool for this lab? If yes, say which
+tool, what you asked it, and what you kept. If no, write "None".
+
+Answer:

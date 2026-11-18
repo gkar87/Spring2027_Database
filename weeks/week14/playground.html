@@ -1,0 +1,1060 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Week 14 SQL Playground · CS 4600/5200</title>
+<meta name="description" content="CS 4600/5200 week 14 playground: a recovery log you can query, a step-by-step replay of crash recovery with redo and undo, PostgreSQL's write-ahead log and checkpoints, VACUUM and dead row versions, and roles with only the privileges they need, with eight checked exercises.">
+<link rel="stylesheet" href="../../assets/course.css">
+<link rel="stylesheet" href="../../assets/db.css">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to the playground</a>
+
+<div class="doc">
+<header class="doc-masthead">
+  <p class="inst"><span>CS 4600/5200 · Database Theory and Applications</span><span>Week 14 · Tuesday, April 20, 2027</span><span><a href="../../index.html">Course home</a></span></p>
+  <h1>Week 14 playground: recovery and administration</h1>
+  <p class="tagline">A committed transaction must survive a crash, and an unfinished one must leave no trace. The log is how a database keeps both promises. Here you read a log, replay recovery after a crash you place yourself, measure PostgreSQL's own log, clean up after old row versions, and give a program only the privileges it needs.</p>
+</header>
+
+<div class="pg-bar">
+  <p class="pg-status" id="pg-status" data-state="loading"><span class="dot" aria-hidden="true"></span><span class="txt">Loading PostgreSQL in your browser…</span></p>
+  <p class="pg-progress" id="pg-progress">Exercises solved: <strong>0 of 8</strong></p>
+  <button type="button" class="btn" id="pg-reset-db">Reset database</button>
+</div>
+
+<main id="main">
+
+<section id="how" aria-labelledby="how-h">
+  <h2 id="how-h">How to use this page</h2>
+  <ul>
+    <li>Each grey box is an editor. Press <strong>Run</strong>, or <kbd>Ctrl</kbd>+<kbd>Enter</kbd> (<kbd>Cmd</kbd>+<kbd>Enter</kbd> on a Mac). A box may hold several statements; each result is shown.</li>
+    <li>A box without <code>BEGIN</code> runs as one unit: if any statement fails, the ones before it are undone too. Examples that create something start with <code>BEGIN;</code> and end with <code>ROLLBACK;</code>, so nothing is kept. <strong>Reset database</strong>, at the top, puts the starting data back, whatever you changed.</li>
+    <li>Exercises have a <strong>Check answer</strong> button. It runs your statements inside a transaction and rolls them back, so leave out <code>BEGIN</code>, <code>COMMIT</code> and <code>ROLLBACK</code>. Your solved exercises are remembered in this browser only.</li>
+    <li>Sizes of the log and of tables depend on what you ran before. Yours may differ a little from the numbers in the text.</li>
+  </ul>
+</section>
+
+<section id="schema" aria-labelledby="schema-h">
+  <h2 id="schema-h">The sample database</h2>
+  <p>From week 5 the university has eight tables: week 3's seven, plus <code>prereq</code>, which says which course must be taken before which. Both of its attributes are course ids, so both are foreign keys to <code>course</code>. Week 3's gaps are still here: the Economics department has nobody in it, Noor Haddad has no salary yet, Emery Walsh has no department, and nobody teaches CS-319. <span class="pk">Underlined</span> attributes form the primary key; attributes marked <span class="fk">→</span> are foreign keys.</p>
+  <figure class="fig-anim schema-fig" data-schema-map data-peek="#peek">
+<svg style="--dg-k:1" viewBox="0 0 724 590" role="group" aria-label="Map of the eight tables. Each table is a button that shows its rows in the box below; its foreign keys light up when it has focus.">
+<defs><marker id="pm3" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#0e5a6b"/></marker></defs>
+<path class="fk-link" data-from="instructor" data-to="department" d="M268 99 H236 V213 H205" fill="none" stroke="#0e5a6b" stroke-width="1.8" marker-end="url(#pm3)"><title>instructor.dept_name references department</title></path>
+<path class="fk-link" data-from="student" data-to="department" d="M268 253 H236 V213 H205" fill="none" stroke="#0e5a6b" stroke-width="1.8" marker-end="url(#pm3)"><title>student.dept_name references department</title></path>
+<path class="fk-link" data-from="course" data-to="department" d="M268 407 H236 V213 H205" fill="none" stroke="#0e5a6b" stroke-width="1.8" marker-end="url(#pm3)"><title>course.dept_name references department</title></path>
+<path class="fk-link" data-from="advisor" data-to="student" d="M538 53 H506 V206 H464" fill="none" stroke="#0e5a6b" stroke-width="1.8" marker-end="url(#pm3)"><title>advisor.s_id references student</title></path>
+<path class="fk-link" data-from="advisor" data-to="instructor" d="M538 76 H492 V52 H464" fill="none" stroke="#0e5a6b" stroke-width="1.8" marker-end="url(#pm3)"><title>advisor.i_id references instructor</title></path>
+<path class="fk-link" data-from="takes" data-to="student" d="M538 161 H520 V222 H464" fill="none" stroke="#0e5a6b" stroke-width="1.8" marker-end="url(#pm3)"><title>takes.id references student</title></path>
+<path class="fk-link" data-from="takes" data-to="course" d="M538 184 H506 V366 H464" fill="none" stroke="#0e5a6b" stroke-width="1.8" marker-end="url(#pm3)"><title>takes.course_id references course</title></path>
+<path class="fk-link" data-from="teaches" data-to="instructor" d="M538 347 H478 V68 H464" fill="none" stroke="#0e5a6b" stroke-width="1.8" marker-end="url(#pm3)"><title>teaches.id references instructor</title></path>
+<path class="fk-link" data-from="teaches" data-to="course" d="M538 370 H492 V366 H464" fill="none" stroke="#0e5a6b" stroke-width="1.8" marker-end="url(#pm3)"><title>teaches.course_id references course</title></path>
+<path class="fk-link" data-from="prereq" data-to="course" d="M340 484 V452" fill="none" stroke="#0e5a6b" stroke-width="1.8" marker-end="url(#pm3)"><title>prereq.course_id references course</title></path>
+<path class="fk-link" data-from="prereq" data-to="course" d="M410 484 V452" fill="none" stroke="#0e5a6b" stroke-width="1.8" marker-end="url(#pm3)"><title>prereq.prereq_id references course</title></path>
+<g class="tbl-node" data-table="department" tabindex="0" role="button" aria-label="department: show its rows">
+<rect class="dg-box node-frame" x="10" y="160" width="190" height="111" rx="4"/>
+<rect class="dg-box-a" x="10" y="160" width="190" height="30" rx="4"/>
+<text class="dg-txt-b" x="22" y="181">department</text>
+<text class="dg-txt" x="22" y="214" text-decoration="underline">dept_name</text>
+<text class="dg-txt" x="22" y="237">building</text>
+<text class="dg-txt" x="22" y="260">budget</text>
+</g>
+<g class="tbl-node" data-table="instructor" tabindex="0" role="button" aria-label="instructor: show its rows">
+<rect class="dg-box node-frame" x="270" y="4" width="190" height="134" rx="4"/>
+<rect class="dg-box-a" x="270" y="4" width="190" height="30" rx="4"/>
+<text class="dg-txt-b" x="282" y="25">instructor</text>
+<text class="dg-txt" x="282" y="58" text-decoration="underline">id</text>
+<text class="dg-txt" x="282" y="81">name</text>
+<text class="dg-txt dg-teal" x="282" y="104">dept_name</text>
+<text class="dg-txt" x="282" y="127">salary</text>
+</g>
+<g class="tbl-node" data-table="student" tabindex="0" role="button" aria-label="student: show its rows">
+<rect class="dg-box node-frame" x="270" y="158" width="190" height="134" rx="4"/>
+<rect class="dg-box-a" x="270" y="158" width="190" height="30" rx="4"/>
+<text class="dg-txt-b" x="282" y="179">student</text>
+<text class="dg-txt" x="282" y="212" text-decoration="underline">id</text>
+<text class="dg-txt" x="282" y="235">name</text>
+<text class="dg-txt dg-teal" x="282" y="258">dept_name</text>
+<text class="dg-txt" x="282" y="281">tot_cred</text>
+</g>
+<g class="tbl-node" data-table="course" tabindex="0" role="button" aria-label="course: show its rows">
+<rect class="dg-box node-frame" x="270" y="312" width="190" height="134" rx="4"/>
+<rect class="dg-box-a" x="270" y="312" width="190" height="30" rx="4"/>
+<text class="dg-txt-b" x="282" y="333">course</text>
+<text class="dg-txt" x="282" y="366" text-decoration="underline">course_id</text>
+<text class="dg-txt" x="282" y="389">title</text>
+<text class="dg-txt dg-teal" x="282" y="412">dept_name</text>
+<text class="dg-txt" x="282" y="435">credits</text>
+</g>
+<g class="tbl-node" data-table="advisor" tabindex="0" role="button" aria-label="advisor: show its rows">
+<rect class="dg-box node-frame" x="540" y="4" width="176" height="88" rx="4"/>
+<rect class="dg-box-a" x="540" y="4" width="176" height="30" rx="4"/>
+<text class="dg-txt-b" x="552" y="25">advisor</text>
+<text class="dg-txt dg-teal" x="552" y="58" text-decoration="underline">s_id</text>
+<text class="dg-txt dg-teal" x="552" y="81">i_id</text>
+</g>
+<g class="tbl-node" data-table="takes" tabindex="0" role="button" aria-label="takes: show its rows">
+<rect class="dg-box node-frame" x="540" y="112" width="176" height="157" rx="4"/>
+<rect class="dg-box-a" x="540" y="112" width="176" height="30" rx="4"/>
+<text class="dg-txt-b" x="552" y="133">takes</text>
+<text class="dg-txt dg-teal" x="552" y="166" text-decoration="underline">id</text>
+<text class="dg-txt dg-teal" x="552" y="189" text-decoration="underline">course_id</text>
+<text class="dg-txt" x="552" y="212" text-decoration="underline">semester</text>
+<text class="dg-txt" x="552" y="235" text-decoration="underline">year</text>
+<text class="dg-txt" x="552" y="258">grade</text>
+</g>
+<g class="tbl-node" data-table="teaches" tabindex="0" role="button" aria-label="teaches: show its rows">
+<rect class="dg-box node-frame" x="540" y="298" width="176" height="134" rx="4"/>
+<rect class="dg-box-a" x="540" y="298" width="176" height="30" rx="4"/>
+<text class="dg-txt-b" x="552" y="319">teaches</text>
+<text class="dg-txt dg-teal" x="552" y="352" text-decoration="underline">id</text>
+<text class="dg-txt dg-teal" x="552" y="375" text-decoration="underline">course_id</text>
+<text class="dg-txt" x="552" y="398" text-decoration="underline">semester</text>
+<text class="dg-txt" x="552" y="421" text-decoration="underline">year</text>
+</g>
+<g class="tbl-node" data-table="prereq" tabindex="0" role="button" aria-label="prereq: show its rows">
+<rect class="dg-box node-frame" x="270" y="486" width="190" height="88" rx="4"/>
+<rect class="dg-box-a" x="270" y="486" width="190" height="30" rx="4"/>
+<text class="dg-txt-b" x="282" y="507">prereq</text>
+<text class="dg-txt dg-teal" x="282" y="540" text-decoration="underline">course_id</text>
+<text class="dg-txt dg-teal" x="282" y="563" text-decoration="underline">prereq_id</text>
+</g>
+</svg>
+    <figcaption>Select a table, with a click or with <kbd>Tab</kbd> and <kbd>Enter</kbd>, to see its rows in the box below. Its foreign keys light up while it has focus.</figcaption>
+  </figure>
+  <div class="cell" id="peek" data-cell data-label="Peek">
+    <div class="cell-head"><label for="c00">Peek at a table</label></div>
+    <textarea id="c00">SELECT * FROM prereq;</textarea>
+  </div>
+  <p>The same eight tables, with each attribute's type:</p>
+  <div class="schema">
+    <div class="schema-card"><h3>department</h3><ul>
+      <li><span class="pk">dept_name</span> <span class="ty">varchar(20)</span></li>
+      <li>building <span class="ty">varchar(15)</span></li>
+      <li>budget <span class="ty">numeric(12,2)</span></li></ul></div>
+    <div class="schema-card"><h3>instructor</h3><ul>
+      <li><span class="pk">id</span> <span class="ty">char(5)</span></li>
+      <li>name <span class="ty">varchar(30)</span></li>
+      <li><span class="fk">dept_name → department</span></li>
+      <li>salary <span class="ty">numeric(8,2), may be NULL</span></li></ul></div>
+    <div class="schema-card"><h3>student</h3><ul>
+      <li><span class="pk">id</span> <span class="ty">char(5)</span></li>
+      <li>name <span class="ty">varchar(30)</span></li>
+      <li><span class="fk">dept_name → department</span> <span class="ty">may be NULL</span></li>
+      <li>tot_cred <span class="ty">integer</span></li></ul></div>
+    <div class="schema-card"><h3>course</h3><ul>
+      <li><span class="pk">course_id</span> <span class="ty">varchar(8)</span></li>
+      <li>title <span class="ty">varchar(40)</span></li>
+      <li><span class="fk">dept_name → department</span></li>
+      <li>credits <span class="ty">integer</span></li></ul></div>
+    <div class="schema-card"><h3>takes</h3><ul>
+      <li><span class="pk"><span class="fk">id → student</span></span></li>
+      <li><span class="pk"><span class="fk">course_id → course</span></span></li>
+      <li><span class="pk">semester</span> <span class="ty">varchar(6)</span></li>
+      <li><span class="pk">year</span> <span class="ty">integer</span></li>
+      <li>grade <span class="ty">varchar(2), may be NULL</span></li></ul></div>
+    <div class="schema-card"><h3>teaches</h3><ul>
+      <li><span class="pk"><span class="fk">id → instructor</span></span></li>
+      <li><span class="pk"><span class="fk">course_id → course</span></span></li>
+      <li><span class="pk">semester</span> <span class="ty">varchar(6)</span></li>
+      <li><span class="pk">year</span> <span class="ty">integer</span></li></ul></div>
+    <div class="schema-card"><h3>advisor</h3><ul>
+      <li><span class="pk"><span class="fk">s_id → student</span></span></li>
+      <li><span class="fk">i_id → instructor</span></li></ul></div>
+    <div class="schema-card"><h3>prereq</h3><ul>
+      <li><span class="pk"><span class="fk">course_id → course</span></span></li>
+      <li><span class="pk"><span class="fk">prereq_id → course</span></span> <span class="ty">must be taken first</span></li></ul></div>
+  </div>
+  <p>To load this database in your own PostgreSQL, download <a href="university.sql">university.sql</a> from this week and run <code>psql -d university -f university.sql</code>. It replaces the earlier tables, so run it again whenever you want the starting data back.</p>
+</section>
+
+<section id="log" aria-labelledby="log-h">
+  <h2 id="log-h">1. A log you can query</h2>
+  <p>Slides 9 to 13. This week's database has one more table, <code>wal_log</code>: a recovery log in the book's notation, with five transactions on four items, A to D. The system crashed right after record 18.</p>
+  <ul>
+    <li><code>&lt;T0 start&gt;</code>, <code>&lt;T0 commit&gt;</code>, <code>&lt;T0 abort&gt;</code>: a transaction begins, commits or finishes rolling back. Column <code>kind</code> says which.</li>
+    <li><code>&lt;T0, A, 1000, 950&gt;</code>: T0 changed A from 1000 (<code>old_val</code>) to 950 (<code>new_val</code>). Kind <code>update</code>.</li>
+    <li><code>&lt;T4, C, 600&gt;</code>: written while T4 was being rolled back, setting C back to 600. Kind <code>redo-only</code>: it is never undone.</li>
+    <li><code>&lt;checkpoint {T1}&gt;</code>: everything before it is safely on disk, and T1 was still running. Column <code>active</code> holds that list.</li>
+  </ul>
+  <div class="cell" data-cell data-label="Example 1.1">
+    <div class="cell-head"><label for="c11">Example 1.1 · the whole log</label></div>
+    <textarea id="c11">SELECT lsn, rec FROM wal_log ORDER BY lsn;</textarea>
+  </div>
+  <p>Recovery's first question is where each transaction stood at the crash. One that committed must keep all its changes; one that has neither a commit nor an abort record must lose all of them.</p>
+  <div class="cell" data-cell data-label="Example 1.2">
+    <div class="cell-head"><label for="c12">Example 1.2 · where each transaction stood</label></div>
+    <textarea id="c12">SELECT tx, min(lsn) AS first, max(lsn) AS last,
+       CASE WHEN bool_or(kind = 'commit') THEN 'committed'
+            WHEN bool_or(kind = 'abort') THEN 'rolled back'
+            ELSE 'unfinished: undo it' END AS at_the_crash
+FROM wal_log WHERE tx IS NOT NULL
+GROUP BY tx ORDER BY tx;</textarea>
+  </div>
+  <p>T4 rolled back before the crash, so it is finished: its <code>&lt;T4 abort&gt;</code> record says the rollback is complete. Only T2 is unfinished.</p>
+  <p>Without a checkpoint, recovery would have to read the whole log from the beginning. The last checkpoint tells it where to start, and which transactions were running at that moment.</p>
+  <div class="cell" data-cell data-label="Example 1.3">
+    <div class="cell-head"><label for="c13">Example 1.3 · the last checkpoint</label></div>
+    <textarea id="c13">SELECT lsn, rec, active FROM wal_log
+WHERE kind = 'checkpoint' ORDER BY lsn DESC LIMIT 1;</textarea>
+  </div>
+</section>
+
+<section id="recover" aria-labelledby="recover-h">
+  <h2 id="recover-h">2. Crash, then recover</h2>
+  <p>Slides 15 to 17. The book's recovery algorithm makes two passes over the log. The <strong>redo pass</strong> goes forward from the last checkpoint and repeats every change, of every transaction, even the ones that will be undone; along the way it works out the <strong>undo list</strong>, the transactions with no commit or abort. The <strong>undo pass</strong> then goes backward and rolls those back, the same way a rollback does while the system is running: it sets each item back to its old value, logs that as a redo-only record, and logs <code>&lt;T abort&gt;</code> when it reaches the transaction's start.</p>
+  <p>Move the crash earlier and step through again. A crash right after record 7 leaves T1 unfinished, so the undo pass has to go back past the checkpoint to reach T1's start.</p>
+  <div class="logviz" data-logviz data-src="logdata" data-crash="18"></div>
+  <p>The redo pass starts from what the checkpoint guaranteed was on disk. A query can work that out: the last value written to each item before record 7.</p>
+  <div class="cell" data-cell data-label="Example 2.1">
+    <div class="cell-head"><label for="c21">Example 2.1 · on disk at the checkpoint</label></div>
+    <textarea id="c21">SELECT DISTINCT ON (item) item, new_val AS value, lsn AS written_by
+FROM wal_log
+WHERE item IS NOT NULL AND lsn &lt; 7
+ORDER BY item, lsn DESC;</textarea>
+  </div>
+  <p><code>DISTINCT ON (item)</code> keeps the first row for each item in the <code>ORDER BY</code> order, here the latest. D is missing because nobody had written it yet: it still holds its starting value, 500. A, B and C hold T0's and T1's values. T1 had not committed at the checkpoint, but its change to C was on disk anyway: a checkpoint writes every changed page, committed or not. That is why recovery needs an undo pass at all.</p>
+</section>
+
+<section id="wal" aria-labelledby="wal-h">
+  <h2 id="wal-h">3. PostgreSQL's own log</h2>
+  <p>Slide 21. PostgreSQL calls its log the <strong>write-ahead log</strong>, or WAL. Every change goes into it before the changed page may be written to the table's file, and a transaction has committed when its commit record is on disk. A position in the WAL is an <strong>LSN</strong> (log sequence number): a byte offset, shown as two hexadecimal numbers. The WAL is stored as files of 16 MB.</p>
+  <div class="cell" data-cell data-label="Example 3.1">
+    <div class="cell-head"><label for="c31">Example 3.1 · where the log is now</label></div>
+    <textarea id="c31">SELECT pg_current_wal_insert_lsn() AS position,
+       pg_walfile_name(pg_current_wal_insert_lsn()) AS in_file;</textarea>
+  </div>
+  <p>Subtract two positions and you get the bytes written in between. A temporary table holds the starting position; temporary tables are not logged, so it adds nothing itself.</p>
+  <div class="cell" data-cell data-label="Example 3.2">
+    <div class="cell-head"><label for="c32">Example 3.2 · how much log a change writes</label></div>
+    <textarea id="c32">BEGIN;
+CREATE TEMP TABLE mark AS SELECT pg_current_wal_insert_lsn() AS at;
+UPDATE department SET budget = budget + 1 WHERE dept_name = 'Music';
+SELECT pg_wal_lsn_diff(pg_current_wal_insert_lsn(), at) AS bytes_one_row FROM mark;
+UPDATE mark SET at = pg_current_wal_insert_lsn();
+UPDATE big_student SET tot_cred = tot_cred + 1;
+SELECT pg_size_pretty(pg_wal_lsn_diff(pg_current_wal_insert_lsn(), at)) AS wal_10000_rows,
+       pg_size_pretty(pg_relation_size('big_student')) AS table_size
+FROM mark;
+ROLLBACK;</textarea>
+  </div>
+  <p>One row costs under a hundred bytes of log. Changing every row of <code>big_student</code> writes more log than the table holds: each new row version goes into the log, and so does a copy of each page the first time it changes after a checkpoint. That copy is how PostgreSQL repairs a page that was only half written when the power went (<code>full_page_writes</code>). The table grew too: section 4 explains why.</p>
+  <p>A few settings decide how safe a commit is. Ask the server:</p>
+  <div class="cell" data-cell data-label="Example 3.3">
+    <div class="cell-head"><label for="c33">Example 3.3 · the settings behind durability</label></div>
+    <textarea id="c33">SELECT name, setting FROM pg_settings
+WHERE name IN ('fsync', 'synchronous_commit', 'full_page_writes',
+               'wal_level', 'checkpoint_timeout', 'max_wal_size')
+ORDER BY name;</textarea>
+  </div>
+  <ul>
+    <li><code>fsync</code> makes PostgreSQL wait until the disk confirms each write. In this page it is <strong>off</strong>: your browser's database lives in memory and vanishes when you close the tab, so there is nothing to protect. On a real server, turning it off risks a corrupted database after a power cut.</li>
+    <li><code>synchronous_commit</code> on means COMMIT returns only after the commit record is on disk. Turned off, a crash can lose the last fraction of a second of commits, but never leaves the data inconsistent.</li>
+    <li><code>checkpoint_timeout</code> (in seconds) and <code>max_wal_size</code> (in MB) say how often PostgreSQL takes a checkpoint: every 5 minutes, or sooner if that much log has piled up.</li>
+  </ul>
+  <p>You can also ask for a checkpoint now. Afterwards, <code>redo_lsn</code> is where recovery would start redoing if the server crashed at this moment.</p>
+  <div class="cell" data-cell data-label="Example 3.4">
+    <div class="cell-head"><label for="c34">Example 3.4 · take a checkpoint</label></div>
+    <textarea id="c34">CHECKPOINT;
+SELECT checkpoint_lsn, redo_lsn, redo_wal_file, checkpoint_time
+FROM pg_control_checkpoint();</textarea>
+  </div>
+  <p>PostgreSQL's recovery is redo only. It never needs an undo pass, because it never overwrites a row: an unfinished transaction's new versions sit beside the old ones, and since it is not marked committed, nobody ever sees them (week 13). On a real server, <code>CHECKPOINT</code> needs a superuser or the <code>pg_checkpoint</code> role.</p>
+</section>
+
+<section id="vacuum" aria-labelledby="vacuum-h">
+  <h2 id="vacuum-h">4. Cleaning up old versions</h2>
+  <p>Slide 23. Every UPDATE leaves the old version of the row behind, and so does every rolled-back change. Once no transaction can still see an old version, it is <strong>dead</strong>: it takes up space, and every sequential scan still reads it. <code>VACUUM</code> marks that space free for new rows. This UPDATE changes no values, yet writes a new version of all 10,000 rows. It has no <code>BEGIN</code>, so it is kept:</p>
+  <div class="cell" data-cell data-label="Example 4.1">
+    <div class="cell-head"><label for="c41">Example 4.1 · make 10,000 dead versions</label></div>
+    <textarea id="c41">UPDATE big_student SET tot_cred = tot_cred;</textarea>
+  </div>
+  <div class="cell" data-cell data-label="Example 4.2">
+    <div class="cell-head"><label for="c42">Example 4.2 · count the dead</label></div>
+    <textarea id="c42">SELECT pg_stat_force_next_flush();
+SELECT n_live_tup, n_dead_tup,
+       pg_size_pretty(pg_relation_size('big_student')) AS size,
+       last_vacuum
+FROM pg_stat_user_tables WHERE relname = 'big_student';</textarea>
+  </div>
+  <p>At least 10,000 dead versions, more if you ran Example 3.2, whose rolled-back versions are dead too. The table has grown from 608 kB. (<code>pg_stat_force_next_flush()</code> makes the statistics up to date at once; a server updates them every few seconds.) Now vacuum it, in a box of its own: VACUUM can't run inside a transaction.</p>
+  <div class="cell" data-cell data-label="Example 4.3">
+    <div class="cell-head"><label for="c43">Example 4.3 · VACUUM</label></div>
+    <textarea id="c43">VACUUM big_student;</textarea>
+  </div>
+  <p>Run Example 4.2 again. No dead versions are left, but the size has not changed: VACUUM frees the space inside the pages for later rows, and doesn't give it back. <code>VACUUM FULL</code> writes a new, compact copy of the table. It locks the table while it works, so on a busy server it is a last resort.</p>
+  <div class="cell" data-cell data-label="Example 4.4">
+    <div class="cell-head"><label for="c44">Example 4.4 · VACUUM FULL</label></div>
+    <textarea id="c44">VACUUM FULL big_student;</textarea>
+  </div>
+  <p>Run Example 4.2 once more: 608 kB again. On a server you rarely type VACUUM yourself. The <strong>autovacuum</strong> daemon vacuums, and runs <code>ANALYZE</code> (week 12) on, each table once enough of it has changed. Nothing runs in the background in your browser, so here it never comes.</p>
+</section>
+
+<section id="roles" aria-labelledby="roles-h">
+  <h2 id="roles-h">5. Roles and privileges</h2>
+  <p>Slide 24. A <strong>role</strong> is a user, or a group of users, or both. A new role can do nothing until it is granted privileges: <code>SELECT</code>, <code>INSERT</code>, <code>UPDATE</code> or <code>DELETE</code> on a table, or only on some of its columns. <code>SET ROLE</code> lets the owner act as another role, to test what it can do. Milestone 3's program runs as a role like this.</p>
+  <div class="cell" data-cell data-label="Example 5.1">
+    <div class="cell-head"><label for="c51">Example 5.1 · a role that can read one table</label></div>
+    <textarea id="c51">BEGIN;
+CREATE ROLE clerk_demo;
+GRANT SELECT ON department TO clerk_demo;
+SET ROLE clerk_demo;
+SELECT current_user, count(*) AS departments FROM department;
+ROLLBACK;</textarea>
+  </div>
+  <p>The same role, reaching for a table nobody granted it:</p>
+  <div class="cell" data-cell data-label="Example 5.2">
+    <div class="cell-head"><label for="c52">Example 5.2 · and nothing else</label></div>
+    <textarea id="c52">BEGIN;
+CREATE ROLE clerk_demo;
+GRANT SELECT ON department TO clerk_demo;
+SET ROLE clerk_demo;
+SELECT count(*) FROM instructor;
+ROLLBACK;</textarea>
+  </div>
+  <p>A privilege can name columns. This role may read the whole of <code>department</code> but change only budgets. The catalog view <code>information_schema.<wbr>column_privileges</code> lists what it got:</p>
+  <div class="cell" data-cell data-label="Example 5.3">
+    <div class="cell-head"><label for="c53">Example 5.3 · privileges on columns</label></div>
+    <textarea id="c53">BEGIN;
+CREATE ROLE clerk_demo;
+GRANT SELECT, UPDATE (budget) ON department TO clerk_demo;
+SELECT column_name, privilege_type
+FROM information_schema.column_privileges
+WHERE grantee = 'clerk_demo'
+ORDER BY column_name, privilege_type;
+ROLLBACK;</textarea>
+  </div>
+  <p>Granting to each person one by one doesn't scale. Grant to a <strong>group role</strong> instead, and make people members of it: <code>CREATE ROLE dana LOGIN IN ROLE staff;</code>. Dana then has whatever <code>staff</code> has. <code>REVOKE</code> takes a privilege back.</p>
+</section>
+
+<section id="backup" aria-labelledby="backup-h">
+  <h2 id="backup-h">6. Backups, at home</h2>
+  <p>Slide 22. The log protects you from a crash, not from a lost disk or a mistaken <code>DROP TABLE</code>. For those you need a copy kept somewhere else. These commands run in a terminal, not in this page; try them on the <code>university</code> database from Lab 0:</p>
+  <pre class="code"><code>pg_dump -Fc -f university.dump university     # a logical backup, one file
+createdb university_copy
+pg_restore -d university_copy university.dump  # load it into a new database
+psql -d university_copy -c "SELECT count(*) FROM takes"</code></pre>
+  <p>A dump is a snapshot of one moment. To recover to any moment, a server keeps a <strong>base backup</strong>, a copy of its files, and archives every WAL file after it. Replaying the archived WAL on the base backup brings the database forward to just before the mistake: <strong>point-in-time recovery</strong>.</p>
+</section>
+
+<section id="exercises" aria-labelledby="ex-h">
+  <h2 id="ex-h">Exercises</h2>
+  <p>Exercises 1 to 5 are about <code>wal_log</code>, with the crash right after record 18 unless the exercise says otherwise. Exercises 6 to 8 create roles; the checker rolls them back, so leave out <code>BEGIN</code>, <code>COMMIT</code> and <code>ROLLBACK</code>. The last statement's result is the one checked.</p>
+
+  <div class="cell cell--ex" data-cell data-ex="w14e1" data-label="Exercise 1">
+    <div class="cell-head"><label for="e1">Exercise 1</label><span class="solved-badge"></span></div>
+    <div class="cell-prompt"><p>List the transactions on the undo list: those with a start record but no commit or abort record. One column, <code>tx</code>.</p></div>
+    <textarea id="e1"></textarea>
+    <script type="text/plain" class="solution">SELECT tx FROM wal_log GROUP BY tx HAVING bool_or(kind = 'start') AND NOT bool_or(kind IN ('commit', 'abort'));</script>
+    <details><summary>Hint</summary><p>Group by <code>tx</code>, as Example 1.2 does, and keep a group with <code>HAVING</code>: <code>bool_or(kind = 'start')</code> and not <code>bool_or(kind IN ('commit', 'abort'))</code>.</p></details>
+    <details><summary>Show a solution</summary><pre><code>SELECT tx FROM wal_log
+GROUP BY tx
+HAVING bool_or(kind = 'start')
+   AND NOT bool_or(kind IN ('commit', 'abort'));</code></pre><p>Only T2. T4 rolled back, but its abort record says the rollback finished, so recovery leaves it alone. The <code>bool_or(kind = 'start')</code> test keeps out the checkpoint, whose <code>tx</code> is NULL.</p></details>
+  </div>
+
+  <div class="cell cell--ex" data-cell data-ex="w14e2" data-label="Exercise 2">
+    <div class="cell-head"><label for="e2">Exercise 2</label><span class="solved-badge"></span></div>
+    <div class="cell-prompt"><p>Suppose the crash had come right after record <strong>9</strong>, so records 10 to 18 were never written. Which transactions would be on the undo list? One column, <code>tx</code>.</p></div>
+    <textarea id="e2"></textarea>
+    <script type="text/plain" class="solution">SELECT tx FROM wal_log WHERE lsn <= 9 GROUP BY tx HAVING bool_or(kind = 'start') AND NOT bool_or(kind IN ('commit', 'abort'));</script>
+    <details><summary>Hint</summary><p>Exercise 1's query, looking only at records with <code>lsn &lt;= 9</code>.</p></details>
+    <details><summary>Show a solution</summary><pre><code>SELECT tx FROM wal_log
+WHERE lsn &lt;= 9
+GROUP BY tx
+HAVING bool_or(kind = 'start')
+   AND NOT bool_or(kind IN ('commit', 'abort'));</code></pre><p>T1 and T2. T1's commit is record 10, which never made it. Recovery learns about T1 from the checkpoint's list, since T1 started before it; set the crash to record 9 in section 2 and watch the undo pass go back past the checkpoint.</p></details>
+  </div>
+
+  <div class="cell cell--ex" data-cell data-ex="w14e3" data-ordered="true" data-label="Exercise 3">
+    <div class="cell-head"><label for="e3">Exercise 3</label><span class="solved-badge"></span></div>
+    <div class="cell-prompt"><p>The undo pass sets items back, newest change first. List what it does: two columns, the <code>item</code> and the value it sets it back to, in the order the undo pass does them.</p></div>
+    <textarea id="e3"></textarea>
+    <script type="text/plain" class="solution">SELECT item, old_val FROM wal_log WHERE kind = 'update' AND tx IN (SELECT tx FROM wal_log GROUP BY tx HAVING bool_or(kind = 'start') AND NOT bool_or(kind IN ('commit', 'abort'))) ORDER BY lsn DESC;</script>
+    <details><summary>Hint</summary><p>The <code>update</code> records of the transactions from Exercise 1 (use it as a subquery), with their <code>old_val</code>, ordered by <code>lsn</code> descending.</p></details>
+    <details><summary>Show a solution</summary><pre><code>SELECT item, old_val FROM wal_log
+WHERE kind = 'update'
+  AND tx IN (SELECT tx FROM wal_log
+             GROUP BY tx
+             HAVING bool_or(kind = 'start')
+                AND NOT bool_or(kind IN ('commit', 'abort')))
+ORDER BY lsn DESC;</code></pre><p>D back to 500, then A back to 950. The undo pass logs each one as a redo-only record, <code>&lt;T2, D, 500&gt;</code> and <code>&lt;T2, A, 950&gt;</code>, and then <code>&lt;T2 abort&gt;</code>. Going backward matters when a transaction wrote the same item twice: the oldest value must be the one that stays.</p></details>
+  </div>
+
+  <div class="cell cell--ex" data-cell data-ex="w14e4" data-ordered="true" data-label="Exercise 4">
+    <div class="cell-head"><label for="e4">Exercise 4</label><span class="solved-badge"></span></div>
+    <div class="cell-prompt"><p>List every record the redo pass redoes, in order: three columns, <code>lsn</code>, <code>item</code> and the value it writes. The redo pass starts after the last checkpoint and redoes both <code>update</code> and <code>redo-only</code> records, whoever wrote them.</p></div>
+    <textarea id="e4"></textarea>
+    <script type="text/plain" class="solution">SELECT lsn, item, new_val FROM wal_log WHERE kind IN ('update', 'redo-only') AND lsn > (SELECT max(lsn) FROM wal_log WHERE kind = 'checkpoint') ORDER BY lsn;</script>
+    <details><summary>Hint</summary><p>Compare <code>lsn</code> with a subquery that finds the last checkpoint's <code>lsn</code>, as in Example 1.3. Keep the two kinds of record that change an item.</p></details>
+    <details><summary>Show a solution</summary><pre><code>SELECT lsn, item, new_val FROM wal_log
+WHERE kind IN ('update', 'redo-only')
+  AND lsn &gt; (SELECT max(lsn) FROM wal_log WHERE kind = 'checkpoint')
+ORDER BY lsn;</code></pre><p>Five records: 9, 12, 14, 15 and 18. The redo pass repeats history, including T2's changes, which the undo pass will take back, and T4's change and its rollback, which leave C at 600.</p></details>
+  </div>
+
+  <div class="cell cell--ex" data-cell data-ex="w14e5" data-ordered="true" data-label="Exercise 5">
+    <div class="cell-head"><label for="e5">Exercise 5</label><span class="solved-badge"></span></div>
+    <div class="cell-prompt"><p>A challenge. Show each item's value once recovery has finished: two columns, <code>item</code> and its value, ordered by <code>item</code>. Every item has been written at least once. Check your answer against the end of section 2's replay.</p></div>
+    <textarea id="e5"></textarea>
+    <script type="text/plain" class="solution">WITH undo AS (SELECT tx FROM wal_log GROUP BY tx HAVING bool_or(kind = 'start') AND NOT bool_or(kind IN ('commit', 'abort'))),
+w AS (SELECT item, lsn, new_val AS v FROM wal_log WHERE kind IN ('update', 'redo-only') AND tx NOT IN (SELECT tx FROM undo)
+      UNION ALL
+      (SELECT DISTINCT ON (tx, item) item, lsn, old_val FROM wal_log WHERE kind = 'update' AND tx IN (SELECT tx FROM undo) ORDER BY tx, item, lsn))
+SELECT DISTINCT ON (item) item, v FROM w ORDER BY item, lsn DESC;</script>
+    <details><summary>Hint</summary><p>An item ends with the value of the last change that survives. Changes by transactions not on the undo list survive, with their <code>new_val</code>. For a transaction on the undo list, only its <em>first</em> change to each item matters, and it leaves that change's <code>old_val</code>. Put both kinds of row in one CTE, with their <code>lsn</code>, and keep the latest row for each item with <code>DISTINCT ON</code>, as in Example 2.1.</p></details>
+    <details><summary>Show a solution</summary><pre><code>WITH undo AS (
+  SELECT tx FROM wal_log
+  GROUP BY tx
+  HAVING bool_or(kind = 'start') AND NOT bool_or(kind IN ('commit', 'abort'))
+), w AS (
+  SELECT item, lsn, new_val AS v FROM wal_log
+  WHERE kind IN ('update', 'redo-only') AND tx NOT IN (SELECT tx FROM undo)
+  UNION ALL
+  (SELECT DISTINCT ON (tx, item) item, lsn, old_val FROM wal_log
+   WHERE kind = 'update' AND tx IN (SELECT tx FROM undo)
+   ORDER BY tx, item, lsn)
+)
+SELECT DISTINCT ON (item) item, v AS value
+FROM w ORDER BY item, lsn DESC;</code></pre><p>A 950, B 2000, C 600, D 500. This works because the log follows strict two-phase locking: once an unfinished transaction has written an item, nobody else writes it, so its first old value is the last committed one.</p></details>
+  </div>
+
+  <div class="cell cell--ex" data-cell data-ex="w14e6" data-label="Exercise 6">
+    <div class="cell-head"><label for="e6">Exercise 6</label><span class="solved-badge"></span></div>
+    <div class="cell-prompt"><p>Create a role named <strong>reporter</strong> that can read <code>department</code> and <code>course</code> and change nothing. Then run exactly this check:</p>
+    <pre><code>SELECT has_table_privilege('reporter', 'department', 'SELECT'),
+       has_table_privilege('reporter', 'department', 'UPDATE'),
+       has_table_privilege('reporter', 'course', 'SELECT');</code></pre></div>
+    <textarea id="e6"></textarea>
+    <script type="text/plain" class="solution">CREATE ROLE reporter;
+GRANT SELECT ON department, course TO reporter;
+SELECT has_table_privilege('reporter', 'department', 'SELECT'), has_table_privilege('reporter', 'department', 'UPDATE'), has_table_privilege('reporter', 'course', 'SELECT');</script>
+    <details><summary>Hint</summary><p>One <code>CREATE ROLE</code> and one <code>GRANT</code>; a GRANT can name several tables, separated by commas.</p></details>
+    <details><summary>Show a solution</summary><pre><code>CREATE ROLE reporter;
+GRANT SELECT ON department, course TO reporter;
+SELECT has_table_privilege('reporter', 'department', 'SELECT'),
+       has_table_privilege('reporter', 'department', 'UPDATE'),
+       has_table_privilege('reporter', 'course', 'SELECT');</code></pre><p>True, false, true. A new role starts with no privileges on these tables, so "change nothing" takes no extra statement.</p></details>
+  </div>
+
+  <div class="cell cell--ex" data-cell data-ex="w14e7" data-label="Exercise 7">
+    <div class="cell-head"><label for="e7">Exercise 7</label><span class="solved-badge"></span></div>
+    <div class="cell-prompt"><p>Create a role named <strong>clerk</strong> that can read <code>department</code> but change only its <code>budget</code> column. Then act as clerk: raise Music's budget by 1,000, and show Music's <code>dept_name</code> and <code>budget</code>.</p></div>
+    <textarea id="e7"></textarea>
+    <script type="text/plain" class="solution">CREATE ROLE clerk;
+GRANT SELECT, UPDATE (budget) ON department TO clerk;
+SET ROLE clerk;
+UPDATE department SET budget = budget + 1000 WHERE dept_name = 'Music';
+SELECT dept_name, budget FROM department WHERE dept_name = 'Music';</script>
+    <details><summary>Hint</summary><p>Example 5.3's GRANT, then <code>SET ROLE clerk;</code>. Without <code>SELECT</code>, the UPDATE is refused: its WHERE clause reads <code>dept_name</code>, and <code>budget + 1000</code> reads the budget.</p></details>
+    <details><summary>Show a solution</summary><pre><code>CREATE ROLE clerk;
+GRANT SELECT, UPDATE (budget) ON department TO clerk;
+SET ROLE clerk;
+UPDATE department SET budget = budget + 1000 WHERE dept_name = 'Music';
+SELECT dept_name, budget FROM department WHERE dept_name = 'Music';</code></pre><p>Music at 61,000. As clerk, <code>UPDATE department SET building = …</code> would be refused with "permission denied". The checker's rollback also undoes the <code>SET ROLE</code>.</p></details>
+  </div>
+
+  <div class="cell cell--ex" data-cell data-ex="w14e8" data-label="Exercise 8">
+    <div class="cell-head"><label for="e8">Exercise 8</label><span class="solved-badge"></span></div>
+    <div class="cell-prompt"><p>Create a group role <strong>staff</strong> that can read <code>department</code>, and a role <strong>dana</strong> that can log in and is a member of staff, with no privileges granted to dana directly. Then act as dana and show <code>current_user</code> and the number of departments.</p></div>
+    <textarea id="e8"></textarea>
+    <script type="text/plain" class="solution">CREATE ROLE staff;
+GRANT SELECT ON department TO staff;
+CREATE ROLE dana LOGIN IN ROLE staff;
+SET ROLE dana;
+SELECT current_user, count(*) FROM department;</script>
+    <details><summary>Hint</summary><p>Grant to <code>staff</code>, not to dana. <code>CREATE ROLE dana LOGIN IN ROLE staff;</code> makes dana a member at creation; <code>GRANT staff TO dana;</code> does the same for an existing role.</p></details>
+    <details><summary>Show a solution</summary><pre><code>CREATE ROLE staff;
+GRANT SELECT ON department TO staff;
+CREATE ROLE dana LOGIN IN ROLE staff;
+SET ROLE dana;
+SELECT current_user, count(*) FROM department;</code></pre><p>dana and 7. When the next clerk joins, one <code>GRANT staff TO …</code> gives them everything staff can do, and one <code>REVOKE</code> takes it away when they leave.</p></details>
+  </div>
+</section>
+
+<section id="scratch" aria-labelledby="scratch-h">
+  <h2 id="scratch-h">Scratch pad</h2>
+  <p>Add a record of your own to <code>wal_log</code>, say a commit for T2 as record 19, and see how Examples 1.2 and Exercise 1 change. Reset database puts the log back.</p>
+  <div class="cell" data-cell data-label="Scratch">
+    <div class="cell-head"><label for="cs1">Scratch pad</label></div>
+    <textarea id="cs1">SELECT * FROM wal_log WHERE tx = 'T4' ORDER BY lsn;</textarea>
+  </div>
+</section>
+
+<section id="next" aria-labelledby="next-h">
+  <h2 id="next-h">Next</h2>
+  <p>Next week: data that doesn't fit in tables, and data spread over many machines. There is no lab this week. <a href="../../project/milestone4.html">Milestone 4</a>'s report is due Sunday, April 25, and the demos and walkthroughs are in class on Tuesday, April 27.</p>
+</section>
+</main>
+
+<footer>
+  <p>CS 4600/5200 · Database Theory and Applications · University of Central Missouri · Dr. Gorkem Kar. The database runs on <a href="https://pglite.dev/">PGlite</a>, PostgreSQL compiled to run in a web browser.</p>
+</footer>
+</div>
+
+<script type="application/json" id="logdata">
+{
+ "init": {
+  "A": 1000,
+  "B": 2000,
+  "C": 700,
+  "D": 500
+ },
+ "records": [
+  {
+   "lsn": 1,
+   "tx": "T0",
+   "kind": "start",
+   "rec": "<T0 start>"
+  },
+  {
+   "lsn": 2,
+   "tx": "T0",
+   "kind": "update",
+   "rec": "<T0, A, 1000, 950>",
+   "item": "A",
+   "old": 1000,
+   "new": 950
+  },
+  {
+   "lsn": 3,
+   "tx": "T0",
+   "kind": "update",
+   "rec": "<T0, B, 2000, 2050>",
+   "item": "B",
+   "old": 2000,
+   "new": 2050
+  },
+  {
+   "lsn": 4,
+   "tx": "T0",
+   "kind": "commit",
+   "rec": "<T0 commit>"
+  },
+  {
+   "lsn": 5,
+   "tx": "T1",
+   "kind": "start",
+   "rec": "<T1 start>"
+  },
+  {
+   "lsn": 6,
+   "tx": "T1",
+   "kind": "update",
+   "rec": "<T1, C, 700, 600>",
+   "item": "C",
+   "old": 700,
+   "new": 600
+  },
+  {
+   "lsn": 7,
+   "tx": null,
+   "kind": "checkpoint",
+   "rec": "<checkpoint {T1}>",
+   "active": [
+    "T1"
+   ]
+  },
+  {
+   "lsn": 8,
+   "tx": "T2",
+   "kind": "start",
+   "rec": "<T2 start>"
+  },
+  {
+   "lsn": 9,
+   "tx": "T2",
+   "kind": "update",
+   "rec": "<T2, A, 950, 900>",
+   "item": "A",
+   "old": 950,
+   "new": 900
+  },
+  {
+   "lsn": 10,
+   "tx": "T1",
+   "kind": "commit",
+   "rec": "<T1 commit>"
+  },
+  {
+   "lsn": 11,
+   "tx": "T3",
+   "kind": "start",
+   "rec": "<T3 start>"
+  },
+  {
+   "lsn": 12,
+   "tx": "T3",
+   "kind": "update",
+   "rec": "<T3, B, 2050, 2000>",
+   "item": "B",
+   "old": 2050,
+   "new": 2000
+  },
+  {
+   "lsn": 13,
+   "tx": "T4",
+   "kind": "start",
+   "rec": "<T4 start>"
+  },
+  {
+   "lsn": 14,
+   "tx": "T4",
+   "kind": "update",
+   "rec": "<T4, C, 600, 650>",
+   "item": "C",
+   "old": 600,
+   "new": 650
+  },
+  {
+   "lsn": 15,
+   "tx": "T4",
+   "kind": "redo-only",
+   "rec": "<T4, C, 600>",
+   "item": "C",
+   "new": 600
+  },
+  {
+   "lsn": 16,
+   "tx": "T4",
+   "kind": "abort",
+   "rec": "<T4 abort>"
+  },
+  {
+   "lsn": 17,
+   "tx": "T3",
+   "kind": "commit",
+   "rec": "<T3 commit>"
+  },
+  {
+   "lsn": 18,
+   "tx": "T2",
+   "kind": "update",
+   "rec": "<T2, D, 500, 450>",
+   "item": "D",
+   "old": 500,
+   "new": 450
+  }
+ ]
+}
+
+</script>
+<script type="text/plain" id="seed-sql">
+-- CS 4600/5200 Database Theory and Applications, Spring 2027
+-- Sample database from week 5 on: the week 3 university (seven tables), plus
+-- prereq, which says which course must come before which. Week 3's gaps are
+-- still here: a department with no people, a course nobody teaches, an
+-- instructor with no salary yet, and a student with no department.
+-- Runs on PostgreSQL 14 or newer, and in the browser playground.
+-- Load it with:  psql -d university -f university.sql
+-- It drops the old tables first (and any views built on them), so it is
+-- safe to run again whenever you want the starting data back.
+
+DROP TABLE IF EXISTS prereq, advisor, teaches, takes, course, student, instructor, department CASCADE;
+
+CREATE TABLE department (
+  dept_name  varchar(20) PRIMARY KEY,
+  building   varchar(15) NOT NULL,
+  budget     numeric(12,2) CHECK (budget > 0)
+);
+
+CREATE TABLE instructor (
+  id         char(5) PRIMARY KEY,
+  name       varchar(30) NOT NULL,
+  dept_name  varchar(20) REFERENCES department,
+  salary     numeric(8,2) CHECK (salary > 29000)
+);
+
+CREATE TABLE student (
+  id         char(5) PRIMARY KEY,
+  name       varchar(30) NOT NULL,
+  dept_name  varchar(20) REFERENCES department,
+  tot_cred   integer DEFAULT 0 CHECK (tot_cred >= 0)
+);
+
+CREATE TABLE course (
+  course_id  varchar(8) PRIMARY KEY,
+  title      varchar(40) NOT NULL,
+  dept_name  varchar(20) REFERENCES department,
+  credits    integer CHECK (credits > 0)
+);
+
+CREATE TABLE takes (
+  id         char(5) REFERENCES student,
+  course_id  varchar(8) REFERENCES course,
+  semester   varchar(6) CHECK (semester IN ('Fall', 'Spring', 'Summer')),
+  year       integer CHECK (year BETWEEN 2000 AND 2100),
+  grade      varchar(2),
+  PRIMARY KEY (id, course_id, semester, year)
+);
+
+INSERT INTO department VALUES
+  ('Comp. Sci.',  'Hale',   120000),
+  ('Mathematics', 'Hale',    90000),
+  ('Physics',     'Kirk',    85000),
+  ('Biology',     'Morrow',  95000),
+  ('History',     'Linden',  50000),
+  ('Music',       'Linden',  60000);
+
+INSERT INTO instructor VALUES
+  ('10101', 'Avery Chen',   'Comp. Sci.',  98000),
+  ('12121', 'Jordan Patel', 'Comp. Sci.',  92000),
+  ('15151', 'Maria Lopez',  'Mathematics', 87000),
+  ('22222', 'Sam Okafor',   'Physics',     95000),
+  ('32343', 'Lena Fischer', 'History',     61000),
+  ('33456', 'Kofi Mensah',  'Physics',     87000),
+  ('45565', 'Priya Raman',  'Comp. Sci.',  75000),
+  ('58583', 'Tomas Novak',  'History',     62000),
+  ('76543', 'Hana Sato',    'Biology',     80000),
+  ('83821', 'Diego Torres', 'Music',       72000);
+
+INSERT INTO student VALUES
+  ('00128', 'Riley Adams',   'Comp. Sci.',  102),
+  ('12345', 'Morgan Lee',    'Comp. Sci.',   32),
+  ('19991', 'Casey Brooks',  'History',      80),
+  ('23121', 'Jamie Rivera',  'Physics',     110),
+  ('44553', 'Taylor Nguyen', 'Physics',      56),
+  ('45678', 'Drew Kim',      'Physics',      46),
+  ('54321', 'Alex Johnson',  'Comp. Sci.',   54),
+  ('55739', 'Sky Martinez',  'Music',        38),
+  ('70557', 'Quinn Davis',   'Physics',       0),
+  ('76653', 'Robin Ali',     'Mathematics',  58),
+  ('98765', 'Jesse Park',    'Mathematics',  98),
+  ('98988', 'Avery Clark',   'Biology',     120);
+
+INSERT INTO course VALUES
+  ('CS-101',  'Intro to Computer Science', 'Comp. Sci.',  4),
+  ('CS-190',  'Game Design',               'Comp. Sci.',  4),
+  ('CS-315',  'Robotics',                  'Comp. Sci.',  3),
+  ('CS-347',  'Database System Concepts',  'Comp. Sci.',  3),
+  ('MA-201',  'Linear Algebra',            'Mathematics', 3),
+  ('PHY-101', 'Physical Principles',       'Physics',     4),
+  ('HIS-351', 'World History',             'History',     3),
+  ('MU-199',  'Music Video Production',    'Music',       3),
+  ('BIO-101', 'Intro to Biology',          'Biology',     4);
+
+INSERT INTO takes VALUES
+  ('00128', 'CS-101',  'Fall',   2025, 'A'),
+  ('00128', 'CS-347',  'Fall',   2025, 'A-'),
+  ('12345', 'CS-101',  'Fall',   2025, 'C'),
+  ('12345', 'CS-190',  'Spring', 2026, 'A'),
+  ('12345', 'CS-315',  'Spring', 2026, 'A'),
+  ('12345', 'CS-347',  'Fall',   2025, 'A'),
+  ('19991', 'HIS-351', 'Spring', 2026, 'B'),
+  ('23121', 'PHY-101', 'Fall',   2025, 'C+'),
+  ('44553', 'PHY-101', 'Fall',   2025, 'B-'),
+  ('45678', 'CS-101',  'Fall',   2025, 'F'),
+  ('45678', 'CS-101',  'Spring', 2026, 'B+'),
+  ('45678', 'CS-315',  'Spring', 2026, 'B'),
+  ('54321', 'CS-101',  'Fall',   2025, 'A-'),
+  ('54321', 'CS-190',  'Spring', 2026, 'B+'),
+  ('55739', 'MU-199',  'Spring', 2026, 'A-'),
+  ('76653', 'MA-201',  'Fall',   2025, 'C'),
+  ('98765', 'CS-101',  'Fall',   2025, 'C-'),
+  ('98765', 'CS-315',  'Spring', 2026, 'B'),
+  ('98988', 'BIO-101', 'Spring', 2026, 'A'),
+  ('98988', 'CS-347',  'Spring', 2027, NULL),
+  ('70557', 'CS-347',  'Spring', 2027, NULL),
+  ('54321', 'MA-201',  'Spring', 2027, NULL);
+
+-- New in week 3 ------------------------------------------------------------
+
+CREATE TABLE teaches (
+  id         char(5) REFERENCES instructor,
+  course_id  varchar(8) REFERENCES course,
+  semester   varchar(6) CHECK (semester IN ('Fall', 'Spring', 'Summer')),
+  year       integer CHECK (year BETWEEN 2000 AND 2100),
+  PRIMARY KEY (id, course_id, semester, year)
+);
+
+CREATE TABLE advisor (
+  s_id       char(5) PRIMARY KEY REFERENCES student,
+  i_id       char(5) NOT NULL REFERENCES instructor
+);
+
+-- A department with no instructors, students or courses yet.
+INSERT INTO department VALUES ('Economics', 'Watson', 70000);
+
+-- A new hire whose salary is not set yet.
+INSERT INTO instructor VALUES ('98345', 'Noor Haddad', 'Mathematics', NULL);
+
+-- A student who has not declared a department.
+INSERT INTO student VALUES ('61234', 'Emery Walsh', NULL, 12);
+
+-- A course in the catalog that nobody teaches or takes yet.
+INSERT INTO course VALUES ('CS-319', 'Image Processing', 'Comp. Sci.', 3);
+
+INSERT INTO teaches VALUES
+  ('10101', 'CS-101',  'Fall',   2025),
+  ('10101', 'CS-347',  'Fall',   2025),
+  ('10101', 'CS-315',  'Spring', 2026),
+  ('12121', 'CS-190',  'Spring', 2026),
+  ('45565', 'CS-101',  'Spring', 2026),
+  ('45565', 'CS-347',  'Spring', 2027),
+  ('15151', 'MA-201',  'Fall',   2025),
+  ('15151', 'MA-201',  'Spring', 2027),
+  ('22222', 'PHY-101', 'Fall',   2025),
+  ('32343', 'HIS-351', 'Spring', 2026),
+  ('83821', 'MU-199',  'Spring', 2026),
+  ('76543', 'BIO-101', 'Spring', 2026);
+
+INSERT INTO advisor VALUES
+  ('00128', '45565'),
+  ('12345', '10101'),
+  ('19991', '32343'),
+  ('23121', '22222'),
+  ('44553', '22222'),
+  ('45678', '33456'),
+  ('54321', '10101'),
+  ('76653', '15151'),
+  ('98765', '15151'),
+  ('98988', '76543');
+
+-- New in week 5 ------------------------------------------------------------
+
+-- prereq: course_id requires prereq_id first. Both are courses, so both are
+-- foreign keys to course; a course cannot require itself.
+CREATE TABLE prereq (
+  course_id  varchar(8) REFERENCES course,
+  prereq_id  varchar(8) REFERENCES course,
+  PRIMARY KEY (course_id, prereq_id),
+  CHECK (course_id <> prereq_id)
+);
+
+INSERT INTO prereq VALUES
+  ('CS-190', 'CS-101'),
+  ('CS-315', 'CS-190'),
+  ('CS-319', 'CS-315'),
+  ('CS-319', 'MA-201'),
+  ('CS-347', 'CS-101'),
+  ('CS-347', 'MA-201');
+
+-- table_info(name): one row per column of a table, with its type, whether it
+-- may be NULL, and the keys it takes part in (with ON DELETE, when it is not the
+-- default). Like psql's \d, for the playground.
+--   SELECT * FROM table_info('advisor');
+CREATE OR REPLACE FUNCTION table_info(t text)
+RETURNS TABLE (column_name text, data_type text, nulls text, keys text)
+LANGUAGE sql STABLE AS $$
+  SELECT a.attname::text,
+         format_type(a.atttypid, a.atttypmod),
+         CASE WHEN a.attnotnull THEN 'not null' ELSE 'null allowed' END,
+         coalesce((
+           SELECT string_agg(
+                    CASE con.contype WHEN 'p' THEN 'primary key' WHEN 'u' THEN 'unique'
+                                     ELSE 'references ' || con.confrelid::regclass::text END
+                    || CASE WHEN cardinality(con.conkey) > 1 THEN ' (' || (
+                         SELECT string_agg(x.attname, ', ' ORDER BY k.ord)
+                         FROM unnest(con.conkey) WITH ORDINALITY AS k(n, ord)
+                         JOIN pg_attribute x ON x.attrelid = con.conrelid AND x.attnum = k.n) || ')'
+                       ELSE '' END
+                    || CASE WHEN con.contype = 'f' THEN CASE con.confdeltype
+                         WHEN 'c' THEN ' on delete cascade' WHEN 'n' THEN ' on delete set null'
+                         WHEN 'd' THEN ' on delete set default' WHEN 'r' THEN ' on delete restrict'
+                         ELSE '' END ELSE '' END,
+                    '; ' ORDER BY CASE con.contype WHEN 'p' THEN 1 WHEN 'u' THEN 2 ELSE 3 END,
+                                  con.confrelid::regclass::text)
+           FROM pg_constraint con
+           WHERE con.conrelid = a.attrelid AND a.attnum = ANY (con.conkey)
+             AND con.contype IN ('p', 'u', 'f')), '')
+  FROM pg_attribute a
+  WHERE a.attrelid = to_regclass(t) AND a.attnum > 0 AND NOT a.attisdropped
+  ORDER BY a.attnum
+$$;
+
+-- Weeks 10 to 12: two generated tables big enough for indexes and query plans
+-- to matter. big_student has 10,000 students and big_takes 100,000
+-- enrollments. The values come from arithmetic on the row number, not from
+-- random(), so every copy of the database holds the same rows, and the
+-- statistics are taken from every row, so every copy gets the same plans.
+-- Only the primary keys are indexed: adding the others is the week's work.
+DROP TABLE IF EXISTS big_takes, big_student;
+
+CREATE TABLE big_student (
+  student_no integer PRIMARY KEY,
+  name       varchar(40) NOT NULL,
+  dept_name  varchar(20) REFERENCES department,
+  tot_cred   integer NOT NULL CHECK (tot_cred >= 0)
+);
+
+INSERT INTO big_student
+SELECT n,
+       (ARRAY['Avery','Blake','Casey','Dana','Eli','Finley','Gray','Harper','Indigo','Jamie',
+              'Kai','Logan','Morgan','Noel','Oakley','Parker','Quinn','Reese','Sage','Taylor'])[1 + n % 20]
+       || ' ' ||
+       (ARRAY['Adams','Brooks','Chen','Diaz','Evans','Fischer','Garcia','Hughes','Ito','Jensen',
+              'Kim','Lopez','Moreau','Nguyen','Okafor','Patel','Quist','Rivera','Silva','Tanaka',
+              'Usman','Vance','Walsh','Xu','Young'])[1 + (n / 20) % 25],
+       (ARRAY['Comp. Sci.','Comp. Sci.','Comp. Sci.','Physics','Mathematics','Mathematics',
+              'Biology','History','Economics','Music'])[1 + (n * 7) % 10],
+       (n * 37) % 131
+FROM generate_series(1, 10000) AS n;
+
+CREATE TABLE big_takes (
+  reg_id     integer PRIMARY KEY,
+  student_no integer NOT NULL REFERENCES big_student,
+  course_id  varchar(8) NOT NULL REFERENCES course,
+  semester   varchar(6) NOT NULL,
+  year       integer NOT NULL,
+  grade      varchar(2)
+);
+
+INSERT INTO big_takes
+SELECT g,
+       1 + (g * 7919) % 10000,
+       (ARRAY['CS-101','CS-101','CS-101','MA-201','MA-201','CS-190','CS-315','CS-319','CS-347',
+              'BIO-101','PHY-101','PHY-101','HIS-351','MU-199'])[1 + (g * 31) % 14],
+       (ARRAY['Fall','Spring','Summer','Fall','Spring'])[1 + (g * 3) % 5],
+       2001 + (g * 17) % 27,
+       CASE WHEN 2001 + (g * 17) % 27 = 2027 THEN NULL
+            ELSE (ARRAY['A','A','A-','A-','B+','B+','B','B','B','B-','B-','C+','C','C','C-','D','F'])[1 + (g * 13) % 17]
+       END
+FROM generate_series(1, 100000) AS g;
+
+SET default_statistics_target = 400;
+ANALYZE big_student, big_takes;
+RESET default_statistics_target;
+
+-- plan_label(node): a plan node's name as EXPLAIN prints it, from its JSON:
+-- HashAggregate or GroupAggregate, Hash Anti Join, Index Scan Backward. A step
+-- that runs inside another step's condition starts with "SubPlan: ".
+CREATE OR REPLACE FUNCTION plan_label(n jsonb) RETURNS text
+LANGUAGE sql IMMUTABLE AS $$
+  SELECT CASE n ->> 'Parent Relationship' WHEN 'SubPlan' THEN 'SubPlan: ' WHEN 'InitPlan' THEN 'InitPlan: ' ELSE '' END
+  || CASE
+    WHEN n ->> 'Node Type' = 'Aggregate' THEN
+      CASE n ->> 'Strategy' WHEN 'Hashed' THEN 'HashAggregate' WHEN 'Sorted' THEN 'GroupAggregate'
+                            WHEN 'Mixed' THEN 'MixedAggregate' ELSE 'Aggregate' END
+    WHEN n ->> 'Join Type' IS NOT NULL AND n ->> 'Join Type' <> 'Inner' THEN
+      CASE WHEN n ->> 'Node Type' = 'Nested Loop' THEN 'Nested Loop ' || (n ->> 'Join Type') || ' Join'
+           ELSE replace(n ->> 'Node Type', ' Join', ' ' || (n ->> 'Join Type') || ' Join') END
+    WHEN n ->> 'Scan Direction' = 'Backward' THEN (n ->> 'Node Type') || ' Backward'
+    ELSE n ->> 'Node Type'
+  END
+$$;
+
+-- plan_steps(query): the steps of a query's plan, one row each, from the top.
+-- Like EXPLAIN, but as a table that an exercise can check.
+--   SELECT * FROM plan_steps('SELECT * FROM big_takes WHERE reg_id = 42');
+CREATE OR REPLACE FUNCTION plan_steps(q text)
+RETURNS TABLE (step integer, node text, on_table text, using_index text)
+LANGUAGE plpgsql AS $$
+DECLARE
+  j jsonb;
+BEGIN
+  EXECUTE 'EXPLAIN (FORMAT JSON) ' || q INTO j;
+  RETURN QUERY
+  WITH RECURSIVE t(depth, path, n) AS (
+    SELECT 0, ARRAY[0], j -> 0 -> 'Plan'
+    UNION ALL
+    SELECT t.depth + 1, t.path || c.i::integer, c.p
+    FROM t, jsonb_array_elements(t.n -> 'Plans') WITH ORDINALITY AS c(p, i)
+  )
+  SELECT (row_number() OVER (ORDER BY t.path))::integer,
+         repeat('  ', t.depth) || plan_label(t.n),
+         t.n ->> 'Relation Name',
+         t.n ->> 'Index Name'
+  FROM t
+  ORDER BY t.path;
+END $$;
+
+-- plan_actual(query): runs the query, like EXPLAIN ANALYZE, and returns each
+-- step with the rows it really produced over all its runs, how many times it
+-- ran, the table and index pages it touched (its own and its inputs'), and how
+-- it sorted, if it did.
+--   SELECT * FROM plan_actual('SELECT * FROM big_takes ORDER BY year LIMIT 5');
+CREATE OR REPLACE FUNCTION plan_actual(q text)
+RETURNS TABLE (step integer, node text, actual_rows bigint, loops bigint, pages bigint, sort_method text)
+LANGUAGE plpgsql AS $$
+DECLARE
+  j jsonb;
+BEGIN
+  EXECUTE 'EXPLAIN (ANALYZE, BUFFERS, TIMING OFF, FORMAT JSON) ' || q INTO j;
+  RETURN QUERY
+  WITH RECURSIVE t(depth, path, n) AS (
+    SELECT 0, ARRAY[0], j -> 0 -> 'Plan'
+    UNION ALL
+    SELECT t.depth + 1, t.path || c.i::integer, c.p
+    FROM t, jsonb_array_elements(t.n -> 'Plans') WITH ORDINALITY AS c(p, i)
+  )
+  SELECT (row_number() OVER (ORDER BY t.path))::integer,
+         repeat('  ', t.depth) || plan_label(t.n),
+         round((t.n ->> 'Actual Rows')::numeric * (t.n ->> 'Actual Loops')::numeric)::bigint,
+         (t.n ->> 'Actual Loops')::bigint,
+         ((t.n ->> 'Shared Hit Blocks')::bigint + (t.n ->> 'Shared Read Blocks')::bigint),
+         t.n ->> 'Sort Method'
+  FROM t
+  ORDER BY t.path;
+END $$;
+
+-- plan_rows(query): runs the query, like EXPLAIN ANALYZE, and puts the
+-- planner's guess next to the truth for each step: est_rows is how many rows
+-- the planner expected one run of the step to produce, actual_rows how many
+-- it really did (averaged over its runs, if it ran more than once).
+--   SELECT * FROM plan_rows('SELECT * FROM big_takes WHERE year > 2020');
+CREATE OR REPLACE FUNCTION plan_rows(q text)
+RETURNS TABLE (step integer, node text, est_rows bigint, actual_rows bigint, loops bigint)
+LANGUAGE plpgsql AS $$
+DECLARE
+  j jsonb;
+BEGIN
+  EXECUTE 'EXPLAIN (ANALYZE, TIMING OFF, FORMAT JSON) ' || q INTO j;
+  RETURN QUERY
+  WITH RECURSIVE t(depth, path, n) AS (
+    SELECT 0, ARRAY[0], j -> 0 -> 'Plan'
+    UNION ALL
+    SELECT t.depth + 1, t.path || c.i::integer, c.p
+    FROM t, jsonb_array_elements(t.n -> 'Plans') WITH ORDINALITY AS c(p, i)
+  )
+  SELECT (row_number() OVER (ORDER BY t.path))::integer,
+         repeat('  ', t.depth) || plan_label(t.n),
+         round((t.n ->> 'Plan Rows')::numeric)::bigint,
+         round((t.n ->> 'Actual Rows')::numeric)::bigint,
+         (t.n ->> 'Actual Loops')::bigint
+  FROM t
+  ORDER BY t.path;
+END $$;
+
+-- Week 14: a recovery log in the book's notation (src/gen/log14.py).
+-- The system crashed right after record 18. Items A to D started at
+-- A = 1000, B = 2000, C = 700, D = 500.
+--   kind 'update'     <T, X, old, new>  T changed X from old_val to new_val
+--   kind 'redo-only'  <T, X, V>         written while rolling T back: X set back to V
+--   kind 'checkpoint' <checkpoint L>    active lists the transactions running then
+DROP TABLE IF EXISTS wal_log;
+CREATE TABLE wal_log (
+  lsn      integer PRIMARY KEY,
+  tx       text,
+  kind     text NOT NULL CHECK (kind IN ('start', 'update', 'redo-only', 'commit', 'abort', 'checkpoint')),
+  item     char(1),
+  old_val  integer,
+  new_val  integer,
+  active   text[],
+  rec      text NOT NULL
+);
+INSERT INTO wal_log VALUES
+  (1, 'T0', 'start', NULL, NULL, NULL, NULL, '<T0 start>'),
+  (2, 'T0', 'update', 'A', 1000, 950, NULL, '<T0, A, 1000, 950>'),
+  (3, 'T0', 'update', 'B', 2000, 2050, NULL, '<T0, B, 2000, 2050>'),
+  (4, 'T0', 'commit', NULL, NULL, NULL, NULL, '<T0 commit>'),
+  (5, 'T1', 'start', NULL, NULL, NULL, NULL, '<T1 start>'),
+  (6, 'T1', 'update', 'C', 700, 600, NULL, '<T1, C, 700, 600>'),
+  (7, NULL, 'checkpoint', NULL, NULL, NULL, ARRAY['T1'], '<checkpoint {T1}>'),
+  (8, 'T2', 'start', NULL, NULL, NULL, NULL, '<T2 start>'),
+  (9, 'T2', 'update', 'A', 950, 900, NULL, '<T2, A, 950, 900>'),
+  (10, 'T1', 'commit', NULL, NULL, NULL, NULL, '<T1 commit>'),
+  (11, 'T3', 'start', NULL, NULL, NULL, NULL, '<T3 start>'),
+  (12, 'T3', 'update', 'B', 2050, 2000, NULL, '<T3, B, 2050, 2000>'),
+  (13, 'T4', 'start', NULL, NULL, NULL, NULL, '<T4 start>'),
+  (14, 'T4', 'update', 'C', 600, 650, NULL, '<T4, C, 600, 650>'),
+  (15, 'T4', 'redo-only', 'C', NULL, 600, NULL, '<T4, C, 600>'),
+  (16, 'T4', 'abort', NULL, NULL, NULL, NULL, '<T4 abort>'),
+  (17, 'T3', 'commit', NULL, NULL, NULL, NULL, '<T3 commit>'),
+  (18, 'T2', 'update', 'D', 500, 450, NULL, '<T2, D, 500, 450>');
+
+</script>
+<script type="module" src="../../assets/playground.js"></script>
+</body>
+</html>

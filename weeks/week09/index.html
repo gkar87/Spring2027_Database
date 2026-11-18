@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Week 9 — Application Development with Python · CS 4600/5200</title>
+<meta name="description" content="CS 4600/5200 week 9: how a program talks to a database. The round trip of a query, Python's psycopg driver, how rows become Python values, SQL injection and why parameters prevent it, least privilege and secrets, psycopg's transactions and error handling, check-then-act, the N+1 query problem, batches and server-side cursors, keyset pagination, connection pools and ORMs. Lab 6.">
+<link rel="stylesheet" href="../../assets/course.css">
+<link rel="stylesheet" href="../../assets/db.css">
+</head>
+<body>
+<a class="skip-link" href="#s1">Skip to the first slide</a>
+
+<div class="deck-stage">
+<main class="deck" aria-label="Week 9 lecture slides: application development with Python">
+
+<!-- 1 ─────────────────────────────────────────────────────────── title -->
+<section class="slide slide--title" id="s1">
+  <p class="course-line">CS 4600/5200 · Database Theory and Applications · Week 9 of 15</p>
+  <h1>Application Development with Python</h1>
+  <p class="subtitle">
+    Nobody at the registrar's desk types SQL. They use a program, and the program types it for them.
+    Today: how that program talks to PostgreSQL, the one mistake that lets a user rewrite its queries,
+    and how to keep it fast and correct when many people use it at once.
+  </p>
+  <p class="byline">
+    Dr. Gorkem Kar
+    <span>University of Central Missouri</span>
+    <span>School of Computer Science and Cybersecurity</span>
+  </p>
+  <div class="title-art">
+<svg viewBox="0 0 380 330" aria-hidden="true" focusable="false" style="--dg-k:1">
+<g class="v-in" style="--d:0.10s"><rect class="dg-box" x="10" y="30" width="150" height="220" rx="6"/><text class="dg-sm-b" x="26" y="60">lab6.py</text></g>
+<rect class="dg-wash v-in" style="--d:0.30s" x="26" y="78" width="96" height="12" rx="3"/>
+<rect class="dg-wash v-in" style="--d:0.38s" x="26" y="104" width="120" height="12" rx="3"/>
+<rect class="dg-wash v-in" style="--d:0.46s" x="26" y="130" width="70" height="12" rx="3"/>
+<rect class="dg-wash v-in" style="--d:0.54s" x="26" y="156" width="104" height="12" rx="3"/>
+<rect class="dg-wash v-in" style="--d:0.62s" x="26" y="182" width="84" height="12" rx="3"/>
+<rect class="dg-wash v-in" style="--d:0.70s" x="26" y="208" width="112" height="12" rx="3"/>
+<g class="v-in" style="--d:0.90s"><ellipse class="dg-box-t" cx="300" cy="70" rx="60" ry="18"/><path class="dg-box-t" d="M240 70 V210 A60 18 0 0 0 360 210 V70"/><ellipse class="dg-box-t" cx="300" cy="70" rx="60" ry="18"/><text class="dg-sm-b" x="300" y="150" text-anchor="middle">PostgreSQL</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.40s" d="M168 110 H232"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.80s" d="M232 170 H168"/>
+<g class="v-in" style="--d:1.50s"><text class="dg-xs" x="200" y="100" text-anchor="middle">SQL + $1</text></g>
+<g class="v-in" style="--d:1.90s"><text class="dg-xs" x="200" y="190" text-anchor="middle">rows</text></g>
+<g class="v-in" style="--d:2.40s"><text class="dg-sm dg-teal" x="10" y="300">values travel apart from the SQL</text></g>
+</svg>
+  </div>
+  
+</section>
+
+<!-- 2 ─────────────────────────────────────────────── where we are -->
+<section class="slide" id="s2">
+  <h2>Where we are</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div>
+        <h3>Weeks 1 to 8</h3>
+        <ul>
+          <li>The model, the algebra and SQL: how to ask.</li>
+          <li>Constraints, E-R design and normal forms: how to store.</li>
+          <li>Your project's tables, keys and data, in milestone 2.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Weeks 9 to 15</h3>
+        <ul>
+          <li><strong>This week:</strong> the program in front of the database.</li>
+          <li><strong>Weeks 10 to 12:</strong> what happens inside it: storage, indexes, query plans.</li>
+          <li><strong>Weeks 13 and 14:</strong> many users at once, and crashes.</li>
+          <li><strong>Week 15:</strong> data that does not fit in tables.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="callout">
+      <span class="mark" aria-hidden="true">→</span>
+      <p>Milestone 3 (April 4) is your project's own Python program, built the way this lecture shows.</p>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 3 ─────────────────────────────────────────────── section -->
+<section class="slide slide--section" id="s3">
+  <h2>Programs that talk to a database</h2>
+  <p>A driver carries SQL from your code to the server and rows back.</p>
+  
+</section>
+
+<!-- 4 ─────────────────────────────────────────────── round trip -->
+<section class="slide" id="s4">
+  <h2>What happens when a program runs a query</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:1000px">
+<svg style="--dg-k:1" viewBox="0 0 1000 300" role="img" aria-labelledby="rtt rtd">
+<title id="rtt">One query&#x27;s round trip from a Python program to PostgreSQL and back</title>
+<desc id="rtd">Four boxes from left to right: your Python code; psycopg, the driver; the network; and the PostgreSQL server. An arrow runs right along the top, labelled with what goes out: the SQL text with $1 placeholders, and separately the values. An arrow runs back left along the bottom, labelled with what comes back: rows, a command tag such as UPDATE 3, or an error with its SQLSTATE code such as 23505. Under the server: it parses the SQL, plans it, then runs it with the values. Under the network: each round trip costs a wait, about 0.1 ms on the same machine and 1 to 50 ms across a network.</desc>
+<defs><marker id="rta" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#0e5a6b"/></marker><marker id="rtb" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#1d232b"/></marker></defs>
+<g class="v-in" style="--d:0.20s"><rect class="dg-box" x="10" y="90" width="230" height="110" rx="6"/><text class="dg-sm-b" x="125" y="140" text-anchor="middle">your code</text><text class="dg-xs" x="125" y="168" text-anchor="middle">lab6.py</text></g>
+<g class="v-in" style="--d:0.45s"><rect class="dg-box" x="260" y="90" width="230" height="110" rx="6"/><text class="dg-sm-b" x="375" y="140" text-anchor="middle">psycopg</text><text class="dg-xs" x="375" y="168" text-anchor="middle">the driver</text></g>
+<g class="v-in" style="--d:0.70s"><rect class="dg-wash" x="510" y="90" width="230" height="110" rx="6"/><text class="dg-sm-b" x="625" y="140" text-anchor="middle">network</text><text class="dg-xs" x="625" y="168" text-anchor="middle">socket or TCP</text></g>
+<g class="v-in" style="--d:0.95s"><rect class="dg-box-t" x="760" y="90" width="230" height="110" rx="6"/><text class="dg-sm-b" x="875" y="140" text-anchor="middle">PostgreSQL</text><text class="dg-xs" x="875" y="168" text-anchor="middle">the server</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.30s" d="M120 70 H880" marker-end="url(#rta)"/>
+<g class="v-in" style="--d:1.50s"><text class="dg-sm" x="500" y="50" text-anchor="middle">SQL text with $1, $2 …   +   the values, sent separately</text></g>
+<path class="dg-line v-draw" pathLength="1" style="--d:2.30s" d="M880 220 H120" marker-end="url(#rtb)"/>
+<g class="v-in" style="--d:2.50s"><text class="dg-sm" x="500" y="248" text-anchor="middle">rows, a command tag (UPDATE 3), or an error with its code (23505)</text></g>
+<g class="v-in" style="--d:3.00s"><text class="dg-xs" x="875" y="285" text-anchor="middle">parse, plan, then run with the values</text><text class="dg-xs" x="625" y="285" text-anchor="middle">every round trip waits</text></g>
+</svg>
+      <figcaption><strong>Figure 9.1.</strong> One round trip. The SQL and its values travel separately; what comes back is rows, a command tag or an error with a five-character code.</figcaption>
+    </figure>
+    <ul>
+      <li>The server is a separate program, often on another machine. Each statement is a message there and a message back.</li>
+      <li>That wait is small on one machine and large across a network, and it is paid once per statement. Section 4 is about paying it less often.</li>
+    </ul>
+  </div>
+  
+</section>
+
+<!-- 5 ─────────────────────────────────────────────── APIs -->
+<section class="slide" id="s5">
+  <h2>Every language has a way in</h2>
+  <div class="slide-main">
+    <table class="tbl tbl--compact">
+      <caption>Ways a program reaches a database</caption>
+      <thead><tr><th scope="col">Way in</th><th scope="col">Language</th><th scope="col">A value goes in as</th><th scope="col">Textbook</th></tr></thead>
+      <tbody>
+        <tr><td>psycopg (Python DB-API, PEP 249)</td><td>Python</td><td><code>%s</code></td><td>5.1.2</td></tr>
+        <tr><td>JDBC</td><td>Java</td><td><code>?</code> in a PreparedStatement</td><td>5.1.1</td></tr>
+        <tr><td>ODBC</td><td>C, C#, Excel, many tools</td><td><code>?</code></td><td>5.1.3</td></tr>
+        <tr><td>Embedded SQL</td><td>C, COBOL</td><td><code>:variable</code></td><td>5.1.4</td></tr>
+        <tr><td>An ORM: SQLAlchemy, Django</td><td>Python</td><td>generated for you</td><td>9.6</td></tr>
+      </tbody>
+    </table>
+    <p>The names differ; the shape does not. Connect, send SQL with placeholders and values, read rows, commit or roll back, close. Learn it once in Python and it carries over.</p>
+  </div>
+  
+</section>
+
+<!-- 6 ─────────────────────────────────────────────── first program -->
+<section class="slide" id="s6">
+  <h2>A first program</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <pre class="code"><span class="k">import</span> psycopg
+
+<span class="k">with</span> psycopg.connect(<span class="s">"dbname=university"</span>) <span class="k">as</span> conn:
+    cur = conn.execute(
+        <span class="s">"SELECT name, tot_cred FROM student "</span>
+        <span class="s">"WHERE dept_name = %s ORDER BY name"</span>,
+        (<span class="s">"Physics"</span>,))
+    <span class="k">for</span> name, credits <span class="k">in</span> cur:
+        print(name, credits)</pre>
+      <ul>
+        <li><code>connect</code> takes the same settings as psql. A password never goes in the code: the driver reads <code>PGPASSWORD</code> or a password file.</li>
+        <li><code>%s</code> marks where a value goes; the values follow as a tuple. <code>("Physics",)</code> needs its comma.</li>
+        <li>A cursor hands back rows as tuples. Loop over it, or call <code>fetchone()</code>, <code>fetchmany(n)</code> or <code>fetchall()</code>.</li>
+        <li>Leaving the <code>with</code> block commits, or rolls back if an exception escaped, and closes the connection.</li>
+      </ul>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 7 ─────────────────────────────────────────────── types -->
+<section class="slide" id="s7">
+  <h2>Rows become Python values</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <table class="tbl tbl--compact">
+        <caption>How psycopg converts a column</caption>
+        <thead><tr><th scope="col">PostgreSQL</th><th scope="col">Python</th></tr></thead>
+        <tbody>
+          <tr><td>integer, bigint</td><td><code>int</code></td></tr>
+          <tr><td>numeric(8,2)</td><td><code>decimal.Decimal</code>, exact</td></tr>
+          <tr><td>char, varchar, text</td><td><code>str</code></td></tr>
+          <tr><td>date, timestamptz</td><td><code>datetime.date</code>, <code>datetime.datetime</code></td></tr>
+          <tr><td>boolean</td><td><code>bool</code></td></tr>
+          <tr><td>jsonb</td><td><code>dict</code> or <code>list</code></td></tr>
+          <tr><td>NULL, of any type</td><td><code>None</code></td></tr>
+        </tbody>
+      </table>
+      <ul>
+        <li>Money stays <code>Decimal</code>. Turning a salary into a <code>float</code> brings rounding errors back.</li>
+        <li><code>char(5)</code> ids come back as strings: <code>'00128'</code>, not 128.</li>
+        <li>NULL becomes <code>None</code>, and in Python <code>None == None</code> is true. Three-valued logic stays in the database.</li>
+        <li>Going in, the same table works backwards: pass a <code>Decimal</code> or a <code>date</code>, not a string you formatted.</li>
+      </ul>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 8 ─────────────────────────────────────────────── section -->
+<section class="slide slide--section" id="s8">
+  <h2>Parameters and SQL injection</h2>
+  <p>A user's text is data. The moment it becomes part of the SQL, the user is writing your queries.</p>
+  
+</section>
+
+<!-- 9 ─────────────────────────────────────────────── the bug -->
+<section class="slide" id="s9">
+  <h2>The bug: building SQL out of strings</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <pre class="code"><span class="k">def</span> find_students(conn, text):
+    <span class="c"># WRONG: the text becomes part of the SQL</span>
+    sql = (<span class="s">"SELECT id, name FROM student "</span>
+           f<span class="s">"WHERE name ILIKE '%{text}%'"</span>)
+    <span class="k">return</span> conn.execute(sql).fetchall()</pre>
+      <ul>
+        <li>For <code>ri</code> it works, and every test passes.</li>
+        <li>For <code>O'Brien</code> it fails with a syntax error: the apostrophe ends the string.</li>
+        <li>For <code>' OR 1=1 --</code> it returns every student.</li>
+        <li>With a driver or server that runs several statements per call, <code>x'; DELETE FROM takes; --</code> deletes every enrollment.</li>
+      </ul>
+    </div>
+    <div class="callout">
+      <span class="mark" aria-hidden="true">!</span>
+      <p>The same bug comes from <code>+</code>, <code>%</code>, <code>.format()</code> and f-strings. Injection is consistently among the most common serious flaws found in web applications, on OWASP's lists of the top ten.</p>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 10 ────────────────────────────────────────────── injection figure -->
+<section class="slide" id="s10">
+  <h2>What the database sees</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:1000px">
+<svg style="--dg-k:1" viewBox="0 0 1000 360" role="img" aria-labelledby="ijt ijd">
+<title id="ijt">The same input, pasted into the SQL and sent as a parameter</title>
+<desc id="ijd">Top half, marked with a cross: the program pastes the input &#x27; OR 1=1 -- into the SQL with an f-string. The SQL the database parses is SELECT id, name FROM student WHERE name ILIKE &#x27;%&#x27; OR 1=1 --%&#x27;. The quote in the input closes the string early, OR 1=1 becomes part of the condition, and -- turns the rest into a comment. The condition is true for every row, so all 13 students come back. Bottom half, marked with a tick: the program sends SELECT id, name FROM student WHERE name ILIKE $1, and separately the value %&#x27; OR 1=1 --%. The database parses the SQL before it sees the value, so the value can only ever be compared as text. No name contains it, so 0 rows come back.</desc>
+<g class="v-in" style="--d:0.20s"><rect class="dg-bad" x="10" y="20" width="980" height="150" rx="6"/><text class="dg-sm-b" x="30" y="52">✗  pasted:  f&quot;... ILIKE &#x27;%{text}%&#x27;&quot;</text></g>
+<g class="v-in" style="--d:0.60s"><text class="dg-code" x="30" y="96">SELECT id, name FROM student WHERE name ILIKE '%<tspan class="dg-inj">' OR 1=1 --</tspan>%' ORDER BY name</text></g>
+<g class="v-in" style="--d:1.90s"><text class="dg-sm" x="30" y="140">the input closed the string (underlined), added OR 1=1, and commented out the rest: 13 rows</text></g>
+<g class="v-in" style="--d:2.40s"><rect class="dg-ok" x="10" y="190" width="980" height="150" rx="6"/><text class="dg-sm-b" x="30" y="222">✓  parameter:  conn.execute(&quot;... ILIKE %s&quot;, (&quot;%&quot; + text + &quot;%&quot;,))</text></g>
+<g class="v-in" style="--d:2.80s"><text class="dg-code" x="30" y="262">SELECT id, name FROM student WHERE name ILIKE $1 ORDER BY name</text><text class="dg-code" x="30" y="290">$1 = <tspan class="dg-val">%' OR 1=1 --%</tspan>   (the value, sent separately)</text></g>
+<g class="v-in" style="--d:3.40s"><text class="dg-sm" x="30" y="324">parsed before the value arrives, so the value is only ever text: 0 rows</text></g>
+</svg>
+      <figcaption><strong>Figure 9.2.</strong> The same input both ways. Pasted in, it ends the string and rewrites the condition. Sent as a parameter, it arrives after the query is parsed, and can only be compared as text.</figcaption>
+    </figure>
+    <p><a class="try" href="playground.html#injection">Try four inputs in the injection explorer</a></p>
+  </div>
+  
+</section>
+
+<!-- 11 ────────────────────────────────────────────── the fix -->
+<section class="slide" id="s11">
+  <h2>The fix: always send values as parameters</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <pre class="code">cur = conn.execute(
+    <span class="s">"SELECT id, name FROM student "</span>
+    <span class="s">"WHERE name ILIKE %s ORDER BY name"</span>,
+    (<span class="s">"%"</span> + text + <span class="s">"%"</span>,))
+
+<span class="c"># a table name chosen at run time</span>
+<span class="k">from</span> psycopg <span class="k">import</span> sql
+q = sql.SQL(<span class="s">"SELECT count(*) FROM {}"</span>).format(
+        sql.Identifier(table_name))</pre>
+      <ul>
+        <li>The <code>%s</code> is a placeholder, not Python's <code>%</code> operator: never write <code>"..." % value</code>.</li>
+        <li>Wildcards belong to the value: <code>"%" + text + "%"</code> builds a value, not SQL.</li>
+        <li>Placeholders hold values only. A table or column name chosen at run time goes through <code>psycopg.sql.Identifier</code>, which quotes it as a name, or better, through a fixed list of allowed names.</li>
+        <li>Same idea in SQL: <code>PREPARE … $1</code> and <code>format('%I', …)</code>. <a class="try" href="playground.html#injection">Playground examples 1.1 and 1.2</a></li>
+      </ul>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 12 ────────────────────────────────────────────── defense in depth -->
+<section class="slide" id="s12">
+  <h2>Assume one mistake gets through</h2>
+  <div class="slide-main">
+    <div class="cols-3">
+      <div class="panel">
+        <h3>Least privilege</h3>
+        <p>The program logs in as its own role, granted only what it needs. A role that can SELECT and INSERT cannot DELETE, even if injected. Lab 6, Q3.</p>
+      </div>
+      <div class="panel">
+        <h3>Secrets out of code</h3>
+        <p>Passwords and keys live in environment variables or a password file, never in the source or the repository. Code gets shared; secrets should not.</p>
+      </div>
+      <div class="panel">
+        <h3>Store hashes, not passwords</h3>
+        <p>If your application has user accounts, store a slow, salted hash (bcrypt, scrypt or Argon2), never the password. A stolen table then reveals no passwords.</p>
+      </div>
+    </div>
+    <p>Textbook section 9.8 covers application security, including cross-site scripting and audit trails.</p>
+  </div>
+  
+</section>
+
+<!-- 13 ────────────────────────────────────────────── section -->
+<section class="slide slide--section" id="s13">
+  <h2>Transactions from a program</h2>
+  <p>psycopg opens a transaction for you. Ending it is your job.</p>
+  
+</section>
+
+<!-- 14 ────────────────────────────────────────────── txn figure -->
+<section class="slide" id="s14">
+  <h2>When a transaction starts and ends</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:1000px">
+<svg style="--dg-k:1" viewBox="0 0 1000 300" role="img" aria-labelledby="txt txd">
+<title id="txt">When psycopg starts and ends a transaction</title>
+<desc id="txd">A timeline from left to right of five calls in a program. conn.execute of a SELECT: psycopg first sends BEGIN, so a transaction opens here. Another conn.execute, an INSERT: same transaction. A third, an INSERT that fails with a unique violation: the transaction is now aborted, and every statement until a rollback fails with current transaction is aborted. conn.rollback(): the transaction ends and its changes are undone. Then conn.execute and conn.commit(): a new transaction opens and its change is kept. A shaded band shows each transaction&#x27;s extent.</desc>
+<defs><marker id="txa" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#0e5a6b"/></marker></defs>
+<rect class="dg-hl-t v-grow" style="--d:0.20s" x="10" y="150" width="634" height="26" rx="4"/>
+<g class="v-in" style="--d:0.40s"><text class="dg-xs" x="20" y="168">transaction 1</text></g>
+<rect class="dg-hl v-in" style="--d:1.50s" x="334" y="150" width="310" height="26" rx="4"/>
+<g class="v-in" style="--d:1.60s"><text class="dg-xs" x="344" y="168">aborted: everything fails until rollback</text></g>
+<rect class="dg-hl-t v-grow" style="--d:2.60s" x="664" y="150" width="326" height="26" rx="4"/>
+<g class="v-in" style="--d:2.80s"><text class="dg-xs" x="674" y="168">transaction 2</text></g>
+<g class="v-in" style="--d:0.30s"><rect class="dg-box" x="10" y="30" width="150" height="90" rx="6"/><text class="dg-xs dg-mono" x="85" y="66" text-anchor="middle">execute(SELECT)</text><text class="dg-xs" x="85" y="96" text-anchor="middle">BEGIN sent first</text></g>
+<g class="v-in" style="--d:0.80s"><rect class="dg-box" x="174" y="30" width="150" height="90" rx="6"/><text class="dg-xs dg-mono" x="249" y="66" text-anchor="middle">execute(INSERT)</text><text class="dg-xs" x="249" y="96" text-anchor="middle">same transaction</text></g>
+<g class="v-in" style="--d:1.30s"><rect class="dg-bad" x="338" y="30" width="150" height="90" rx="6"/><text class="dg-xs dg-mono" x="413" y="66" text-anchor="middle">execute(INSERT)</text><text class="dg-xs" x="413" y="96" text-anchor="middle">✗ UniqueViolation</text></g>
+<g class="v-in" style="--d:1.80s"><rect class="dg-box-a" x="502" y="30" width="150" height="90" rx="6"/><text class="dg-xs dg-mono" x="577" y="66" text-anchor="middle">rollback()</text><text class="dg-xs" x="577" y="96" text-anchor="middle">undone, ended</text></g>
+<g class="v-in" style="--d:2.30s"><rect class="dg-box" x="666" y="30" width="150" height="90" rx="6"/><text class="dg-xs dg-mono" x="741" y="66" text-anchor="middle">execute(INSERT)</text><text class="dg-xs" x="741" y="96" text-anchor="middle">BEGIN again</text></g>
+<g class="v-in" style="--d:2.80s"><rect class="dg-ok" x="830" y="30" width="150" height="90" rx="6"/><text class="dg-xs dg-mono" x="905" y="66" text-anchor="middle">commit()</text><text class="dg-xs" x="905" y="96" text-anchor="middle">✓ kept</text></g>
+<path class="dg-line v-draw" pathLength="1" style="--d:0.10s" d="M10 210 H980" marker-end="url(#txa)"/>
+<g class="v-in" style="--d:0.20s"><text class="dg-xs" x="10" y="240">time</text></g>
+<g class="v-in" style="--d:3.20s"><text class="dg-sm" x="10" y="285">with conn.transaction(): ... does the same in a block: commit at the end, rollback on an exception</text></g>
+</svg>
+      <figcaption><strong>Figure 9.3.</strong> psycopg sends BEGIN before the first statement. Nothing is kept until <code>commit()</code>; after an error, nothing more runs until <code>rollback()</code>.</figcaption>
+    </figure>
+    <ul>
+      <li>Forget to commit, and the program's changes vanish when it closes, while its open transaction holds locks the whole time.</li>
+      <li><code>conn.autocommit = True</code> makes each statement its own transaction, like psql. Use it for scripts that only read.</li>
+    </ul>
+  </div>
+  
+</section>
+
+<!-- 15 ────────────────────────────────────────────── errors -->
+<section class="slide" id="s15">
+  <h2>Errors arrive as exceptions</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <pre class="code"><span class="k">try</span>:
+    conn.execute(
+        <span class="s">"INSERT INTO takes "</span>
+        <span class="s">"VALUES (%s, %s, %s, %s, NULL)"</span>,
+        (sid, cid, sem, year))
+    conn.commit()
+<span class="k">except</span> psycopg.errors.UniqueViolation:
+    conn.rollback()
+    print(<span class="s">"already enrolled"</span>)
+<span class="k">except</span> psycopg.Error <span class="k">as</span> e:
+    conn.rollback()
+    <span class="k">raise</span></pre>
+      <ul>
+        <li>Each SQLSTATE code has its exception class: 23505 is <code>UniqueViolation</code>, 23503 <code>ForeignKeyViolation</code>, 23514 <code>CheckViolation</code>.</li>
+        <li>All of them are subclasses of <code>psycopg.Error</code>, so one <code>except</code> can catch the rest.</li>
+        <li>After any error, roll back before the next statement, or it fails with "current transaction is aborted".</li>
+        <li>Catch what you can handle; let the rest rise, so that a bug is not hidden.</li>
+      </ul>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 16 ────────────────────────────────────────────── check then act -->
+<section class="slide" id="s16">
+  <h2>Check, then act: in one transaction</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div>
+        <p>Enrolling is a conversation: does the student exist, does the course, are the prerequisites passed, then insert. Run it as one transaction, so that it ends in one commit or not at all.</p>
+        <p>One transaction is not the whole story. Two copies of the program can both check at the same moment, both see "not enrolled", and both insert.</p>
+      </div>
+      <div class="panel panel--key">
+        <h3>Let the database have the last word</h3>
+        <ul>
+          <li>A rule a constraint can state belongs in a constraint: the primary key of <code>takes</code> refuses the second insert, however the checks raced.</li>
+          <li>The program checks to give a helpful message; the constraint guarantees the rule.</li>
+          <li>Rules no constraint can state need locking or a stricter isolation level: week 13.</li>
+        </ul>
+      </div>
+    </div>
+    <p><a class="try" href="playground.html#transactions">Playground examples 2.1 and 2.2</a></p>
+  </div>
+  
+</section>
+
+<!-- 17 ────────────────────────────────────────────── worked example -->
+<section class="slide" id="s17">
+  <h2>Worked example: one enrollment request</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <pre class="code"><span class="k">def</span> can_enroll(conn, sid, cid):
+    cur = conn.execute(<span class="s">"""
+        SELECT p.prereq_id FROM prereq p
+        WHERE p.course_id = %s
+          AND NOT EXISTS (
+            SELECT 1 FROM takes t
+            WHERE t.id = %s
+              AND t.course_id = p.prereq_id
+              AND t.grade IS NOT NULL
+              AND t.grade &lt;&gt; 'F')"""</span>,
+        (cid, sid))
+    missing = [r[0] <span class="k">for</span> r <span class="k">in</span> cur]
+    conn.rollback()      <span class="c"># read-only: end it</span>
+    <span class="k">return</span> missing</pre>
+      <ul>
+        <li>Student 54321 asks for CS-347. It needs CS-101 and MA-201.</li>
+        <li>54321 passed CS-101 with an A-, and takes MA-201 this term, with no grade yet.</li>
+        <li>So the query returns <code>['MA-201']</code>, and the program refuses with a reason the student can act on.</li>
+        <li>The order of the parameters follows the order of the <code>%s</code> marks, not the order of the function's arguments.</li>
+      </ul>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 18 ────────────────────────────────────────────── section -->
+<section class="slide slide--section" id="s18">
+  <h2>Efficient round trips</h2>
+  <p>A correct program can still be slow by asking too often, or for too much.</p>
+  
+</section>
+
+<!-- 19 ────────────────────────────────────────────── N+1 -->
+<section class="slide" id="s19">
+  <h2>The N+1 problem</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:1000px">
+<svg style="--dg-k:1" viewBox="0 0 1000 300" role="img" aria-labelledby="npt npd">
+<title id="npt">Round trips for one query per department against one GROUP BY</title>
+<desc id="npd">Two bars of round trips, drawn as small blocks. Top: a loop that reads the 7 departments and then sends one count query for each sends 8 queries, 8 round trips. For 300 departments it would send 301. Bottom: one query with LEFT JOIN and GROUP BY sends 1 query, 1 round trip, whatever the number of departments. At 5 ms per round trip across a network, 301 round trips take about 1.5 seconds and 1 takes 5 ms.</desc>
+<g class="v-in" style="--d:0.10s"><text class="dg-sm-b" x="10" y="40">a loop: 1 query for the list, then 1 per department</text></g>
+<rect class="dg-box v-in" style="--d:0.30s" x="10" y="60" width="54" height="44" rx="4"/>
+<g class="v-in" style="--d:0.30s"><text class="dg-xs" x="37" y="88" text-anchor="middle">list</text></g>
+<rect class="dg-box-a v-in" style="--d:0.48s" x="72" y="60" width="54" height="44" rx="4"/>
+<g class="v-in" style="--d:0.48s"><text class="dg-xs" x="99" y="88" text-anchor="middle">1</text></g>
+<rect class="dg-box-a v-in" style="--d:0.66s" x="134" y="60" width="54" height="44" rx="4"/>
+<g class="v-in" style="--d:0.66s"><text class="dg-xs" x="161" y="88" text-anchor="middle">2</text></g>
+<rect class="dg-box-a v-in" style="--d:0.84s" x="196" y="60" width="54" height="44" rx="4"/>
+<g class="v-in" style="--d:0.84s"><text class="dg-xs" x="223" y="88" text-anchor="middle">3</text></g>
+<rect class="dg-box-a v-in" style="--d:1.02s" x="258" y="60" width="54" height="44" rx="4"/>
+<g class="v-in" style="--d:1.02s"><text class="dg-xs" x="285" y="88" text-anchor="middle">4</text></g>
+<rect class="dg-box-a v-in" style="--d:1.20s" x="320" y="60" width="54" height="44" rx="4"/>
+<g class="v-in" style="--d:1.20s"><text class="dg-xs" x="347" y="88" text-anchor="middle">5</text></g>
+<rect class="dg-box-a v-in" style="--d:1.38s" x="382" y="60" width="54" height="44" rx="4"/>
+<g class="v-in" style="--d:1.38s"><text class="dg-xs" x="409" y="88" text-anchor="middle">6</text></g>
+<rect class="dg-box-a v-in" style="--d:1.56s" x="444" y="60" width="54" height="44" rx="4"/>
+<g class="v-in" style="--d:1.56s"><text class="dg-xs" x="471" y="88" text-anchor="middle">7</text></g>
+<g class="v-in" style="--d:1.90s"><text class="dg-sm" x="520" y="88">8 round trips here; 301 for 300 departments</text></g>
+<g class="v-in" style="--d:2.40s"><text class="dg-sm-b" x="10" y="170">one query: LEFT JOIN and GROUP BY</text></g>
+<rect class="dg-box-t v-in" style="--d:2.60s" x="10" y="190" width="54" height="44" rx="4"/>
+<g class="v-in" style="--d:2.60s"><text class="dg-xs" x="37" y="218" text-anchor="middle">1</text></g>
+<g class="v-in" style="--d:2.80s"><text class="dg-sm" x="80" y="218">1 round trip, for 7 departments or 300</text></g>
+<g class="v-in" style="--d:3.30s"><text class="dg-sm dg-teal" x="10" y="285">At 5 ms a round trip: 301 trips ≈ 1.5 s; 1 trip = 5 ms.</text></g>
+</svg>
+      <figcaption><strong>Figure 9.4.</strong> A loop that queries once per item makes 1 + N round trips. A join with GROUP BY makes one, however many items there are.</figcaption>
+    </figure>
+    <p>If you are writing a <code>for</code> loop around <code>conn.execute</code>, ask whether one query with a join could answer all the iterations at once. <a class="try" href="playground.html#trips">Playground examples 3.1 and 3.2</a></p>
+  </div>
+  
+</section>
+
+<!-- 20 ────────────────────────────────────────────── batches -->
+<section class="slide" id="s20">
+  <h2>Moving many rows</h2>
+  <div class="slide-main">
+    <div class="cols-3">
+      <div class="panel">
+        <h3>Many rows in: executemany</h3>
+        <p><code>cur.executemany(sql, rows)</code> runs one statement for a list of parameter tuples, and psycopg sends them in a pipeline instead of waiting for each one.</p>
+      </div>
+      <div class="panel">
+        <h3>Very many rows in: COPY</h3>
+        <p><code>cur.copy("COPY t FROM STDIN")</code> streams rows in PostgreSQL's bulk format: much faster than INSERTs for loading thousands of rows.</p>
+      </div>
+      <div class="panel">
+        <h3>Very many rows out: a server-side cursor</h3>
+        <p><code>conn.cursor(name="big")</code> keeps the result on the server and fetches it in batches, so a million rows never sit in your program's memory at once. Lab 6, P8 (CS 5200).</p>
+      </div>
+    </div>
+    <p>And the simplest saving of all: select only the columns and rows you need. <code>SELECT *</code> then filtering in Python moves every row across the network for nothing.</p>
+  </div>
+  
+</section>
+
+<!-- 21 ────────────────────────────────────────────── paging -->
+<section class="slide" id="s21">
+  <h2>One page at a time</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:1000px">
+<svg style="--dg-k:1" viewBox="0 0 1000 300" role="img" aria-labelledby="pgt pgd">
+<title id="pgt">OFFSET pagination against keyset pagination, for page 3 of 5 rows</title>
+<desc id="pgd">Thirteen students in id order, drawn as a row of thirteen cells. With LIMIT 5 OFFSET 10, the database reads the first ten rows and throws them away, shown crossed out, then returns the last three. With WHERE id greater than 70557 ORDER BY id LIMIT 5, it uses the primary key&#x27;s index to start right after id 70557 and returns the same three rows without reading the others. A note says that if a student is added with a small id while someone pages, OFFSET shows one row twice, and keyset does not.</desc>
+<g class="v-in" style="--d:0.20s"><text class="dg-sm-b dg-mono" x="10" y="36">LIMIT 5 OFFSET 10</text></g>
+<g class="v-in" style="--d:0.40s"><rect class="dg-box-a" x="10" y="50" width="68" height="40" rx="4"/><text class="dg-xs" x="44.0" y="76" text-anchor="middle">00128</text></g>
+<path class="dg-line-a v-draw" pathLength="1" style="--d:0.50s" d="M14 86 L74 54"/>
+<g class="v-in" style="--d:0.48s"><rect class="dg-box-a" x="84" y="50" width="68" height="40" rx="4"/><text class="dg-xs" x="118.0" y="76" text-anchor="middle">12345</text></g>
+<path class="dg-line-a v-draw" pathLength="1" style="--d:0.58s" d="M88 86 L148 54"/>
+<g class="v-in" style="--d:0.56s"><rect class="dg-box-a" x="158" y="50" width="68" height="40" rx="4"/><text class="dg-xs" x="192.0" y="76" text-anchor="middle">19991</text></g>
+<path class="dg-line-a v-draw" pathLength="1" style="--d:0.66s" d="M162 86 L222 54"/>
+<g class="v-in" style="--d:0.64s"><rect class="dg-box-a" x="232" y="50" width="68" height="40" rx="4"/><text class="dg-xs" x="266.0" y="76" text-anchor="middle">23121</text></g>
+<path class="dg-line-a v-draw" pathLength="1" style="--d:0.74s" d="M236 86 L296 54"/>
+<g class="v-in" style="--d:0.72s"><rect class="dg-box-a" x="306" y="50" width="68" height="40" rx="4"/><text class="dg-xs" x="340.0" y="76" text-anchor="middle">44553</text></g>
+<path class="dg-line-a v-draw" pathLength="1" style="--d:0.82s" d="M310 86 L370 54"/>
+<g class="v-in" style="--d:0.80s"><rect class="dg-box-a" x="380" y="50" width="68" height="40" rx="4"/><text class="dg-xs" x="414.0" y="76" text-anchor="middle">45678</text></g>
+<path class="dg-line-a v-draw" pathLength="1" style="--d:0.90s" d="M384 86 L444 54"/>
+<g class="v-in" style="--d:0.88s"><rect class="dg-box-a" x="454" y="50" width="68" height="40" rx="4"/><text class="dg-xs" x="488.0" y="76" text-anchor="middle">54321</text></g>
+<path class="dg-line-a v-draw" pathLength="1" style="--d:0.98s" d="M458 86 L518 54"/>
+<g class="v-in" style="--d:0.96s"><rect class="dg-box-a" x="528" y="50" width="68" height="40" rx="4"/><text class="dg-xs" x="562.0" y="76" text-anchor="middle">55739</text></g>
+<path class="dg-line-a v-draw" pathLength="1" style="--d:1.06s" d="M532 86 L592 54"/>
+<g class="v-in" style="--d:1.04s"><rect class="dg-box-a" x="602" y="50" width="68" height="40" rx="4"/><text class="dg-xs" x="636.0" y="76" text-anchor="middle">61234</text></g>
+<path class="dg-line-a v-draw" pathLength="1" style="--d:1.14s" d="M606 86 L666 54"/>
+<g class="v-in" style="--d:1.12s"><rect class="dg-box-a" x="676" y="50" width="68" height="40" rx="4"/><text class="dg-xs" x="710.0" y="76" text-anchor="middle">70557</text></g>
+<path class="dg-line-a v-draw" pathLength="1" style="--d:1.22s" d="M680 86 L740 54"/>
+<g class="v-in" style="--d:1.20s"><rect class="dg-box-t" x="750" y="50" width="68" height="40" rx="4"/><text class="dg-xs" x="784.0" y="76" text-anchor="middle">76653</text></g>
+<g class="v-in" style="--d:1.28s"><rect class="dg-box-t" x="824" y="50" width="68" height="40" rx="4"/><text class="dg-xs" x="858.0" y="76" text-anchor="middle">98765</text></g>
+<g class="v-in" style="--d:1.36s"><rect class="dg-box-t" x="898" y="50" width="68" height="40" rx="4"/><text class="dg-xs" x="932.0" y="76" text-anchor="middle">98988</text></g>
+<g class="v-in" style="--d:1.50s"><text class="dg-sm" x="10" y="120">reads 10 rows and throws them away, then returns 3</text></g>
+<g class="v-in" style="--d:1.90s"><text class="dg-sm-b dg-mono" x="10" y="156">WHERE id &gt; &#x27;70557&#x27; LIMIT 5</text></g>
+<g class="v-in" style="--d:2.10s"><rect class="dg-wash" x="10" y="170" width="68" height="40" rx="4"/><text class="dg-xs" x="44.0" y="196" text-anchor="middle">00128</text></g>
+<g class="v-in" style="--d:2.10s"><rect class="dg-wash" x="84" y="170" width="68" height="40" rx="4"/><text class="dg-xs" x="118.0" y="196" text-anchor="middle">12345</text></g>
+<g class="v-in" style="--d:2.10s"><rect class="dg-wash" x="158" y="170" width="68" height="40" rx="4"/><text class="dg-xs" x="192.0" y="196" text-anchor="middle">19991</text></g>
+<g class="v-in" style="--d:2.10s"><rect class="dg-wash" x="232" y="170" width="68" height="40" rx="4"/><text class="dg-xs" x="266.0" y="196" text-anchor="middle">23121</text></g>
+<g class="v-in" style="--d:2.10s"><rect class="dg-wash" x="306" y="170" width="68" height="40" rx="4"/><text class="dg-xs" x="340.0" y="196" text-anchor="middle">44553</text></g>
+<g class="v-in" style="--d:2.10s"><rect class="dg-wash" x="380" y="170" width="68" height="40" rx="4"/><text class="dg-xs" x="414.0" y="196" text-anchor="middle">45678</text></g>
+<g class="v-in" style="--d:2.10s"><rect class="dg-wash" x="454" y="170" width="68" height="40" rx="4"/><text class="dg-xs" x="488.0" y="196" text-anchor="middle">54321</text></g>
+<g class="v-in" style="--d:2.10s"><rect class="dg-wash" x="528" y="170" width="68" height="40" rx="4"/><text class="dg-xs" x="562.0" y="196" text-anchor="middle">55739</text></g>
+<g class="v-in" style="--d:2.10s"><rect class="dg-wash" x="602" y="170" width="68" height="40" rx="4"/><text class="dg-xs" x="636.0" y="196" text-anchor="middle">61234</text></g>
+<g class="v-in" style="--d:2.10s"><rect class="dg-wash" x="676" y="170" width="68" height="40" rx="4"/><text class="dg-xs" x="710.0" y="196" text-anchor="middle">70557</text></g>
+<g class="v-in" style="--d:2.50s"><rect class="dg-box-t" x="750" y="170" width="68" height="40" rx="4"/><text class="dg-xs" x="784.0" y="196" text-anchor="middle">76653</text></g>
+<g class="v-in" style="--d:2.50s"><rect class="dg-box-t" x="824" y="170" width="68" height="40" rx="4"/><text class="dg-xs" x="858.0" y="196" text-anchor="middle">98765</text></g>
+<g class="v-in" style="--d:2.50s"><rect class="dg-box-t" x="898" y="170" width="68" height="40" rx="4"/><text class="dg-xs" x="932.0" y="196" text-anchor="middle">98988</text></g>
+<g class="v-in" style="--d:3.20s"><text class="dg-sm" x="10" y="240">jumps to 70557 with the index, reads only the 3 it returns</text></g>
+<g class="v-in" style="--d:3.40s"><text class="dg-xs" x="10" y="290">A student added with a small id meanwhile shifts every OFFSET page; keyset pages do not move.</text></g>
+</svg>
+      <figcaption><strong>Figure 9.5.</strong> Page 3, five students to a page. OFFSET reads and discards the earlier rows; keyset pagination starts after the last key shown.</figcaption>
+    </figure>
+    <p>Keep the last key of each page and ask for <code>WHERE id &gt; %s ORDER BY id LIMIT %s</code>. Lab 6, P6. <a class="try" href="playground.html#trips">Playground examples 3.3 and 3.4</a></p>
+  </div>
+  
+</section>
+
+<!-- 22 ────────────────────────────────────────────── pools -->
+<section class="slide" id="s22">
+  <h2>Connections are expensive; share them</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <ul>
+        <li>Each PostgreSQL connection is a separate server process, with its own memory. Opening one takes a handshake and a login.</li>
+        <li>The server accepts only so many: <code>max_connections</code> is 100 by default.</li>
+        <li>A web application that opened a connection per request would spend its time connecting, and run out under load.</li>
+      </ul>
+      <div class="panel">
+        <h3>A connection pool</h3>
+        <p>A pool opens a few connections once and lends them out: a request borrows one, uses it, and gives it back. In Python, <code>psycopg_pool.ConnectionPool</code>; between many programs and one server, a separate pooler such as PgBouncer.</p>
+        <p>Give it back with no open transaction, or the next borrower inherits it.</p>
+      </div>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 23 ────────────────────────────────────────────── ORMs -->
+<section class="slide" id="s23">
+  <h2>ORMs write the SQL for you</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div>
+        <p>An object-relational mapper, such as SQLAlchemy or Django's, maps a table to a class and a row to an object: <code>Student.objects.filter(dept_name="Physics")</code> becomes a parameterized SELECT.</p>
+        <ul>
+          <li>Values are always parameters, so the usual injection bug goes away, until someone writes raw SQL inside the ORM.</li>
+          <li>Reaching a related object in a loop (each student's advisor) quietly sends one query per object: N+1 again. Both ORMs have a way to load the related rows in one query.</li>
+        </ul>
+      </div>
+      <div class="panel panel--key">
+        <h3>Why this course writes the SQL itself</h3>
+        <p>An ORM saves typing, not understanding. To know why a page is slow, or whether a rule is enforced, you read the SQL it sends, and everything in weeks 1 to 8 applies to it.</p>
+      </div>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 24 ────────────────────────────────────────────── takeaways -->
+<section class="slide" id="s24">
+  <h2>Takeaways</h2>
+  <div class="slide-main">
+    <ol class="steps">
+      <li><span class="n" aria-hidden="true">1</span><div><strong>Values are parameters, always.</strong><p>Never build SQL from a value with +, %, format() or an f-string.</p></div></li>
+      <li><span class="n" aria-hidden="true">2</span><div><strong>End every transaction.</strong><p>Commit what should stay, roll back after any error, and don't leave one open.</p></div></li>
+      <li><span class="n" aria-hidden="true">3</span><div><strong>Let constraints guarantee rules.</strong><p>The program checks to explain; the database enforces.</p></div></li>
+      <li><span class="n" aria-hidden="true">4</span><div><strong>Count round trips.</strong><p>One join beats a query per row; a page beats the whole table.</p></div></li>
+      <li><span class="n" aria-hidden="true">5</span><div><strong>Give the program only what it needs.</strong><p>Its own role, and secrets outside the code.</p></div></li>
+    </ol>
+  </div>
+  
+</section>
+
+<!-- 25 ────────────────────────────────────────────── this week -->
+<section class="slide" id="s25">
+  <h2>This week's work</h2>
+  <div class="slide-main">
+    <div class="week-work">
+      <div>
+        <h3>Read</h3>
+        <ul>
+          <li>Sections 5.1 (SQL from a programming language, including Python), 9.7 and 9.8 (application performance and security).</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Do</h3>
+        <ul>
+          <li>The <a href="playground.html">week 9 playground</a>: the injection explorer and 8 exercises.</li>
+          <li><a href="lab6.html">Lab 6</a>: a registration helper in Python.</li>
+          <li>Quiz 9 in Brightspace.</li>
+          <li>CS 5200: choose a paper from the <a href="../../project/papers.html">reading list</a>.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Due</h3>
+        <ul>
+          <li><span class="due">Sunday, March 21, 11:59 p.m. CT</span>: Lab 6, one zip file in Brightspace.</li>
+          <li>Sunday, April 4: <a href="../../project/index.html">project milestone 3</a>.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="callout" style="margin-top:auto">
+      <span class="mark" aria-hidden="true">→</span>
+      <p><strong>Next week:</strong> under the tables. How rows are laid out in pages on disk, what the buffer pool keeps in memory, and how an index finds one row among millions.</p>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 26 ────────────────────────────────────────────── resources -->
+<section class="slide" id="s26">
+  <h2>Free resources</h2>
+  <div class="slide-main">
+    <ul class="resources">
+      <li><a href="https://www.psycopg.org/psycopg3/docs/basic/usage.html">psycopg 3: basic module usage</a><span class="src">psycopg.org</span><p>Connections, cursors, parameters and transactions, from the driver's own documentation.</p></li>
+      <li><a href="https://www.psycopg.org/psycopg3/docs/basic/params.html">psycopg 3: passing parameters to SQL queries</a><span class="src">psycopg.org</span><p>Placeholders, and the wrong ways to build a query, with examples.</p></li>
+      <li><a href="https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html">SQL Injection Prevention Cheat Sheet</a><span class="src">OWASP</span><p>How injection works and the defenses, in order of preference.</p></li>
+      <li><a href="playground.html">Week 9 playground</a><span class="src">this course</span><p>The injection explorer, prepared statements, RETURNING and pagination, in your browser.</p></li>
+    </ul>
+    <div class="callout" style="margin-top:20px">
+      <span class="mark" aria-hidden="true">→</span>
+      <p>Stuck installing psycopg? Bring your laptop to office hours, Tuesday and Wednesday 12:00–3:00 p.m., MIC room D159, or post in the week 9 discussion in Brightspace.</p>
+    </div>
+  </div>
+  
+</section>
+
+</main>
+</div>
+<script src="../../assets/deck.js"></script>
+</body>
+</html>

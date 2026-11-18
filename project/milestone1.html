@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Project Milestone 1 — E-R Design · CS 4600/5200</title>
+<meta name="description" content="CS 4600/5200 project milestone 1: requirements, business rules, an E-R diagram and design notes for a database in a domain you choose. Five points, due Sunday, February 21.">
+<link rel="stylesheet" href="../assets/course.css">
+<link rel="stylesheet" href="../assets/db.css">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to the milestone</a>
+
+<div class="doc">
+<header class="doc-masthead">
+  <p class="inst"><span>CS 4600/5200 · Database Theory and Applications</span><span>Week 6 · <a href="index.html">Term project</a></span><span><a href="../index.html">Course home</a></span></p>
+  <h1>Milestone 1: an E-R design for your domain</h1>
+  <p class="tagline">Before any table exists, write down what your database must know and draw it. This milestone is the design studio from week 6, done for your own domain: requirements first, then the diagram, then the reasons behind your choices.</p>
+</header>
+
+<dl class="facts">
+  <div><dt>Due</dt><dd>Sunday, February 21, 11:59 p.m. CT</dd></div>
+  <div><dt>Time</dt><dd>About 4 to 6 hours</dd></div>
+  <div><dt>Submit</dt><dd>One zip file per team, uploaded to Brightspace</dd></div>
+  <div><dt>Worth</dt><dd>5 of the project's 25 points</dd></div>
+</dl>
+
+<nav class="toc" aria-labelledby="toc-h">
+  <h2 id="toc-h">On this page</h2>
+  <ol>
+    <li><a href="#req">Part A: requirements and business rules</a></li>
+    <li><a href="#diagram">Part B: the E-R diagram</a></li>
+    <li><a href="#notes">Part C: design notes</a></li>
+    <li><a href="#grad">Part D: CS 5200 only</a></li>
+    <li><a href="#submit">What to submit and how it is graded</a></li>
+    <li><a href="#help">Questions people usually ask</a></li>
+  </ol>
+</nav>
+
+<main id="main">
+
+<section id="req" aria-labelledby="req-h">
+  <h2 id="req-h">Part A: requirements and business rules (one page)</h2>
+  <p>Start with a paragraph that says what the domain is and who would use the database. Then write:</p>
+  <ul>
+    <li><strong>At least 8 questions the database must answer</strong>, in plain English, the way a user would ask them. For a climbing gym: "Which members have not renewed this month?" and "Which routes were set by more than one setter?" Each question should need data from at least one of your entity sets, and some should need two or three.</li>
+    <li><strong>At least 5 business rules</strong> that decide cardinality or participation. Write each as a sentence a user would agree with, like "A route is set by one or more setters" or "A member may hold at most one active membership." These are the rules your diagram must show.</li>
+  </ul>
+  <p>If you can, ask someone who works in the domain whether your rules are right. Slide 26 lists the questions designers ask; a rule you guessed is worth saying so in your notes.</p>
+</section>
+
+<section id="diagram" aria-labelledby="dia-h">
+  <h2 id="dia-h">Part B: the E-R diagram</h2>
+  <p>Draw one diagram for the whole design. It must have:</p>
+  <ul>
+    <li>At least <strong>6 entity sets</strong>, each with its attributes and its primary key underlined.</li>
+    <li>At least <strong>5 relationship sets</strong>, including at least one <strong>many-to-many</strong>.</li>
+    <li>At least one <strong>weak entity set</strong> or one <strong>relationship with attributes of its own</strong>.</li>
+    <li><strong>Cardinality and participation</strong> on every relationship, shown with the notation's marks: arrows and double lines, or l..h limits, or crow's feet.</li>
+  </ul>
+  <p>Use one notation throughout, and say which in the diagram's title or your notes: the textbook's (slides 12 and 15) or crow's foot (slide 16). Mixing them costs the notation point.</p>
+  <p>Draw it with any tool that exports a picture or a PDF. <a href="https://www.drawio.com/">draw.io</a> is free and has a shape library for E-R diagrams; a neat photo of a hand drawing is fine too, as long as every label is readable.</p>
+  <p>Make sure the diagram can answer your questions from Part A: for each question, you should be able to trace a path through the entity sets and relationships that holds the answer.</p>
+</section>
+
+<section id="notes" aria-labelledby="notes-h">
+  <h2 id="notes-h">Part C: design notes (one page at most)</h2>
+  <p>Explain three decisions, a short paragraph each. Good candidates:</p>
+  <ul>
+    <li>Something you made an entity set rather than an attribute, or the other way round (slide 26).</li>
+    <li>Where a relationship attribute belongs, and why not on one of the entity sets.</li>
+    <li>A rule your diagram cannot enforce on its own, such as total participation in a many-to-many (slide 22), and what would enforce it later.</li>
+    <li>A rule you were unsure of, and what you would ask the users.</li>
+  </ul>
+  <p>End the notes with one line on how you used AI tools, if at all.</p>
+</section>
+
+<section id="grad" aria-labelledby="grad-h">
+  <h2 id="grad-h">Part D: CS 5200 only</h2>
+  <p>Add one paragraph to your notes naming the part of your data you will store in a document or key-value form for the NoSQL feature, and why it suits that form better than tables. Data whose shape varies from row to row is usually the best candidate: product specifications, form answers, sensor readings. This paragraph counts toward the design notes point; the feature itself is built later.</p>
+</section>
+
+<section id="submit" aria-labelledby="sub-h">
+  <h2 id="sub-h">What to submit and how it is graded</h2>
+  <p>Upload <strong>one zip file</strong> to the Milestone 1 assignment in Brightspace. Name it <code>m1_lastname_firstname.zip</code>; a team uses both last names, like <code>m1_rivera_nguyen.zip</code>, and only one partner uploads it. Put these files in it:</p>
+  <ul>
+    <li><code>m1_design.pdf</code>: your names, Part A, the diagram, Part C and (for CS 5200) Part D, in that order.</li>
+    <li>The diagram's source file, if your tool has one (for example <code>m1_diagram.drawio</code>), so you can change it for milestone 2.</li>
+  </ul>
+  <div class="fig-scroll" tabindex="0" role="region" aria-label="Milestone 1 rubric, 5 points">
+  <table class="tbl">
+    <caption>Milestone 1 rubric, 5 points</caption>
+    <thead><tr><th scope="col">Item</th><th scope="col">What earns full credit</th><th scope="col" class="num">Points</th></tr></thead>
+    <tbody>
+      <tr><td>Requirements</td><td>A clear domain and at least 8 questions, each answerable from the diagram.</td><td class="num">1</td></tr>
+      <tr><td>Business rules</td><td>At least 5 rules, each matched by a mark on the diagram.</td><td class="num">0.5</td></tr>
+      <tr><td>Diagram</td><td>At least 6 entity sets and 5 relationships, a many-to-many, a weak entity set or relationship attribute, keys underlined, and cardinality and participation on every relationship.</td><td class="num">2</td></tr>
+      <tr><td>Notation</td><td>One notation, named and used correctly throughout.</td><td class="num">0.5</td></tr>
+      <tr><td>Design notes</td><td>Three decisions explained with reasons (for CS 5200, plus the NoSQL paragraph), and the AI note.</td><td class="num">1</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Late work loses 10% per day for up to three days and is not accepted after that.</p>
+</section>
+
+<section id="help" aria-labelledby="help-h">
+  <h2 id="help-h">Questions people usually ask</h2>
+  <ul>
+    <li><strong>Should I draw foreign keys as attributes?</strong> No. In an E-R diagram the relationship is the link; foreign keys appear when you map it to tables in milestone 2 (slide 30).</li>
+    <li><strong>Is my domain big enough?</strong> If you struggle to reach six entity sets, look for the things behind your attributes: a "category" or "location" written as text is often an entity set with attributes of its own.</li>
+    <li><strong>Can I change the design later?</strong> Yes. Milestone 2 will show where it needs changing; say what changed and why in its notes.</li>
+    <li><strong>Can I try the tables before I hand this in?</strong> Yes: the scratch pad in the <a href="../weeks/week06/playground.html#scratch">week 6 design studio</a> runs CREATE TABLE in your browser, and <code>table_info</code> shows the keys you made.</li>
+    <li><strong>Anything else</strong>: office hours, Tuesday and Wednesday 12:00–3:00 p.m., MIC room D159, or the week 6 discussion in Brightspace.</li>
+  </ul>
+</section>
+</main>
+
+<footer>
+  <p>CS 4600/5200 · Database Theory and Applications · University of Central Missouri · Dr. Gorkem Kar · Spring 2027</p>
+</footer>
+</div>
+</body>
+</html>

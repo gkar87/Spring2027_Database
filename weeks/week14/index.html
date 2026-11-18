@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Week 14 — Recovery and Administration · CS 4600/5200</title>
+<meta name="description" content="CS 4600/5200 week 14: kinds of failure and of storage; how data moves between disk and memory; log records and the write-ahead logging rule; redo, undo and checkpoints; the recovery algorithm's redo and undo passes; steal and no-force buffers; ARIES in brief; PostgreSQL's WAL, backups and point-in-time recovery; VACUUM; roles and least privilege.">
+<link rel="stylesheet" href="../../assets/course.css">
+<link rel="stylesheet" href="../../assets/db.css">
+</head>
+<body>
+<a class="skip-link" href="#s1">Skip to the first slide</a>
+
+<div class="deck-stage">
+<main class="deck" aria-label="Week 14 lecture slides: recovery and administration">
+
+<!-- 1 ─────────────────────────────────────────────────────────── title -->
+<section class="slide slide--title" id="s1">
+  <p class="course-line">CS 4600/5200 · Database Theory and Applications · Week 14 of 15</p>
+  <h1>Recovery and Administration</h1>
+  <p class="subtitle">
+    When COMMIT returns, the change must survive a power cut a millisecond later; when a transaction
+    never finished, no trace of it may remain. This week: the log that keeps both promises, how a database
+    recovers after a crash, and the day-to-day care of a PostgreSQL server.
+  </p>
+  <p class="byline">
+    Dr. Gorkem Kar
+    <span>University of Central Missouri</span>
+    <span>School of Computer Science and Cybersecurity</span>
+  </p>
+  <div class="title-art">
+<svg viewBox="0 0 380 330" aria-hidden="true" focusable="false" style="--dg-k:1">
+<g class="v-in" style="--d:0.10s"><rect class="dg-box-m" x="110" y="20" width="160" height="26" rx="4"/></g>
+<g class="v-in" style="--d:0.25s"><rect class="dg-box-t" x="110" y="56" width="160" height="26" rx="4"/></g>
+<g class="v-in" style="--d:0.40s"><rect class="dg-box-t" x="110" y="92" width="160" height="26" rx="4"/></g>
+<g class="v-in" style="--d:0.55s"><rect class="dg-box-m" x="110" y="128" width="160" height="26" rx="4"/></g>
+<g class="v-in" style="--d:0.70s"><rect class="dg-box-m" x="110" y="164" width="160" height="26" rx="4"/></g>
+<g class="v-in" style="--d:0.85s"><rect class="dg-box-a" x="110" y="200" width="160" height="26" rx="4"/></g>
+<g class="v-in" style="--d:1.00s"><rect class="dg-box-m" x="110" y="236" width="160" height="26" rx="4"/></g>
+<path class="dg-line-a v-draw" pathLength="1" style="--d:1.30s" d="M70 276 L110 268 L130 282 L160 266 L190 282 L220 266 L250 282 L270 268 L310 276"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.80s" d="M80 26 V250"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.80s" d="M74 240 L80 252 L86 240"/>
+<path class="dg-line-a v-draw" pathLength="1" style="--d:2.40s" d="M300 250 V40"/>
+<path class="dg-line-a v-draw" pathLength="1" style="--d:2.40s" d="M294 50 L300 38 L306 50"/>
+</svg>
+  </div>
+  
+</section>
+
+<!-- 2 ─────────────────────────────────────────────── where we are -->
+<section class="slide" id="s2">
+  <h2>Where we are</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div>
+        <h3>Last week</h3>
+        <ul>
+          <li>ACID: four promises a transaction makes.</li>
+          <li>Isolation: locks for writers, row versions for readers.</li>
+          <li>We left two promises for this week: <strong>atomicity</strong> and <strong>durability</strong> when the machine fails.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>This week</h3>
+        <ul>
+          <li>The log, and the one rule that makes it work.</li>
+          <li>The recovery algorithm: redo, then undo.</li>
+          <li>Running PostgreSQL: its WAL, backups, VACUUM, and roles.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="callout">
+      <span class="mark" aria-hidden="true">→</span>
+      <p>A database that loses a committed sale, or keeps half of a transfer, is worse than no database. Recovery is what lets you trust COMMIT.</p>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 3 ─────────────────────────────────────────────── failures -->
+<section class="slide" id="s3">
+  <h2>What can fail</h2>
+  <div class="slide-main">
+    <div class="fig-scroll" tabindex="0" role="region" aria-label="Kinds of failure">
+    <table class="tbl tbl--compact">
+      <caption>Three kinds of failure, and what each one destroys</caption>
+      <thead><tr><th scope="col">Failure</th><th scope="col">Examples</th><th scope="col">What is lost</th><th scope="col">Who fixes it</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Transaction failure</strong></td><td>A constraint is broken, a deadlock, ROLLBACK</td><td>Nothing but that transaction's work</td><td>Rollback, while running</td></tr>
+        <tr><td><strong>System crash</strong></td><td>Power cut, operating system or server bug</td><td>Everything in memory; the disk survives</td><td>Recovery at restart (today)</td></tr>
+        <tr><td><strong>Disk failure</strong></td><td>A head crash, a dead SSD, a deleted directory</td><td>Some or all of the disk</td><td>Backups and replicas</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <ul>
+      <li>We assume <strong>fail-stop</strong>: a crash stops the system, it doesn't scribble nonsense on the disk first. Checksums catch the rare exception.</li>
+    </ul>
+  </div>
+  
+</section>
+
+<!-- 4 ─────────────────────────────────────────────── section -->
+<section class="slide slide--section" id="s4">
+  <h2>Storage</h2>
+  <p>What survives a crash, and how data gets there.</p>
+  
+</section>
+
+<!-- 5 ─────────────────────────────────────────────── storage -->
+<section class="slide" id="s5">
+  <h2>Three kinds of storage</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:1000px">
+<svg style="--dg-k:1" viewBox="0 0 1000 300" role="img" aria-labelledby="sgt sgd">
+<title id="sgt">Three kinds of storage</title>
+<desc id="sgd">Three boxes from left to right, each surviving more than the one before. Volatile storage, main memory and caches: fast, and lost when the system crashes or the power fails. Non-volatile storage, disks and SSDs: survives a crash, but not the failure of the disk itself. Stable storage, copies kept on separate disks or at separate sites: an ideal that nothing destroys, approximated by keeping several copies. Below: the log goes to stable storage; data pages go to non-volatile storage, and may be behind the log.</desc>
+<defs><marker id="sga" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#0e5a6b"/></marker></defs>
+<g class="v-in" style="--d:0.10s"><rect class="dg-box-a" x="30" y="30" width="280" height="150" rx="6"/><text class="dg-sm-b" x="170" y="66" text-anchor="middle">Volatile</text><text class="dg-xs" x="170" y="100" text-anchor="middle">main memory, caches</text><text class="dg-xs" x="170" y="126" text-anchor="middle">fast</text><text class="dg-xs" x="170" y="152" text-anchor="middle">lost in a crash</text></g>
+<g class="v-in" style="--d:0.70s"><rect class="dg-box" x="360" y="30" width="280" height="150" rx="6"/><text class="dg-sm-b" x="500" y="66" text-anchor="middle">Non-volatile</text><text class="dg-xs" x="500" y="100" text-anchor="middle">disks, SSDs</text><text class="dg-xs" x="500" y="126" text-anchor="middle">survives a crash</text><text class="dg-xs" x="500" y="152" text-anchor="middle">lost if the disk fails</text></g>
+<g class="v-in" style="--d:1.30s"><rect class="dg-box-t" x="690" y="30" width="280" height="150" rx="6"/><text class="dg-sm-b" x="830" y="66" text-anchor="middle">Stable</text><text class="dg-xs" x="830" y="100" text-anchor="middle">copies on separate disks</text><text class="dg-xs" x="830" y="126" text-anchor="middle">or at separate sites</text><text class="dg-xs" x="830" y="152" text-anchor="middle">survives (almost) anything</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:0.50s" d="M314 105 H354" marker-end="url(#sga)"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.10s" d="M644 105 H684" marker-end="url(#sga)"/>
+<g class="v-in" style="--d:1.80s"><text class="dg-xs" x="500" y="222" text-anchor="middle">survives more, and costs more, from left to right</text></g>
+<g class="v-in" style="--d:2.30s"><rect class="dg-box-m" x="150" y="240" width="700" height="44" rx="4"/><text class="dg-sm" x="500" y="268" text-anchor="middle">The log goes to stable storage. Data pages follow later, and may be behind it.</text></g>
+</svg>
+      <figcaption><strong>Figure 14.1.</strong> Each kind survives more failures than the one before it.</figcaption>
+    </figure>
+    <ul>
+      <li><strong>Stable storage</strong> doesn't exist; it is approximated. Write each block to two disks, one after the other, and a crash can damage at most one copy.</li>
+      <li>Only the log needs stable storage, and the log is small.</li>
+    </ul>
+  </div>
+  
+</section>
+
+<!-- 6 ─────────────────────────────────────────────── blocks -->
+<section class="slide" id="s6">
+  <h2>Data moves in blocks</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:1000px">
+<svg style="--dg-k:1" viewBox="0 0 1000 360" role="img" aria-labelledby="bkt bkd">
+<title id="bkt">How data moves between disk, buffer and a transaction</title>
+<desc id="bkd">Main memory on the left holds the buffer, with blocks A and B, and transaction T&#x27;s private work area, with its variables a and b. The disk on the right holds blocks A and B. input(A) copies block A from disk into the buffer. output(B) copies block B from the buffer to disk. read(A) copies item A from the buffer into T&#x27;s variable a; write(A) copies a back into the buffer. A change reaches the disk only when its block is output, which may be much later than the write.</desc>
+<defs><marker id="bka" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#0e5a6b"/></marker><marker id="bkb" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#9e1b32"/></marker></defs>
+<g class="v-in" style="--d:0.10s"><rect class="dg-box-m" x="20" y="30" width="600" height="310" rx="4"/><text class="dg-sm-b" x="40" y="58">Main memory (volatile)</text></g>
+<g class="v-in" style="--d:0.10s"><rect class="dg-box-m" x="780" y="30" width="200" height="310" rx="4"/><text class="dg-sm-b" x="880" y="58" text-anchor="middle">Disk</text></g>
+<g class="v-in" style="--d:0.30s"><rect class="dg-box" x="320" y="80" width="270" height="230" rx="6"/><text class="dg-sm-b" x="455" y="106" text-anchor="middle">Buffer</text><rect class="dg-box-t" x="355" y="130" width="200" height="56" rx="4"/><text class="dg-sm" x="455" y="164" text-anchor="middle">block A</text><rect class="dg-box-t" x="355" y="220" width="200" height="56" rx="4"/><text class="dg-sm" x="455" y="254" text-anchor="middle">block B</text></g>
+<g class="v-in" style="--d:0.50s"><rect class="dg-box" x="45" y="80" width="220" height="230" rx="6"/><text class="dg-sm-b" x="155" y="106" text-anchor="middle">T’s work area</text><rect class="dg-box" x="85" y="130" width="140" height="56" rx="4"/><text class="dg-sm dg-mono" x="155" y="164" text-anchor="middle">a</text><rect class="dg-box" x="85" y="220" width="140" height="56" rx="4"/><text class="dg-sm dg-mono" x="155" y="254" text-anchor="middle">b</text></g>
+<g class="v-in" style="--d:0.70s"><rect class="dg-box" x="800" y="130" width="160" height="56" rx="4"/><text class="dg-sm" x="880" y="164" text-anchor="middle">block A</text><rect class="dg-box" x="800" y="220" width="160" height="56" rx="4"/><text class="dg-sm" x="880" y="254" text-anchor="middle">block B</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.00s" d="M796 150 H560" marker-end="url(#bka)"/>
+<g class="v-in" style="--d:1.20s"><text class="dg-xs dg-mono" x="678" y="140" text-anchor="middle">input(A)</text></g>
+<path class="dg-line-a v-draw" pathLength="1" style="--d:1.60s" d="M560 256 H796" marker-end="url(#bkb)"/>
+<g class="v-in" style="--d:1.80s"><text class="dg-xs dg-mono" x="678" y="276" text-anchor="middle">output(B)</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:2.20s" d="M352 150 H230" marker-end="url(#bka)"/>
+<g class="v-in" style="--d:2.40s"><text class="dg-xs dg-mono" x="290" y="140" text-anchor="middle">read(A)</text></g>
+<path class="dg-line-a v-draw" pathLength="1" style="--d:2.70s" d="M230 170 H352" marker-end="url(#bkb)"/>
+<g class="v-in" style="--d:2.90s"><text class="dg-xs dg-mono" x="290" y="190" text-anchor="middle">write(A)</text></g>
+</svg>
+      <figcaption><strong>Figure 14.2.</strong> <code>input</code> and <code>output</code> move whole blocks between disk and the buffer; <code>read</code> and <code>write</code> move items between the buffer and a transaction.</figcaption>
+    </figure>
+    <ul>
+      <li>A <code>write</code> changes only the buffer. The block reaches the disk at some later <code>output</code>, chosen by the buffer manager (week 10), not by the transaction.</li>
+    </ul>
+  </div>
+  
+</section>
+
+<!-- 7 ─────────────────────────────────────────────── the problem -->
+<section class="slide" id="s7">
+  <h2>The problem: half a transfer on disk</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div>
+        <p>T0 moves 50 from A to B:</p>
+        <pre class="code">read(A); A := A - 50; write(A)
+read(B); B := B + 50; write(B)
+commit</pre>
+        <p>A was 1000 and B 2000. The system crashes after <code>output(A)</code> and before <code>output(B)</code>.</p>
+      </div>
+      <ul>
+        <li>On disk: A = 950, B = 2000. Fifty has vanished.</li>
+        <li>Rerun T0? Then A = 900: wrong. Leave it? Still wrong.</li>
+        <li>With only the data on disk, nobody can tell which writes happened, or whether T0 committed.</li>
+        <li>So, before changing anything on disk, write down what you are about to change, somewhere that survives: a <strong>log</strong>.</li>
+      </ul>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 8 ─────────────────────────────────────────────── section -->
+<section class="slide slide--section" id="s8">
+  <h2>The log</h2>
+  <p>A record of every change, written before the change.</p>
+  
+</section>
+
+<!-- 9 ─────────────────────────────────────────────── log records -->
+<section class="slide" id="s9">
+  <h2>Log records</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <pre class="code">&lt;T0 start&gt;
+&lt;T0, A, 1000, 950&gt;
+&lt;T0, B, 2000, 2050&gt;
+&lt;T0 commit&gt;
+&lt;T1 start&gt;
+&lt;T1, C, 700, 600&gt;</pre>
+      <ul>
+        <li><code>&lt;T start&gt;</code>: T has begun.</li>
+        <li><code>&lt;T, X, old, new&gt;</code>: T wrote X, which held <em>old</em> and now holds <em>new</em>.</li>
+        <li><code>&lt;T commit&gt;</code>: T has committed. <code>&lt;T abort&gt;</code>: T finished rolling back.</li>
+        <li>The log is only ever appended to, so writing it is fast: one stream, no seeking.</li>
+      </ul>
+    </div>
+    <p><a class="try" href="playground.html#log">Playground examples 1.1 and 1.2</a></p>
+  </div>
+  
+</section>
+
+<!-- 10 ────────────────────────────────────────────── the WAL rule -->
+<section class="slide" id="s10">
+  <h2>Write-ahead logging</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:1000px">
+<svg style="--dg-k:1" viewBox="0 0 1000 300" role="img" aria-labelledby="wrt wrd">
+<title id="wrt">The write-ahead logging rule</title>
+<desc id="wrd">Two rows of three steps, each an arrow to the next. First row: T0 changes A in the buffer; the log record &lt;T0, A, 1000, 950&gt; reaches stable storage; only then may block A be written to disk. Second row: T0&#x27;s last change is logged; the record &lt;T0 commit&gt; reaches stable storage; T0 has committed and COMMIT returns. The data blocks themselves may reach the disk later, even after the commit.</desc>
+<defs><marker id="wra" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#0e5a6b"/></marker></defs>
+<g class="v-in" style="--d:0.10s"><rect class="dg-box" x="30" y="40" width="280" height="90" rx="6"/><text class="dg-sm-b" x="170" y="78" text-anchor="middle">T0 changes A</text><text class="dg-xs" x="170" y="104" text-anchor="middle">in the buffer</text></g>
+<g class="v-in" style="--d:0.55s"><rect class="dg-box-t" x="360" y="40" width="280" height="90" rx="6"/><text class="dg-sm-b dg-mono" x="500" y="78" text-anchor="middle">&lt;T0, A, 1000, 950&gt;</text><text class="dg-xs" x="500" y="104" text-anchor="middle">reaches stable storage</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:0.40s" d="M314 85 H354" marker-end="url(#wra)"/>
+<g class="v-in" style="--d:1.00s"><rect class="dg-box" x="690" y="40" width="280" height="90" rx="6"/><text class="dg-sm-b" x="830" y="78" text-anchor="middle">block A may now</text><text class="dg-xs" x="830" y="104" text-anchor="middle">be written to disk</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:0.85s" d="M644 85 H684" marker-end="url(#wra)"/>
+<g class="v-in" style="--d:1.45s"><rect class="dg-box" x="30" y="170" width="280" height="90" rx="6"/><text class="dg-sm-b" x="170" y="208" text-anchor="middle">T0 has made its</text><text class="dg-xs" x="170" y="234" text-anchor="middle">last change</text></g>
+<g class="v-in" style="--d:1.90s"><rect class="dg-box-t" x="360" y="170" width="280" height="90" rx="6"/><text class="dg-sm-b dg-mono" x="500" y="208" text-anchor="middle">&lt;T0 commit&gt;</text><text class="dg-xs" x="500" y="234" text-anchor="middle">reaches stable storage</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.75s" d="M314 215 H354" marker-end="url(#wra)"/>
+<g class="v-in" style="--d:2.35s"><rect class="dg-box" x="690" y="170" width="280" height="90" rx="6"/><text class="dg-sm-b" x="830" y="208" text-anchor="middle">T0 has committed:</text><text class="dg-xs" x="830" y="234" text-anchor="middle">COMMIT returns</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:2.20s" d="M644 215 H684" marker-end="url(#wra)"/>
+<g class="v-in" style="--d:2.90s"><text class="dg-sm" x="500" y="288" text-anchor="middle">Log first, data later: the log always knows more than the data pages.</text></g>
+</svg>
+      <figcaption><strong>Figure 14.3.</strong> A change's log record reaches stable storage before its data block reaches the disk, and a transaction commits when its commit record does.</figcaption>
+    </figure>
+    <ul>
+      <li>The <strong>WAL rule</strong>: log first, data later. Then the log can always explain what the disk holds.</li>
+      <li>Commit costs one write of the log, not one write per changed block.</li>
+    </ul>
+  </div>
+  
+</section>
+
+<!-- 11 ────────────────────────────────────────────── redo and undo -->
+<section class="slide" id="s11">
+  <h2>Redo and undo</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div>
+        <h3>redo(T)</h3>
+        <ul>
+          <li>Sets every item T wrote to its <em>new</em> value, going forward through the log.</li>
+          <li>For T with a <code>&lt;T commit&gt;</code> or <code>&lt;T abort&gt;</code> record.</li>
+        </ul>
+        <h3>undo(T)</h3>
+        <ul>
+          <li>Sets every item T wrote back to its <em>old</em> value, going backward.</li>
+          <li>For T with <code>&lt;T start&gt;</code> and neither of those.</li>
+          <li>Logs each step as a redo-only record <code>&lt;T, X, old&gt;</code>, then <code>&lt;T abort&gt;</code>.</li>
+        </ul>
+      </div>
+      <ul>
+        <li>Both are <strong>idempotent</strong>: doing one twice gives the same result as once. A crash during recovery is harmless; recovery just runs again.</li>
+        <li>The redo-only records make a rollback look like ordinary changes, so a rolled-back transaction ends with <code>&lt;T abort&gt;</code> and is simply redone.</li>
+        <li>Rolling back a transaction while the system runs uses the same undo.</li>
+      </ul>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 12 ────────────────────────────────────────────── three crash points -->
+<section class="slide" id="s12">
+  <h2>One log, three crashes</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:1000px">
+<svg style="--dg-k:1" viewBox="0 0 1000 420" role="img" aria-labelledby="cpt cpd">
+<title id="cpt">The same log, crashed at three points</title>
+<desc id="cpd">Three copies of one log, each cut short by a crash at a different point. (a) The log holds T0&#x27;s start and its two updates, A from 1000 to 950 and B from 2000 to 2050, but no commit: recovery undoes T0, setting B back to 2000 and A back to 1000. (b) The log also holds T0&#x27;s commit, T1&#x27;s start and T1&#x27;s update of C from 700 to 600, but not T1&#x27;s commit: recovery redoes T0, so A is 950 and B 2050, and undoes T1, so C is 700 again. (c) The log also holds T1&#x27;s commit: recovery redoes both, so A is 950, B 2050 and C 600.</desc>
+<g class="v-in" style="--d:0.20s"><rect class="dg-box-m" x="20" y="20" width="300" height="270" rx="4"/><text class="dg-sm-b" x="36" y="46">(a)</text><text class="dg-xs dg-mono" x="44" y="78">&lt;T0 start&gt;</text><text class="dg-xs dg-mono" x="44" y="106">&lt;T0, A, 1000, 950&gt;</text><text class="dg-xs dg-mono" x="44" y="134">&lt;T0, B, 2000, 2050&gt;</text><path class="dg-line-a" d="M30 150 L80 144 L130 156 L180 144 L230 156 L310 150"/><text class="dg-xs dg-txt-bad" x="306" y="172" text-anchor="end">crash</text></g>
+<g class="v-in" style="--d:0.80s"><rect class="dg-box" x="20" y="304" width="300" height="100" rx="6"/><text class="dg-xs" x="170" y="334" text-anchor="middle">undo T0:</text><text class="dg-xs" x="170" y="360" text-anchor="middle">B back to 2000,</text><text class="dg-xs" x="170" y="386" text-anchor="middle">A back to 1000</text></g>
+<g class="v-in" style="--d:1.40s"><rect class="dg-box-m" x="350" y="20" width="300" height="270" rx="4"/><text class="dg-sm-b" x="366" y="46">(b)</text><text class="dg-xs dg-mono" x="374" y="78">&lt;T0 start&gt;</text><text class="dg-xs dg-mono" x="374" y="106">&lt;T0, A, 1000, 950&gt;</text><text class="dg-xs dg-mono" x="374" y="134">&lt;T0, B, 2000, 2050&gt;</text><text class="dg-xs dg-mono" x="374" y="162">&lt;T0 commit&gt;</text><text class="dg-xs dg-mono" x="374" y="190">&lt;T1 start&gt;</text><text class="dg-xs dg-mono" x="374" y="218">&lt;T1, C, 700, 600&gt;</text><path class="dg-line-a" d="M360 234 L410 228 L460 240 L510 228 L560 240 L640 234"/><text class="dg-xs dg-txt-bad" x="636" y="256" text-anchor="end">crash</text></g>
+<g class="v-in" style="--d:2.00s"><rect class="dg-box" x="350" y="304" width="300" height="100" rx="6"/><text class="dg-xs" x="500" y="334" text-anchor="middle">redo T0: A 950, B 2050;</text><text class="dg-xs" x="500" y="360" text-anchor="middle">undo T1:</text><text class="dg-xs" x="500" y="386" text-anchor="middle">C back to 700</text></g>
+<g class="v-in" style="--d:2.60s"><rect class="dg-box-m" x="680" y="20" width="300" height="270" rx="4"/><text class="dg-sm-b" x="696" y="46">(c)</text><text class="dg-xs dg-mono" x="704" y="78">&lt;T0 start&gt;</text><text class="dg-xs dg-mono" x="704" y="106">&lt;T0, A, 1000, 950&gt;</text><text class="dg-xs dg-mono" x="704" y="134">&lt;T0, B, 2000, 2050&gt;</text><text class="dg-xs dg-mono" x="704" y="162">&lt;T0 commit&gt;</text><text class="dg-xs dg-mono" x="704" y="190">&lt;T1 start&gt;</text><text class="dg-xs dg-mono" x="704" y="218">&lt;T1, C, 700, 600&gt;</text><text class="dg-xs dg-mono" x="704" y="246">&lt;T1 commit&gt;</text><path class="dg-line-a" d="M690 262 L740 256 L790 268 L840 256 L890 268 L970 262"/><text class="dg-xs dg-txt-bad" x="966" y="284" text-anchor="end">crash</text></g>
+<g class="v-in" style="--d:3.20s"><rect class="dg-box-t" x="680" y="304" width="300" height="100" rx="6"/><text class="dg-xs" x="830" y="334" text-anchor="middle">redo T0 and T1:</text><text class="dg-xs" x="830" y="360" text-anchor="middle">A 950, B 2050,</text><text class="dg-xs" x="830" y="386" text-anchor="middle">C 600</text></g>
+</svg>
+      <figcaption><strong>Figure 14.4.</strong> What recovery does depends only on which records reached the log before the crash.</figcaption>
+    </figure>
+  </div>
+  
+</section>
+
+<!-- 13 ────────────────────────────────────────────── checkpoints -->
+<section class="slide" id="s13">
+  <h2>Checkpoints</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div>
+        <h3>A checkpoint</h3>
+        <ol>
+          <li>Writes every log record in memory to stable storage.</li>
+          <li>Writes every changed block in the buffer to disk.</li>
+          <li>Logs <code>&lt;checkpoint L&gt;</code>, where L lists the transactions running.</li>
+        </ol>
+      </div>
+      <ul>
+        <li>Everything before the checkpoint is on disk, so recovery redoes only what comes after it.</li>
+        <li>Transactions in L may have changes on both sides. Their undo can reach back before the checkpoint.</li>
+        <li>Without checkpoints, recovery reads the whole log, and the log grows forever.</li>
+        <li>Updates pause while the book's checkpoint runs; a <strong>fuzzy checkpoint</strong> lets them continue (19.5.4).</li>
+      </ul>
+    </div>
+    <p><a class="try" href="playground.html#log">Playground example 1.3</a></p>
+  </div>
+  
+</section>
+
+<!-- 14 ────────────────────────────────────────────── section -->
+<section class="slide slide--section" id="s14">
+  <h2>The recovery algorithm</h2>
+  <p>Repeat history, then roll back the unfinished.</p>
+  
+</section>
+
+<!-- 15 ────────────────────────────────────────────── redo pass -->
+<section class="slide" id="s15">
+  <h2>Pass 1: redo, going forward</h2>
+  <div class="slide-main">
+    <ol class="steps">
+      <li><span class="n" aria-hidden="true">1</span><div><strong>Start at the last checkpoint.</strong><p>Set the undo list to its L.</p></div></li>
+      <li><span class="n" aria-hidden="true">2</span><div><strong>Redo every change, of every transaction.</strong><p><code>&lt;T, X, old, new&gt;</code> and <code>&lt;T, X, V&gt;</code> both set X, even when T will be undone. This is called <em>repeating history</em>.</p></div></li>
+      <li><span class="n" aria-hidden="true">3</span><div><strong>Keep the undo list.</strong><p>Add T at <code>&lt;T start&gt;</code>; remove it at <code>&lt;T commit&gt;</code> or <code>&lt;T abort&gt;</code>.</p></div></li>
+    </ol>
+    <p>At the end of the log, the database is exactly as it was at the crash, and the undo list holds the transactions that never finished.</p>
+  </div>
+  
+</section>
+
+<!-- 16 ────────────────────────────────────────────── undo pass -->
+<section class="slide" id="s16">
+  <h2>Pass 2: undo, going backward</h2>
+  <div class="slide-main">
+    <ol class="steps">
+      <li><span class="n" aria-hidden="true">1</span><div><strong>Scan back from the end of the log.</strong><p>Look only at records of transactions on the undo list.</p></div></li>
+      <li><span class="n" aria-hidden="true">2</span><div><strong>Undo each change.</strong><p>For <code>&lt;T, X, old, new&gt;</code>, set X to <em>old</em> and log <code>&lt;T, X, old&gt;</code>.</p></div></li>
+      <li><span class="n" aria-hidden="true">3</span><div><strong>Finish each transaction.</strong><p>At <code>&lt;T start&gt;</code>, log <code>&lt;T abort&gt;</code> and take T off the list. Stop when the list is empty.</p></div></li>
+    </ol>
+    <p>Then the database opens for new transactions.</p>
+  </div>
+  
+</section>
+
+<!-- 17 ────────────────────────────────────────────── worked example -->
+<section class="slide" id="s17">
+  <h2>Recovery, worked</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:1000px">
+<svg style="--dg-k:1" viewBox="0 0 1000 404" role="img" aria-labelledby="rct rcd">
+<title id="rct">Recovery after a crash right after record 18</title>
+<desc id="rcd">On the left, the playground&#x27;s log from the checkpoint at record 7 to the crash after record 18; records 1 to 6 are already on disk and the redo pass doesn&#x27;t read them. The redo pass runs down the log from record 7, redoing records 9, 12, 14, 15 and 18. Its undo list starts as {T1}, from the checkpoint, gains T2, T3 and T4 as they start and loses T1, T4 and T3 as they commit or abort, ending as {T2}. On the right, the undo pass runs back up the log through T2&#x27;s records only. At record 18 it sets D back to 500 and logs record 19, &lt;T2, D, 500&gt;. At record 9 it sets A back to 950 and logs record 20, &lt;T2, A, 950&gt;. At record 8, T2&#x27;s start, it logs record 21, &lt;T2 abort&gt;, and stops. The items end as A 950, B 2000, C 600 and D 500.</desc>
+<defs><marker id="rca" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#0e5a6b"/></marker><marker id="rcb" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#9e1b32"/></marker></defs>
+<g class="v-in" style="--d:0.10s"><text class="dg-sm-b" x="40" y="24" text-anchor="start">Pass 1: redo, from the checkpoint down</text></g>
+<g class="v-in" style="--d:2.40s"><text class="dg-sm-b" x="560" y="24" text-anchor="start">Pass 2: undo, back up through T2</text></g>
+<g class="v-in" style="--d:0.30s"><rect class="dg-hl-t" x="110" y="52" width="290" height="23" rx="3"/><text class="dg-xs" x="146" y="70" text-anchor="end">7</text><text class="dg-xs dg-mono" x="160" y="70">&lt;checkpoint {T1}&gt;</text></g>
+<g class="v-in" style="--d:0.38s"><rect class="dg-hl" x="110" y="78" width="290" height="23" rx="3"/><text class="dg-xs" x="146" y="96" text-anchor="end">8</text><text class="dg-xs dg-mono" x="160" y="96">&lt;T2 start&gt;</text></g>
+<g class="v-in" style="--d:0.46s"><rect class="dg-hl" x="110" y="104" width="290" height="23" rx="3"/><text class="dg-xs" x="146" y="122" text-anchor="end">9</text><text class="dg-xs dg-mono" x="160" y="122">&lt;T2, A, 950, 900&gt;</text></g>
+<g class="v-in" style="--d:1.10s"><text class="dg-xs dg-txt-ok" x="410" y="122" text-anchor="start">redo</text></g>
+<g class="v-in" style="--d:0.54s"><text class="dg-xs" x="146" y="148" text-anchor="end">10</text><text class="dg-xs dg-mono" x="160" y="148">&lt;T1 commit&gt;</text></g>
+<g class="v-in" style="--d:0.62s"><text class="dg-xs" x="146" y="174" text-anchor="end">11</text><text class="dg-xs dg-mono" x="160" y="174">&lt;T3 start&gt;</text></g>
+<g class="v-in" style="--d:0.70s"><text class="dg-xs" x="146" y="200" text-anchor="end">12</text><text class="dg-xs dg-mono" x="160" y="200">&lt;T3, B, 2050, 2000&gt;</text></g>
+<g class="v-in" style="--d:1.40s"><text class="dg-xs dg-txt-ok" x="410" y="200" text-anchor="start">redo</text></g>
+<g class="v-in" style="--d:0.78s"><text class="dg-xs" x="146" y="226" text-anchor="end">13</text><text class="dg-xs dg-mono" x="160" y="226">&lt;T4 start&gt;</text></g>
+<g class="v-in" style="--d:0.86s"><text class="dg-xs" x="146" y="252" text-anchor="end">14</text><text class="dg-xs dg-mono" x="160" y="252">&lt;T4, C, 600, 650&gt;</text></g>
+<g class="v-in" style="--d:1.60s"><text class="dg-xs dg-txt-ok" x="410" y="252" text-anchor="start">redo</text></g>
+<g class="v-in" style="--d:0.94s"><text class="dg-xs" x="146" y="278" text-anchor="end">15</text><text class="dg-xs dg-mono" x="160" y="278">&lt;T4, C, 600&gt;</text></g>
+<g class="v-in" style="--d:1.70s"><text class="dg-xs dg-txt-ok" x="410" y="278" text-anchor="start">redo</text></g>
+<g class="v-in" style="--d:1.02s"><text class="dg-xs" x="146" y="304" text-anchor="end">16</text><text class="dg-xs dg-mono" x="160" y="304">&lt;T4 abort&gt;</text></g>
+<g class="v-in" style="--d:1.10s"><text class="dg-xs" x="146" y="330" text-anchor="end">17</text><text class="dg-xs dg-mono" x="160" y="330">&lt;T3 commit&gt;</text></g>
+<g class="v-in" style="--d:1.18s"><rect class="dg-hl" x="110" y="338" width="290" height="23" rx="3"/><text class="dg-xs" x="146" y="356" text-anchor="end">18</text><text class="dg-xs dg-mono" x="160" y="356">&lt;T2, D, 500, 450&gt;</text></g>
+<g class="v-in" style="--d:2.00s"><text class="dg-xs dg-txt-ok" x="410" y="356" text-anchor="start">redo</text></g>
+<g class="v-in" style="--d:2.10s"><path class="dg-line-a" d="M110 370 H400" stroke-dasharray="6 4"/><text class="dg-xs dg-txt-bad" x="100" y="375" text-anchor="end">crash</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:0.60s" d="M80 56 V348" marker-end="url(#rca)"/>
+<g class="v-in" style="--d:0.80s"><text class="dg-xs" x="70" y="172" text-anchor="end">forward</text></g>
+<path class="dg-dash v-draw" pathLength="1" style="--d:2.60s" d="M452 349 C500 349, 510 296, 556 296"/>
+<g class="v-in" style="--d:2.80s"><rect class="dg-box-a" x="560" y="266" width="230" height="64" rx="4"/><text class="dg-sm-b" x="576" y="292">D back to 500</text><text class="dg-xs dg-mono" x="576" y="316">logs 19  &lt;T2, D, 500&gt;</text></g>
+<path class="dg-dash v-draw" pathLength="1" style="--d:3.20s" d="M452 115 C500 115, 510 204, 556 204"/>
+<g class="v-in" style="--d:3.40s"><rect class="dg-box-a" x="560" y="174" width="230" height="64" rx="4"/><text class="dg-sm-b" x="576" y="200">A back to 950</text><text class="dg-xs dg-mono" x="576" y="224">logs 20  &lt;T2, A, 950&gt;</text></g>
+<path class="dg-dash v-draw" pathLength="1" style="--d:3.80s" d="M452 89 C500 89, 510 112, 556 112"/>
+<g class="v-in" style="--d:4.00s"><rect class="dg-box-a" x="560" y="82" width="230" height="64" rx="4"/><text class="dg-sm-b" x="576" y="108">T2&#x27;s start: done</text><text class="dg-xs dg-mono" x="576" y="132">logs 21  &lt;T2 abort&gt;</text></g>
+<path class="dg-line-a v-draw" pathLength="1" style="--d:2.60s" d="M540 326 V86" marker-end="url(#rcb)"/>
+<g class="v-in" style="--d:2.30s"><rect class="dg-box" x="810" y="82" width="170" height="96" rx="6"/><text class="dg-sm-b" x="822" y="108">Undo list</text><text class="dg-xs" x="822" y="132">at the checkpoint {T1}</text><text class="dg-xs" x="822" y="156">after redo {T2}</text></g>
+<g class="v-in" style="--d:4.40s"><rect class="dg-box-t" x="810" y="266" width="170" height="96" rx="6"/><text class="dg-sm-b" x="822" y="292">After recovery</text><text class="dg-sm dg-mono" x="822" y="318">A 950, B 2000</text><text class="dg-sm dg-mono" x="822" y="342">C 600, D 500</text></g>
+</svg>
+      <figcaption><strong>Figure 14.5.</strong> The playground's log after a crash right after record 18. Redo runs down from the checkpoint; undo runs back up through T2's records and logs three new ones.</figcaption>
+    </figure>
+    <p><a class="try" href="playground.html#recover">Playground section 2: move the crash and step through it</a></p>
+  </div>
+  
+</section>
+
+<!-- 18 ────────────────────────────────────────────── buffer policies -->
+<section class="slide" id="s18">
+  <h2>When may a changed block go to disk?</h2>
+  <div class="slide-main">
+    <div class="fig-scroll" tabindex="0" role="region" aria-label="Buffer policies">
+    <table class="tbl tbl--compact">
+      <caption>Two choices for the buffer manager, and what each forces recovery to do</caption>
+      <thead><tr><th scope="col">Choice</th><th scope="col">Meaning</th><th scope="col">Recovery then needs</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Steal</strong></td><td>A block changed by an unfinished transaction may be written to disk, to free the buffer.</td><td>Undo</td></tr>
+        <tr><td>No-steal</td><td>Such blocks stay in memory until the transaction ends.</td><td>No undo, but a large transaction can fill memory</td></tr>
+        <tr><td><strong>No-force</strong></td><td>Commit doesn't wait for the changed blocks to reach disk.</td><td>Redo</td></tr>
+        <tr><td>Force</td><td>Commit writes every changed block first.</td><td>No redo, but every commit waits for many writes</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <ul>
+      <li>Real systems choose <strong>steal and no-force</strong> for speed, and pay for it with both redo and undo. The log makes that cheap.</li>
+    </ul>
+  </div>
+  
+</section>
+
+<!-- 19 ────────────────────────────────────────────── ARIES -->
+<section class="slide" id="s19">
+  <h2>ARIES, in one slide</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div>
+        <h3>What it adds</h3>
+        <ul>
+          <li>Every log record has a <strong>log sequence number</strong> (LSN); every page stores the LSN of its last change, the <strong>PageLSN</strong>.</li>
+          <li>Redo skips a record whose LSN is at most the page's PageLSN: that change is already there.</li>
+          <li>Undo writes <strong>compensation log records</strong>, the book's redo-only records, each pointing to the next record to undo.</li>
+          <li>Fuzzy checkpoints record which pages are dirty.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Three passes</h3>
+        <ol>
+          <li><strong>Analysis</strong>: from the checkpoint, find the dirty pages and the unfinished transactions.</li>
+          <li><strong>Redo</strong>: repeat history from the oldest change that might be missing.</li>
+          <li><strong>Undo</strong>: roll back the unfinished, backward.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 20 ────────────────────────────────────────────── section -->
+<section class="slide slide--section" id="s20">
+  <h2>PostgreSQL in practice</h2>
+  <p>Its log, backups, cleaning up and access control.</p>
+  
+</section>
+
+<!-- 21 ────────────────────────────────────────────── PostgreSQL WAL -->
+<section class="slide" id="s21">
+  <h2>PostgreSQL's write-ahead log</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <ul>
+        <li>The WAL is a series of 16 MB files in the server's <code>pg_wal</code> directory; a position in it is an LSN.</li>
+        <li>COMMIT returns once the commit record is flushed to disk (<code>synchronous_commit</code>).</li>
+        <li>A checkpoint runs every 5 minutes, or sooner after much WAL.</li>
+        <li>The first change to a page after a checkpoint logs the whole page, so a half-written page can be rebuilt (<code>full_page_writes</code>).</li>
+      </ul>
+      <ul>
+        <li><strong>Redo only.</strong> Rows are never overwritten (week 13), so an unfinished transaction's versions just stay invisible: there is nothing to undo.</li>
+        <li>The commit log records which transactions committed; recovery replays the WAL forward from the checkpoint, and that is all.</li>
+        <li>The same WAL feeds replicas and backups.</li>
+      </ul>
+    </div>
+    <p><a class="try" href="playground.html#wal">Playground examples 3.1 to 3.4</a></p>
+  </div>
+  
+</section>
+
+<!-- 22 ────────────────────────────────────────────── backups -->
+<section class="slide" id="s22">
+  <h2>Backups and point-in-time recovery</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:1000px">
+<svg style="--dg-k:1" viewBox="0 0 1000 300" role="img" aria-labelledby="ptt ptd">
+<title id="ptt">Point-in-time recovery</title>
+<desc id="ptd">A timeline from Sunday to Wednesday. On Sunday at 2 a.m. a base backup copies the server&#x27;s files. From then on, every finished WAL file is copied to an archive, shown as a row of small boxes along the timeline. On Wednesday at 14:32 someone drops a table by mistake. To recover, restore the base backup on a new server and replay the archived WAL up to 14:31, just before the mistake. The database then has every change made until 14:31, and the table is back.</desc>
+<defs><marker id="pta" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#0e5a6b"/></marker><marker id="ptb" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#9e1b32"/></marker></defs>
+<path class="dg-line v-draw" pathLength="1" style="--d:0.10s" d="M40 120 H960"/>
+<g class="v-in" style="--d:0.20s"><text class="dg-xs" x="60" y="150" text-anchor="middle">Sun</text></g>
+<path class="dg-line-q" d="M60 114 V126"/>
+<g class="v-in" style="--d:0.30s"><text class="dg-xs" x="340" y="150" text-anchor="middle">Mon</text></g>
+<path class="dg-line-q" d="M340 114 V126"/>
+<g class="v-in" style="--d:0.40s"><text class="dg-xs" x="620" y="150" text-anchor="middle">Tue</text></g>
+<path class="dg-line-q" d="M620 114 V126"/>
+<g class="v-in" style="--d:0.50s"><text class="dg-xs" x="900" y="150" text-anchor="middle">Wed</text></g>
+<path class="dg-line-q" d="M900 114 V126"/>
+<g class="v-in" style="--d:0.60s"><rect class="dg-box-t" x="30" y="40" width="170" height="56" rx="6"/><text class="dg-sm-b" x="115" y="64" text-anchor="middle">base backup</text><text class="dg-xs" x="115" y="86" text-anchor="middle">Sunday 2 a.m.</text></g>
+<path class="dg-line-t" d="M115 96 V114"/>
+<rect class="dg-box-m v-in" style="--d:1.00s" x="120" y="170" width="30" height="20" rx="2"/>
+<rect class="dg-box-m v-in" style="--d:1.06s" x="160" y="170" width="30" height="20" rx="2"/>
+<rect class="dg-box-m v-in" style="--d:1.12s" x="200" y="170" width="30" height="20" rx="2"/>
+<rect class="dg-box-m v-in" style="--d:1.18s" x="240" y="170" width="30" height="20" rx="2"/>
+<rect class="dg-box-m v-in" style="--d:1.24s" x="280" y="170" width="30" height="20" rx="2"/>
+<rect class="dg-box-m v-in" style="--d:1.30s" x="320" y="170" width="30" height="20" rx="2"/>
+<rect class="dg-box-m v-in" style="--d:1.36s" x="360" y="170" width="30" height="20" rx="2"/>
+<rect class="dg-box-m v-in" style="--d:1.42s" x="400" y="170" width="30" height="20" rx="2"/>
+<rect class="dg-box-m v-in" style="--d:1.48s" x="440" y="170" width="30" height="20" rx="2"/>
+<rect class="dg-box-m v-in" style="--d:1.54s" x="480" y="170" width="30" height="20" rx="2"/>
+<rect class="dg-box-m v-in" style="--d:1.60s" x="520" y="170" width="30" height="20" rx="2"/>
+<rect class="dg-box-m v-in" style="--d:1.66s" x="560" y="170" width="30" height="20" rx="2"/>
+<rect class="dg-box-m v-in" style="--d:1.72s" x="600" y="170" width="30" height="20" rx="2"/>
+<rect class="dg-box-m v-in" style="--d:1.78s" x="640" y="170" width="30" height="20" rx="2"/>
+<rect class="dg-box-m v-in" style="--d:1.84s" x="680" y="170" width="30" height="20" rx="2"/>
+<rect class="dg-box-m v-in" style="--d:1.90s" x="720" y="170" width="30" height="20" rx="2"/>
+<rect class="dg-box-m v-in" style="--d:1.96s" x="760" y="170" width="30" height="20" rx="2"/>
+<rect class="dg-box-m v-in" style="--d:2.02s" x="800" y="170" width="30" height="20" rx="2"/>
+<rect class="dg-box-m v-in" style="--d:2.08s" x="840" y="170" width="30" height="20" rx="2"/>
+<rect class="dg-box-m v-in" style="--d:2.14s" x="880" y="170" width="30" height="20" rx="2"/>
+<g class="v-in" style="--d:1.80s"><text class="dg-xs" x="510" y="214" text-anchor="middle">every finished WAL file is copied to an archive</text></g>
+<g class="v-in" style="--d:2.40s"><path class="dg-line-a" d="M900 70 V130"/><rect class="dg-box-a" x="800" y="26" width="190" height="44" rx="6"/><text class="dg-xs" x="895" y="54" text-anchor="middle">DROP TABLE, Wed 14:32</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:3.00s" d="M115 250 H880" marker-end="url(#pta)"/>
+<g class="v-in" style="--d:3.20s"><text class="dg-xs" x="500" y="242" text-anchor="middle">restore the base backup, replay the archived WAL</text></g>
+<g class="v-in" style="--d:3.60s"><text class="dg-sm-b" x="880" y="274" text-anchor="end">stop at 14:31</text></g>
+</svg>
+      <figcaption><strong>Figure 14.6.</strong> A base backup plus every WAL file since can rebuild the database at any moment, such as just before a mistake.</figcaption>
+    </figure>
+    <ul>
+      <li><code>pg_dump</code> makes a <strong>logical</strong> backup of one database at one moment; <code>pg_restore</code> loads it.</li>
+      <li>A <strong>replica</strong> replays the WAL as it is written, so it can take over within seconds (19.7). It copies mistakes too, so it doesn't replace backups.</li>
+    </ul>
+    <p><a class="try" href="playground.html#backup">Playground section 6</a></p>
+  </div>
+  
+</section>
+
+<!-- 23 ────────────────────────────────────────────── VACUUM -->
+<section class="slide" id="s23">
+  <h2>VACUUM: the cost of row versions</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <ul>
+        <li>Every UPDATE and DELETE leaves a dead version behind, and so does every rollback.</li>
+        <li><code>VACUUM</code> marks their space reusable; the file doesn't shrink.</li>
+        <li><code>VACUUM FULL</code> rewrites the table compactly, but locks it while it works.</li>
+      </ul>
+      <ul>
+        <li><strong>Autovacuum</strong> vacuums and analyzes each table once enough of it has changed. Leave it on.</li>
+        <li>A transaction left open for hours stops VACUUM from removing anything newer than its snapshot.</li>
+        <li>Watch <code>pg_stat_user_tables</code>: <code>n_dead_tup</code>, <code>last_autovacuum</code>.</li>
+      </ul>
+    </div>
+    <p><a class="try" href="playground.html#vacuum">Playground examples 4.1 to 4.4</a></p>
+  </div>
+  
+</section>
+
+<!-- 24 ────────────────────────────────────────────── roles -->
+<section class="slide" id="s24">
+  <h2>Roles and least privilege</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <pre class="code"><span class="k">CREATE</span> <span class="k">ROLE</span> staff;
+<span class="k">GRANT</span> <span class="k">SELECT</span> <span class="k">ON</span> department, course <span class="k">TO</span> staff;
+<span class="k">CREATE</span> <span class="k">ROLE</span> dana LOGIN <span class="k">IN</span> <span class="k">ROLE</span> staff;
+
+<span class="k">CREATE</span> <span class="k">ROLE</span> clerk LOGIN;
+<span class="k">GRANT</span> <span class="k">SELECT</span>, <span class="k">UPDATE</span> (budget)
+  <span class="k">ON</span> department <span class="k">TO</span> clerk;</pre>
+      <ul>
+        <li>A <strong>role</strong> is a user, a group, or both. A new role can do nothing.</li>
+        <li>Grant to groups, and make people members; <code>REVOKE</code> takes a privilege back.</li>
+        <li>Give each program its own role with only what it uses: an injection then reaches only those tables.</li>
+        <li>Nobody's everyday work runs as a superuser.</li>
+      </ul>
+    </div>
+    <p><a class="try" href="playground.html#roles">Playground examples 5.1 to 5.3</a></p>
+  </div>
+  
+</section>
+
+<!-- 25 ────────────────────────────────────────────── takeaways -->
+<section class="slide" id="s25">
+  <h2>Takeaways</h2>
+  <div class="slide-main">
+    <ol class="steps">
+      <li><span class="n" aria-hidden="true">1</span><div><strong>Log first, data later.</strong><p>The WAL rule lets the log explain whatever the disk holds after a crash.</p></div></li>
+      <li><span class="n" aria-hidden="true">2</span><div><strong>Committed means the commit record is on stable storage.</strong><p>Not that the data pages are.</p></div></li>
+      <li><span class="n" aria-hidden="true">3</span><div><strong>Redo forward, then undo backward.</strong><p>Repeat history from the last checkpoint, then roll back the undo list, logging as you go.</p></div></li>
+      <li><span class="n" aria-hidden="true">4</span><div><strong>The log protects against crashes, not disasters.</strong><p>Backups, archived WAL and replicas handle lost disks and mistakes.</p></div></li>
+      <li><span class="n" aria-hidden="true">5</span><div><strong>Keep the server healthy.</strong><p>Let autovacuum run, and give every program the least privilege it needs.</p></div></li>
+    </ol>
+  </div>
+  
+</section>
+
+<!-- 26 ────────────────────────────────────────────── this week -->
+<section class="slide" id="s26">
+  <h2>This week's work</h2>
+  <div class="slide-main">
+    <div class="week-work">
+      <div>
+        <h3>Read</h3>
+        <ul>
+          <li>Chapter 19 (recovery), sections 19.1 to 19.5, 19.7 and 19.9.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Do</h3>
+        <ul>
+          <li>The <a href="playground.html">week 14 playground</a>: the recovery replay and 8 exercises.</li>
+          <li>Quiz 14 in Brightspace.</li>
+          <li>No lab this week: finish milestone 4.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Due</h3>
+        <ul>
+          <li><span class="due">Sunday, April 25, 11:59 p.m. CT</span>: <a href="../../project/milestone4.html">project milestone 4</a> report.</li>
+          <li><span class="due">Tuesday, April 27, in class</span>: demo and walkthrough.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="callout" style="margin-top:auto">
+      <span class="mark" aria-hidden="true">→</span>
+      <p><strong>Next week:</strong> NoSQL and distributed data: documents, key-value stores, and what changes when data lives on many machines.</p>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 27 ────────────────────────────────────────────── resources -->
+<section class="slide" id="s27">
+  <h2>Free resources</h2>
+  <div class="slide-main">
+    <ul class="resources">
+      <li><a href="https://www.postgresql.org/docs/current/wal-intro.html">Write-ahead logging</a><span class="src">PostgreSQL documentation</span><p>Why logging first makes commits both safe and fast.</p></li>
+      <li><a href="https://www.postgresql.org/docs/current/continuous-archiving.html">Continuous archiving and point-in-time recovery</a><span class="src">PostgreSQL documentation</span><p>Base backups, WAL archiving, and restoring to a moment.</p></li>
+      <li><a href="https://www.postgresql.org/docs/current/routine-vacuuming.html">Routine vacuuming</a><span class="src">PostgreSQL documentation</span><p>What VACUUM and autovacuum do, and why they matter.</p></li>
+      <li><a href="https://www.postgresql.org/docs/current/ddl-priv.html">Privileges</a><span class="src">PostgreSQL documentation</span><p>Every privilege, and how GRANT and REVOKE work.</p></li>
+      <li><a href="playground.html">Week 14 playground</a><span class="src">this course</span><p>The recovery replay and the log queries, in your browser.</p></li>
+    </ul>
+  </div>
+  
+</section>
+
+</main>
+</div>
+<script src="../../assets/deck.js"></script>
+</body>
+</html>

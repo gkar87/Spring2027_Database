@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Week 7 SQL Playground · CS 4600/5200</title>
+<meta name="description" content="CS 4600/5200 week 7 playground: update, insert and delete anomalies, functional dependencies tested in SQL, lossless and lossy decompositions, and dependency preservation, running on PostgreSQL in your browser, with a closure and normal form explorer and eight checked exercises.">
+<link rel="stylesheet" href="../../assets/course.css">
+<link rel="stylesheet" href="../../assets/db.css">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to the playground</a>
+
+<div class="doc">
+<header class="doc-masthead">
+  <p class="inst"><span>CS 4600/5200 · Database Theory and Applications</span><span>Week 7 · Tuesday, February 23, 2027</span><span><a href="../../index.html">Course home</a></span></p>
+  <h1>Week 7 playground: functional dependencies and normal forms</h1>
+  <p class="tagline">A wide table that repeats facts breaks in three ways. Here you watch it break, test functional dependencies with GROUP BY, split tables and join them back to see whether anything was lost, and let the explorer compute closures, keys and BCNF decompositions for you.</p>
+</header>
+
+<div class="pg-bar">
+  <p class="pg-status" id="pg-status" data-state="loading"><span class="dot" aria-hidden="true"></span><span class="txt">Loading PostgreSQL in your browser…</span></p>
+  <p class="pg-progress" id="pg-progress">Exercises solved: <strong>0 of 8</strong></p>
+  <button type="button" class="btn" id="pg-reset-db">Reset database</button>
+</div>
+
+<main id="main">
+
+<section id="how" aria-labelledby="how-h">
+  <h2 id="how-h">How to use this page</h2>
+  <ul>
+    <li>Each grey box is an editor. Press <strong>Run</strong>, or <kbd>Ctrl</kbd>+<kbd>Enter</kbd> (<kbd>Cmd</kbd>+<kbd>Enter</kbd> on a Mac). A box may hold several statements; each result is shown.</li>
+    <li>Examples that change data start with <code>BEGIN;</code> and end with <code>ROLLBACK;</code>, so the change is undone afterwards. A box runs as one unit: if any statement in it fails, none of its changes are kept.</li>
+    <li><strong>Reset database</strong>, at the top, puts the starting data back, whatever you changed.</li>
+    <li>Exercises have a <strong>Check answer</strong> button. It runs your statements inside a transaction and rolls them back, so checking never changes the data. Your solved exercises are remembered in this browser only.</li>
+  </ul>
+</section>
+
+<section id="schema" aria-labelledby="schema-h">
+  <h2 id="schema-h">The sample database</h2>
+  <p>From week 5 the university has eight tables: week 3's seven, plus <code>prereq</code>, which says which course must be taken before which. Both of its attributes are course ids, so both are foreign keys to <code>course</code>. Week 3's gaps are still here: the Economics department has nobody in it, Noor Haddad has no salary yet, Emery Walsh has no department, and nobody teaches CS-319. <span class="pk">Underlined</span> attributes form the primary key; attributes marked <span class="fk">→</span> are foreign keys.</p>
+  <figure class="fig-anim schema-fig" data-schema-map data-peek="#peek">
+<svg style="--dg-k:1" viewBox="0 0 724 590" role="group" aria-label="Map of the eight tables. Each table is a button that shows its rows in the box below; its foreign keys light up when it has focus.">
+<defs><marker id="pm3" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#0e5a6b"/></marker></defs>
+<path class="fk-link" data-from="instructor" data-to="department" d="M268 99 H236 V213 H205" fill="none" stroke="#0e5a6b" stroke-width="1.8" marker-end="url(#pm3)"><title>instructor.dept_name references department</title></path>
+<path class="fk-link" data-from="student" data-to="department" d="M268 253 H236 V213 H205" fill="none" stroke="#0e5a6b" stroke-width="1.8" marker-end="url(#pm3)"><title>student.dept_name references department</title></path>
+<path class="fk-link" data-from="course" data-to="department" d="M268 407 H236 V213 H205" fill="none" stroke="#0e5a6b" stroke-width="1.8" marker-end="url(#pm3)"><title>course.dept_name references department</title></path>
+<path class="fk-link" data-from="advisor" data-to="student" d="M538 53 H506 V206 H464" fill="none" stroke="#0e5a6b" stroke-width="1.8" marker-end="url(#pm3)"><title>advisor.s_id references student</title></path>
+<path class="fk-link" data-from="advisor" data-to="instructor" d="M538 76 H492 V52 H464" fill="none" stroke="#0e5a6b" stroke-width="1.8" marker-end="url(#pm3)"><title>advisor.i_id references instructor</title></path>
+<path class="fk-link" data-from="takes" data-to="student" d="M538 161 H520 V222 H464" fill="none" stroke="#0e5a6b" stroke-width="1.8" marker-end="url(#pm3)"><title>takes.id references student</title></path>
+<path class="fk-link" data-from="takes" data-to="course" d="M538 184 H506 V366 H464" fill="none" stroke="#0e5a6b" stroke-width="1.8" marker-end="url(#pm3)"><title>takes.course_id references course</title></path>
+<path class="fk-link" data-from="teaches" data-to="instructor" d="M538 347 H478 V68 H464" fill="none" stroke="#0e5a6b" stroke-width="1.8" marker-end="url(#pm3)"><title>teaches.id references instructor</title></path>
+<path class="fk-link" data-from="teaches" data-to="course" d="M538 370 H492 V366 H464" fill="none" stroke="#0e5a6b" stroke-width="1.8" marker-end="url(#pm3)"><title>teaches.course_id references course</title></path>
+<path class="fk-link" data-from="prereq" data-to="course" d="M340 484 V452" fill="none" stroke="#0e5a6b" stroke-width="1.8" marker-end="url(#pm3)"><title>prereq.course_id references course</title></path>
+<path class="fk-link" data-from="prereq" data-to="course" d="M410 484 V452" fill="none" stroke="#0e5a6b" stroke-width="1.8" marker-end="url(#pm3)"><title>prereq.prereq_id references course</title></path>
+<g class="tbl-node" data-table="department" tabindex="0" role="button" aria-label="department: show its rows">
+<rect class="dg-box node-frame" x="10" y="160" width="190" height="111" rx="4"/>
+<rect class="dg-box-a" x="10" y="160" width="190" height="30" rx="4"/>
+<text class="dg-txt-b" x="22" y="181">department</text>
+<text class="dg-txt" x="22" y="214" text-decoration="underline">dept_name</text>
+<text class="dg-txt" x="22" y="237">building</text>
+<text class="dg-txt" x="22" y="260">budget</text>
+</g>
+<g class="tbl-node" data-table="instructor" tabindex="0" role="button" aria-label="instructor: show its rows">
+<rect class="dg-box node-frame" x="270" y="4" width="190" height="134" rx="4"/>
+<rect class="dg-box-a" x="270" y="4" width="190" height="30" rx="4"/>
+<text class="dg-txt-b" x="282" y="25">instructor</text>
+<text class="dg-txt" x="282" y="58" text-decoration="underline">id</text>
+<text class="dg-txt" x="282" y="81">name</text>
+<text class="dg-txt dg-teal" x="282" y="104">dept_name</text>
+<text class="dg-txt" x="282" y="127">salary</text>
+</g>
+<g class="tbl-node" data-table="student" tabindex="0" role="button" aria-label="student: show its rows">
+<rect class="dg-box node-frame" x="270" y="158" width="190" height="134" rx="4"/>
+<rect class="dg-box-a" x="270" y="158" width="190" height="30" rx="4"/>
+<text class="dg-txt-b" x="282" y="179">student</text>
+<text class="dg-txt" x="282" y="212" text-decoration="underline">id</text>
+<text class="dg-txt" x="282" y="235">name</text>
+<text class="dg-txt dg-teal" x="282" y="258">dept_name</text>
+<text class="dg-txt" x="282" y="281">tot_cred</text>
+</g>
+<g class="tbl-node" data-table="course" tabindex="0" role="button" aria-label="course: show its rows">
+<rect class="dg-box node-frame" x="270" y="312" width="190" height="134" rx="4"/>
+<rect class="dg-box-a" x="270" y="312" width="190" height="30" rx="4"/>
+<text class="dg-txt-b" x="282" y="333">course</text>
+<text class="dg-txt" x="282" y="366" text-decoration="underline">course_id</text>
+<text class="dg-txt" x="282" y="389">title</text>
+<text class="dg-txt dg-teal" x="282" y="412">dept_name</text>
+<text class="dg-txt" x="282" y="435">credits</text>
+</g>
+<g class="tbl-node" data-table="advisor" tabindex="0" role="button" aria-label="advisor: show its rows">
+<rect class="dg-box node-frame" x="540" y="4" width="176" height="88" rx="4"/>
+<rect class="dg-box-a" x="540" y="4" width="176" height="30" rx="4"/>
+<text class="dg-txt-b" x="552" y="25">advisor</text>
+<text class="dg-txt dg-teal" x="552" y="58" text-decoration="underline">s_id</text>
+<text class="dg-txt dg-teal" x="552" y="81">i_id</text>
+</g>
+<g class="tbl-node" data-table="takes" tabindex="0" role="button" aria-label="takes: show its rows">
+<rect class="dg-box node-frame" x="540" y="112" width="176" height="157" rx="4"/>
+<rect class="dg-box-a" x="540" y="112" width="176" height="30" rx="4"/>
+<text class="dg-txt-b" x="552" y="133">takes</text>
+<text class="dg-txt dg-teal" x="552" y="166" text-decoration="underline">id</text>
+<text class="dg-txt dg-teal" x="552" y="189" text-decoration="underline">course_id</text>
+<text class="dg-txt" x="552" y="212" text-decoration="underline">semester</text>
+<text class="dg-txt" x="552" y="235" text-decoration="underline">year</text>
+<text class="dg-txt" x="552" y="258">grade</text>
+</g>
+<g class="tbl-node" data-table="teaches" tabindex="0" role="button" aria-label="teaches: show its rows">
+<rect class="dg-box node-frame" x="540" y="298" width="176" height="134" rx="4"/>
+<rect class="dg-box-a" x="540" y="298" width="176" height="30" rx="4"/>
+<text class="dg-txt-b" x="552" y="319">teaches</text>
+<text class="dg-txt dg-teal" x="552" y="352" text-decoration="underline">id</text>
+<text class="dg-txt dg-teal" x="552" y="375" text-decoration="underline">course_id</text>
+<text class="dg-txt" x="552" y="398" text-decoration="underline">semester</text>
+<text class="dg-txt" x="552" y="421" text-decoration="underline">year</text>
+</g>
+<g class="tbl-node" data-table="prereq" tabindex="0" role="button" aria-label="prereq: show its rows">
+<rect class="dg-box node-frame" x="270" y="486" width="190" height="88" rx="4"/>
+<rect class="dg-box-a" x="270" y="486" width="190" height="30" rx="4"/>
+<text class="dg-txt-b" x="282" y="507">prereq</text>
+<text class="dg-txt dg-teal" x="282" y="540" text-decoration="underline">course_id</text>
+<text class="dg-txt dg-teal" x="282" y="563" text-decoration="underline">prereq_id</text>
+</g>
+</svg>
+    <figcaption>Select a table, with a click or with <kbd>Tab</kbd> and <kbd>Enter</kbd>, to see its rows in the box below. Its foreign keys light up while it has focus.</figcaption>
+  </figure>
+  <div class="cell" id="peek" data-cell data-label="Peek">
+    <div class="cell-head"><label for="c00">Peek at a table</label></div>
+    <textarea id="c00">SELECT * FROM prereq;</textarea>
+  </div>
+  <p>The same eight tables, with each attribute's type:</p>
+  <div class="schema">
+    <div class="schema-card"><h3>department</h3><ul>
+      <li><span class="pk">dept_name</span> <span class="ty">varchar(20)</span></li>
+      <li>building <span class="ty">varchar(15)</span></li>
+      <li>budget <span class="ty">numeric(12,2)</span></li></ul></div>
+    <div class="schema-card"><h3>instructor</h3><ul>
+      <li><span class="pk">id</span> <span class="ty">char(5)</span></li>
+      <li>name <span class="ty">varchar(30)</span></li>
+      <li><span class="fk">dept_name → department</span></li>
+      <li>salary <span class="ty">numeric(8,2), may be NULL</span></li></ul></div>
+    <div class="schema-card"><h3>student</h3><ul>
+      <li><span class="pk">id</span> <span class="ty">char(5)</span></li>
+      <li>name <span class="ty">varchar(30)</span></li>
+      <li><span class="fk">dept_name → department</span> <span class="ty">may be NULL</span></li>
+      <li>tot_cred <span class="ty">integer</span></li></ul></div>
+    <div class="schema-card"><h3>course</h3><ul>
+      <li><span class="pk">course_id</span> <span class="ty">varchar(8)</span></li>
+      <li>title <span class="ty">varchar(40)</span></li>
+      <li><span class="fk">dept_name → department</span></li>
+      <li>credits <span class="ty">integer</span></li></ul></div>
+    <div class="schema-card"><h3>takes</h3><ul>
+      <li><span class="pk"><span class="fk">id → student</span></span></li>
+      <li><span class="pk"><span class="fk">course_id → course</span></span></li>
+      <li><span class="pk">semester</span> <span class="ty">varchar(6)</span></li>
+      <li><span class="pk">year</span> <span class="ty">integer</span></li>
+      <li>grade <span class="ty">varchar(2), may be NULL</span></li></ul></div>
+    <div class="schema-card"><h3>teaches</h3><ul>
+      <li><span class="pk"><span class="fk">id → instructor</span></span></li>
+      <li><span class="pk"><span class="fk">course_id → course</span></span></li>
+      <li><span class="pk">semester</span> <span class="ty">varchar(6)</span></li>
+      <li><span class="pk">year</span> <span class="ty">integer</span></li></ul></div>
+    <div class="schema-card"><h3>advisor</h3><ul>
+      <li><span class="pk"><span class="fk">s_id → student</span></span></li>
+      <li><span class="fk">i_id → instructor</span></li></ul></div>
+    <div class="schema-card"><h3>prereq</h3><ul>
+      <li><span class="pk"><span class="fk">course_id → course</span></span></li>
+      <li><span class="pk"><span class="fk">prereq_id → course</span></span> <span class="ty">must be taken first</span></li></ul></div>
+  </div>
+  <p>To load this database in your own PostgreSQL, download <a href="university.sql">university.sql</a> from this week and run <code>psql -d university -f university.sql</code>. It replaces the earlier tables, so run it again whenever you want the starting data back.</p>
+</section>
+
+<section id="wide" aria-labelledby="wide-h">
+  <h2 id="wide-h">This week's wide tables</h2>
+  <p>Three tables sit next to the university. Each is what you get when a spreadsheet becomes a table without a design: facts about one thing copied into many rows.</p>
+  <div class="fig-scroll" tabindex="0" role="region" aria-label="This week's three wide tables">
+  <table class="tbl tbl--compact">
+    <caption>This week's wide tables</caption>
+    <thead><tr><th scope="col">Table</th><th scope="col">Columns</th><th scope="col">Rows</th></tr></thead>
+    <tbody>
+      <tr><td><code>inst_dept</code></td><td><code>id, name, salary, dept_name, building, budget</code>: instructor joined with department</td><td>11</td></tr>
+      <tr><td><code>takes_flat</code></td><td><code>id, name, dept_name, course_id, title, credits, semester, year, grade</code>: takes joined with student and course</td><td>22</td></tr>
+      <tr><td><code>tutoring</code></td><td>The tutoring center's sign-in sheet, for <a href="lab5.html">Lab 5</a></td><td>24</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section id="anomalies" aria-labelledby="anom-h">
+  <h2 id="anom-h">1. What goes wrong in a wide table</h2>
+  <p>Slide 4. Comp. Sci.'s building and budget appear once per Comp. Sci. instructor: three times.</p>
+  <div class="cell" data-cell data-label="Example 1.1">
+    <div class="cell-head"><label for="c11">Example 1.1 · the repeated facts</label></div>
+    <textarea id="c11">SELECT * FROM inst_dept ORDER BY dept_name, name;</textarea>
+  </div>
+  <p>Slide 5, the update anomaly. Change the building in one row only, and Comp. Sci. is now in two buildings at once. Which one is right? The table can't say.</p>
+  <div class="cell" data-cell data-label="Example 1.2">
+    <div class="cell-head"><label for="c12">Example 1.2 · an update anomaly</label></div>
+    <textarea id="c12">BEGIN;
+UPDATE inst_dept SET building = 'Watson' WHERE id = '10101';
+
+SELECT name, dept_name, building
+FROM inst_dept
+WHERE dept_name = 'Comp. Sci.';
+ROLLBACK;</textarea>
+  </div>
+  <p>The insert anomaly. A new Art department, with a building and budget but no instructors yet, has nowhere to go: every row needs an instructor id, the primary key.</p>
+  <div class="cell" data-cell data-label="Example 1.3">
+    <div class="cell-head"><label for="c13">Example 1.3 · an insert anomaly, refused</label></div>
+    <textarea id="c13">INSERT INTO inst_dept (dept_name, building, budget)
+VALUES ('Art', 'Morrow', 40000);</textarea>
+  </div>
+  <p>The delete anomaly. Diego Torres is Music's only instructor. Delete that one row and Music's building and budget go with it.</p>
+  <div class="cell" data-cell data-label="Example 1.4">
+    <div class="cell-head"><label for="c14">Example 1.4 · a delete anomaly</label></div>
+    <textarea id="c14">BEGIN;
+DELETE FROM inst_dept WHERE name = 'Diego Torres';
+
+SELECT count(*) AS rows_about_music
+FROM inst_dept
+WHERE dept_name = 'Music';
+ROLLBACK;</textarea>
+  </div>
+</section>
+
+<section id="fds" aria-labelledby="fd-h">
+  <h2 id="fd-h">2. Functional dependencies, tested in SQL</h2>
+  <p>Slides 8 and 9. <var>α</var> → <var>β</var> holds when rows that agree on <var>α</var> always agree on <var>β</var>. Group by <var>α</var> and count the different values of <var>β</var>: any group with more than one breaks the dependency. No rows back means this data obeys <code>dept_name → building</code>.</p>
+  <div class="cell" data-cell data-label="Example 2.1">
+    <div class="cell-head"><label for="c21">Example 2.1 · does dept_name → building hold here?</label></div>
+    <textarea id="c21">SELECT dept_name, count(DISTINCT building) AS buildings
+FROM inst_dept
+GROUP BY dept_name
+HAVING count(DISTINCT building) > 1;</textarea>
+  </div>
+  <p>The other direction fails: Hale houses two departments, so <code>building → dept_name</code> does not hold.</p>
+  <div class="cell" data-cell data-label="Example 2.2">
+    <div class="cell-head"><label for="c22">Example 2.2 · building → dept_name does not hold</label></div>
+    <textarea id="c22">SELECT building, string_agg(DISTINCT dept_name, ', ') AS departments
+FROM inst_dept
+GROUP BY building
+HAVING count(DISTINCT dept_name) > 1;</textarea>
+  </div>
+  <p>Data can disprove a dependency but never prove one. Here <code>name → salary</code> holds, only because no two instructors share a name today. It is not a rule: the next hire could be a second Avery Chen. Which dependencies are rules is a question for the people who use the data.</p>
+  <div class="cell" data-cell data-label="Example 2.3">
+    <div class="cell-head"><label for="c23">Example 2.3 · true today, not a rule</label></div>
+    <textarea id="c23">SELECT name, count(DISTINCT salary) AS salaries
+FROM inst_dept
+GROUP BY name
+HAVING count(DISTINCT salary) > 1;</textarea>
+  </div>
+
+  <h3 id="explorer">Closures, keys and normal forms</h3>
+  <p>Slides 12 to 21. Choose a schema, or type your own dependencies, and press Compute. Try the textbook's R first and follow the closure of {A, G} one step at a time; then try dept_advisor and see which dependency a BCNF split loses.</p>
+  <div class="fdviz" data-fdviz></div>
+</section>
+
+<section id="decompose" aria-labelledby="dec-h">
+  <h2 id="dec-h">3. Splitting a table, and joining it back</h2>
+  <p>Slides 6 and 18. Split <code>inst_dept</code> on <code>dept_name</code>, the left side of <code>dept_name → building, budget</code>. DISTINCT keeps each department once. Joining the two parts gives back exactly the 11 rows: nothing is missing, and nothing extra appears.</p>
+  <div class="cell" data-cell data-label="Example 3.1">
+    <div class="cell-head"><label for="c31">Example 3.1 · a lossless split</label></div>
+    <textarea id="c31">BEGIN;
+CREATE TABLE inst_part AS SELECT id, name, salary, dept_name FROM inst_dept;
+CREATE TABLE dept_part AS SELECT DISTINCT dept_name, building, budget FROM inst_dept;
+
+SELECT count(*) AS dept_rows FROM dept_part;
+
+SELECT count(*) AS missing FROM (
+  SELECT * FROM inst_dept
+  EXCEPT
+  SELECT id, name, salary, dept_name, building, budget
+  FROM inst_part NATURAL JOIN dept_part) m;
+
+SELECT count(*) AS extra FROM (
+  SELECT id, name, salary, dept_name, building, budget
+  FROM inst_part NATURAL JOIN dept_part
+  EXCEPT
+  SELECT * FROM inst_dept) x;
+ROLLBACK;</textarea>
+  </div>
+  <p>Split on <code>building</code> instead, which is not a key of either part. The join pairs every Hale instructor with both Hale departments: Avery Chen comes back in Mathematics as well as Comp. Sci. The extra rows are wrong facts, so this split loses information even though it adds rows.</p>
+  <div class="cell" data-cell data-label="Example 3.2">
+    <div class="cell-head"><label for="c32">Example 3.2 · a lossy split</label></div>
+    <textarea id="c32">BEGIN;
+CREATE TABLE inst_bldg AS SELECT id, name, salary, building FROM inst_dept;
+CREATE TABLE bldg_dept AS SELECT DISTINCT building, dept_name, budget FROM inst_dept;
+
+SELECT name, dept_name, building
+FROM inst_bldg NATURAL JOIN bldg_dept
+WHERE building = 'Hale'
+ORDER BY name;
+ROLLBACK;</textarea>
+  </div>
+</section>
+
+<section id="preserve" aria-labelledby="pres-h">
+  <h2 id="pres-h">4. When BCNF loses a rule</h2>
+  <p>Slide 21. Say a student may have one advisor in each department, and each instructor advises for one department: <code>i_id → dept_name</code> and <code>s_id, dept_name → i_id</code>. The BCNF split puts those in two tables, and then no key can stop Riley Adams getting two Comp. Sci. advisors. Both inserts are accepted; only a join shows the broken rule.</p>
+  <div class="cell" data-cell data-label="Example 4.1">
+    <div class="cell-head"><label for="c41">Example 4.1 · a dependency the split cannot check</label></div>
+    <textarea id="c41">BEGIN;
+CREATE TABLE adv_part (
+  s_id char(5),
+  i_id char(5),
+  PRIMARY KEY (s_id, i_id)
+);
+CREATE TABLE inst_dept_part (
+  i_id      char(5) PRIMARY KEY,
+  dept_name varchar(20) NOT NULL
+);
+INSERT INTO inst_dept_part VALUES ('10101', 'Comp. Sci.'), ('45565', 'Comp. Sci.');
+INSERT INTO adv_part VALUES ('00128', '45565');
+INSERT INTO adv_part VALUES ('00128', '10101');
+
+SELECT a.s_id, d.dept_name, count(*) AS advisors
+FROM adv_part a JOIN inst_dept_part d ON d.i_id = a.i_id
+GROUP BY a.s_id, d.dept_name
+HAVING count(*) > 1;
+ROLLBACK;</textarea>
+  </div>
+  <p>The 3NF design keeps one table, <code>dept_advisor(s_id, i_id, dept_name)</code>, with primary key <code>(s_id, dept_name)</code>. The second insert is then refused by the key, at the price of repeating each instructor's department.</p>
+</section>
+
+<section id="exercises" aria-labelledby="ex-h">
+  <h2 id="ex-h">Exercises</h2>
+  <p>Write the statements, then press <strong>Check answer</strong> (or <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Enter</kbd>). The last result is what is checked. Don't write <code>BEGIN</code> or <code>ROLLBACK</code>: Check does that for you. Column names don't matter, but the columns must come in the order asked, and row order doesn't matter. Exercises 1 to 7 are for everyone; exercise 8 is a stretch.</p>
+
+  <div class="cell cell--ex" data-cell data-ex="w7e1" data-label="Exercise 1">
+    <div class="cell-head"><label for="e1">Exercise 1</label><span class="solved-badge"></span></div>
+    <div class="cell-prompt"><p>For each <strong>dept_name</strong> in <code>inst_dept</code>, show <strong>how many different budgets</strong> it has. If every count is 1, <code>dept_name → budget</code> holds in this data.</p></div>
+    <textarea id="e1"></textarea>
+    <script type="text/plain" class="solution">SELECT dept_name, count(DISTINCT budget) FROM inst_dept GROUP BY dept_name;</script>
+    <details><summary>Hint</summary><p>Example 2.1 without the HAVING, and with budget in place of building.</p></details>
+    <details><summary>Show a solution</summary><pre><code>SELECT dept_name, count(DISTINCT budget)
+FROM inst_dept
+GROUP BY dept_name;</code></pre></details>
+  </div>
+
+  <div class="cell cell--ex" data-cell data-ex="w7e2" data-label="Exercise 2">
+    <div class="cell-head"><label for="e2">Exercise 2</label><span class="solved-badge"></span></div>
+    <div class="cell-prompt"><p>Does <code>course_id → title</code> hold in <code>takes_flat</code>? Show each <strong>course_id</strong> with <strong>how many times its title is stored</strong> (one per enrollment), most copies first. The bigger the number, the more copies an update must change.</p></div>
+    <textarea id="e2"></textarea>
+    <script type="text/plain" class="solution">SELECT course_id, count(*) FROM takes_flat GROUP BY course_id;</script>
+    <details><summary>Hint</summary><p>One group per course, and <code>count(*)</code> counts its rows. Every row of a group holds a copy of the title.</p></details>
+    <details><summary>Show a solution</summary><pre><code>SELECT course_id, count(*) AS copies
+FROM takes_flat
+GROUP BY course_id
+ORDER BY copies DESC;</code></pre></details>
+  </div>
+
+  <div class="cell cell--ex" data-cell data-ex="w7e3" data-label="Exercise 3">
+    <div class="cell-head"><label for="e3">Exercise 3</label><span class="solved-badge"></span></div>
+    <div class="cell-prompt"><p>Comp. Sci. moves to the Watson building. Make the change in <code>inst_dept</code> correctly, in every row it touches. Then show <strong>how many rows now say Watson</strong>, as one number.</p></div>
+    <textarea id="e3"></textarea>
+    <script type="text/plain" class="solution">UPDATE inst_dept SET building = 'Watson' WHERE dept_name = 'Comp. Sci.';
+SELECT count(*) FROM inst_dept WHERE building = 'Watson';</script>
+    <details><summary>Hint</summary><p>Example 1.2 changed one row; this time the WHERE picks the department, not one instructor.</p></details>
+    <details><summary>Show a solution</summary><pre><code>UPDATE inst_dept
+SET building = 'Watson'
+WHERE dept_name = 'Comp. Sci.';
+
+SELECT count(*) FROM inst_dept WHERE building = 'Watson';</code></pre></details>
+  </div>
+
+  <div class="cell cell--ex" data-cell data-ex="w7e4" data-label="Exercise 4">
+    <div class="cell-head"><label for="e4">Exercise 4</label><span class="solved-badge"></span></div>
+    <div class="cell-prompt"><p>Create <code>dept_part</code> from <code>inst_dept</code>, with one row per department: <strong>dept_name</strong>, <strong>building</strong>, <strong>budget</strong>. Then select all of it.</p></div>
+    <textarea id="e4"></textarea>
+    <script type="text/plain" class="solution">CREATE TABLE dept_part AS SELECT DISTINCT dept_name, building, budget FROM inst_dept;
+SELECT * FROM dept_part;</script>
+    <details><summary>Hint</summary><p>Example 3.1's second line. Without DISTINCT you get one row per instructor.</p></details>
+    <details><summary>Show a solution</summary><pre><code>CREATE TABLE dept_part AS
+SELECT DISTINCT dept_name, building, budget
+FROM inst_dept;
+
+SELECT * FROM dept_part;</code></pre></details>
+  </div>
+
+  <div class="cell cell--ex" data-cell data-ex="w7e5" data-label="Exercise 5">
+    <div class="cell-head"><label for="e5">Exercise 5</label><span class="solved-badge"></span></div>
+    <div class="cell-prompt"><p>Split <code>takes_flat</code> on the course: <code>course_part(course_id, title, credits)</code>, one row per course, and <code>rest_part</code> with every other column plus <code>course_id</code>. Join them back with NATURAL JOIN and show <strong>how many rows</strong> the join returns.</p></div>
+    <textarea id="e5"></textarea>
+    <script type="text/plain" class="solution">CREATE TABLE course_part AS SELECT DISTINCT course_id, title, credits FROM takes_flat;
+CREATE TABLE rest_part AS SELECT id, name, dept_name, course_id, semester, year, grade FROM takes_flat;
+SELECT count(*) FROM rest_part NATURAL JOIN course_part;</script>
+    <details><summary>Hint</summary><p>Two <code>CREATE TABLE … AS SELECT</code>, as in example 3.1. A lossless split gives back exactly as many rows as <code>takes_flat</code> has.</p></details>
+    <details><summary>Show a solution</summary><pre><code>CREATE TABLE course_part AS
+SELECT DISTINCT course_id, title, credits FROM takes_flat;
+
+CREATE TABLE rest_part AS
+SELECT id, name, dept_name, course_id, semester, year, grade
+FROM takes_flat;
+
+SELECT count(*) FROM rest_part NATURAL JOIN course_part;</code></pre></details>
+  </div>
+
+  <div class="cell cell--ex" data-cell data-ex="w7e6" data-label="Exercise 6">
+    <div class="cell-head"><label for="e6">Exercise 6</label><span class="solved-badge"></span></div>
+    <div class="cell-prompt"><p>A lossy split. Make <code>ib(id, name, salary, building)</code> and <code>bd(building, dept_name, budget)</code>, one row per building and department, from <code>inst_dept</code>. Show <strong>how many rows</strong> their natural join returns. Compare it with the 11 rows of <code>inst_dept</code>.</p></div>
+    <textarea id="e6"></textarea>
+    <script type="text/plain" class="solution">CREATE TABLE ib AS SELECT id, name, salary, building FROM inst_dept;
+CREATE TABLE bd AS SELECT DISTINCT building, dept_name, budget FROM inst_dept;
+SELECT count(*) FROM ib NATURAL JOIN bd;</script>
+    <details><summary>Hint</summary><p>Example 3.2 showed the Hale rows only; count them all.</p></details>
+    <details><summary>Show a solution</summary><pre><code>CREATE TABLE ib AS SELECT id, name, salary, building FROM inst_dept;
+CREATE TABLE bd AS SELECT DISTINCT building, dept_name, budget FROM inst_dept;
+
+SELECT count(*) FROM ib NATURAL JOIN bd;</code></pre></details>
+  </div>
+
+  <div class="cell cell--ex" data-cell data-ex="w7e7" data-label="Exercise 7">
+    <div class="cell-head"><label for="e7">Exercise 7</label><span class="solved-badge"></span></div>
+    <div class="cell-prompt"><p>Which students' facts does <code>takes_flat</code> copy most? Show each student's <strong>name</strong> and <strong>how many rows</strong> repeat their name and dept_name, for students with more than one row.</p></div>
+    <textarea id="e7"></textarea>
+    <script type="text/plain" class="solution">SELECT name, count(*) FROM takes_flat GROUP BY id, name HAVING count(*) > 1;</script>
+    <details><summary>Hint</summary><p>Group by the student (id, and name so you can show it), and keep groups with <code>count(*) &gt; 1</code>.</p></details>
+    <details><summary>Show a solution</summary><pre><code>SELECT name, count(*) AS rows
+FROM takes_flat
+GROUP BY id, name
+HAVING count(*) &gt; 1;</code></pre></details>
+  </div>
+
+  <div class="cell cell--ex" data-cell data-ex="w7e8" data-label="Exercise 8">
+    <div class="cell-head"><label for="e8">Exercise 8 · stretch</label><span class="solved-badge"></span></div>
+    <div class="cell-prompt"><p>Decompose <code>takes_flat</code> into BCNF with three tables (a student part, a course part and an enrollment part), join all three back, and show three numbers: <strong>the rows the join returns</strong>, <strong>rows of takes_flat missing from it</strong>, and <strong>rows in it that takes_flat lacks</strong>.</p></div>
+    <textarea id="e8"></textarea>
+    <script type="text/plain" class="solution">CREATE TABLE s_part AS SELECT DISTINCT id, name, dept_name FROM takes_flat;
+CREATE TABLE c_part AS SELECT DISTINCT course_id, title, credits FROM takes_flat;
+CREATE TABLE e_part AS SELECT id, course_id, semester, year, grade FROM takes_flat;
+CREATE VIEW back AS SELECT s.id, s.name, s.dept_name, c.course_id, c.title, c.credits, e.semester, e.year, e.grade FROM e_part e JOIN s_part s ON s.id = e.id JOIN c_part c ON c.course_id = e.course_id;
+SELECT (SELECT count(*) FROM back), (SELECT count(*) FROM (SELECT * FROM takes_flat EXCEPT SELECT * FROM back) a), (SELECT count(*) FROM (SELECT * FROM back EXCEPT SELECT * FROM takes_flat) b);</script>
+    <details><summary>Hint</summary><p>The keys are <code>id</code>, <code>course_id</code>, and <code>(id, course_id, semester, year)</code>. Put the join in a view whose columns follow <code>takes_flat</code>'s order, then use EXCEPT both ways as in example 3.1.</p></details>
+    <details><summary>Show a solution</summary><pre><code>CREATE TABLE s_part AS SELECT DISTINCT id, name, dept_name FROM takes_flat;
+CREATE TABLE c_part AS SELECT DISTINCT course_id, title, credits FROM takes_flat;
+CREATE TABLE e_part AS SELECT id, course_id, semester, year, grade FROM takes_flat;
+
+CREATE VIEW back AS
+SELECT s.id, s.name, s.dept_name, c.course_id, c.title, c.credits,
+       e.semester, e.year, e.grade
+FROM e_part e
+JOIN s_part s ON s.id = e.id
+JOIN c_part c ON c.course_id = e.course_id;
+
+SELECT (SELECT count(*) FROM back) AS rows,
+       (SELECT count(*) FROM (SELECT * FROM takes_flat EXCEPT SELECT * FROM back) a) AS missing,
+       (SELECT count(*) FROM (SELECT * FROM back EXCEPT SELECT * FROM takes_flat) b) AS extra;</code></pre></details>
+  </div>
+</section>
+
+<section id="scratch" aria-labelledby="scratch-h">
+  <h2 id="scratch-h">Scratch pad</h2>
+  <p>For Lab 5: the tutoring sign-in sheet is here as <code>tutoring</code>. Try each statement before you put it in <code>lab5.sql</code>, and press Reset database to start again.</p>
+  <div class="cell" data-cell data-label="Scratch">
+    <div class="cell-head"><label for="cs1">Scratch pad</label></div>
+    <textarea id="cs1">SELECT * FROM tutoring ORDER BY session_date;</textarea>
+  </div>
+</section>
+
+<section id="next" aria-labelledby="next-h">
+  <h2 id="next-h">Next</h2>
+  <p>Lab 5 normalizes the tutoring sign-in sheet. Next week is review and the midterm, and <a href="../../project/index.html">project milestone 2</a> asks you to normalize your own design and write its tables.</p>
+</section>
+</main>
+
+<footer>
+  <p>CS 4600/5200 · Database Theory and Applications · University of Central Missouri · Dr. Gorkem Kar. The database runs on <a href="https://pglite.dev/">PGlite</a>, PostgreSQL compiled to run in a web browser.</p>
+</footer>
+</div>
+
+<script type="text/plain" id="seed-sql">
+-- CS 4600/5200 Database Theory and Applications, Spring 2027
+-- Sample database from week 5 on: the week 3 university (seven tables), plus
+-- prereq, which says which course must come before which. Week 3's gaps are
+-- still here: a department with no people, a course nobody teaches, an
+-- instructor with no salary yet, and a student with no department.
+-- Runs on PostgreSQL 14 or newer, and in the browser playground.
+-- Load it with:  psql -d university -f university.sql
+-- It drops the old tables first (and any views built on them), so it is
+-- safe to run again whenever you want the starting data back.
+
+DROP TABLE IF EXISTS prereq, advisor, teaches, takes, course, student, instructor, department CASCADE;
+
+CREATE TABLE department (
+  dept_name  varchar(20) PRIMARY KEY,
+  building   varchar(15) NOT NULL,
+  budget     numeric(12,2) CHECK (budget > 0)
+);
+
+CREATE TABLE instructor (
+  id         char(5) PRIMARY KEY,
+  name       varchar(30) NOT NULL,
+  dept_name  varchar(20) REFERENCES department,
+  salary     numeric(8,2) CHECK (salary > 29000)
+);
+
+CREATE TABLE student (
+  id         char(5) PRIMARY KEY,
+  name       varchar(30) NOT NULL,
+  dept_name  varchar(20) REFERENCES department,
+  tot_cred   integer DEFAULT 0 CHECK (tot_cred >= 0)
+);
+
+CREATE TABLE course (
+  course_id  varchar(8) PRIMARY KEY,
+  title      varchar(40) NOT NULL,
+  dept_name  varchar(20) REFERENCES department,
+  credits    integer CHECK (credits > 0)
+);
+
+CREATE TABLE takes (
+  id         char(5) REFERENCES student,
+  course_id  varchar(8) REFERENCES course,
+  semester   varchar(6) CHECK (semester IN ('Fall', 'Spring', 'Summer')),
+  year       integer CHECK (year BETWEEN 2000 AND 2100),
+  grade      varchar(2),
+  PRIMARY KEY (id, course_id, semester, year)
+);
+
+INSERT INTO department VALUES
+  ('Comp. Sci.',  'Hale',   120000),
+  ('Mathematics', 'Hale',    90000),
+  ('Physics',     'Kirk',    85000),
+  ('Biology',     'Morrow',  95000),
+  ('History',     'Linden',  50000),
+  ('Music',       'Linden',  60000);
+
+INSERT INTO instructor VALUES
+  ('10101', 'Avery Chen',   'Comp. Sci.',  98000),
+  ('12121', 'Jordan Patel', 'Comp. Sci.',  92000),
+  ('15151', 'Maria Lopez',  'Mathematics', 87000),
+  ('22222', 'Sam Okafor',   'Physics',     95000),
+  ('32343', 'Lena Fischer', 'History',     61000),
+  ('33456', 'Kofi Mensah',  'Physics',     87000),
+  ('45565', 'Priya Raman',  'Comp. Sci.',  75000),
+  ('58583', 'Tomas Novak',  'History',     62000),
+  ('76543', 'Hana Sato',    'Biology',     80000),
+  ('83821', 'Diego Torres', 'Music',       72000);
+
+INSERT INTO student VALUES
+  ('00128', 'Riley Adams',   'Comp. Sci.',  102),
+  ('12345', 'Morgan Lee',    'Comp. Sci.',   32),
+  ('19991', 'Casey Brooks',  'History',      80),
+  ('23121', 'Jamie Rivera',  'Physics',     110),
+  ('44553', 'Taylor Nguyen', 'Physics',      56),
+  ('45678', 'Drew Kim',      'Physics',      46),
+  ('54321', 'Alex Johnson',  'Comp. Sci.',   54),
+  ('55739', 'Sky Martinez',  'Music',        38),
+  ('70557', 'Quinn Davis',   'Physics',       0),
+  ('76653', 'Robin Ali',     'Mathematics',  58),
+  ('98765', 'Jesse Park',    'Mathematics',  98),
+  ('98988', 'Avery Clark',   'Biology',     120);
+
+INSERT INTO course VALUES
+  ('CS-101',  'Intro to Computer Science', 'Comp. Sci.',  4),
+  ('CS-190',  'Game Design',               'Comp. Sci.',  4),
+  ('CS-315',  'Robotics',                  'Comp. Sci.',  3),
+  ('CS-347',  'Database System Concepts',  'Comp. Sci.',  3),
+  ('MA-201',  'Linear Algebra',            'Mathematics', 3),
+  ('PHY-101', 'Physical Principles',       'Physics',     4),
+  ('HIS-351', 'World History',             'History',     3),
+  ('MU-199',  'Music Video Production',    'Music',       3),
+  ('BIO-101', 'Intro to Biology',          'Biology',     4);
+
+INSERT INTO takes VALUES
+  ('00128', 'CS-101',  'Fall',   2025, 'A'),
+  ('00128', 'CS-347',  'Fall',   2025, 'A-'),
+  ('12345', 'CS-101',  'Fall',   2025, 'C'),
+  ('12345', 'CS-190',  'Spring', 2026, 'A'),
+  ('12345', 'CS-315',  'Spring', 2026, 'A'),
+  ('12345', 'CS-347',  'Fall',   2025, 'A'),
+  ('19991', 'HIS-351', 'Spring', 2026, 'B'),
+  ('23121', 'PHY-101', 'Fall',   2025, 'C+'),
+  ('44553', 'PHY-101', 'Fall',   2025, 'B-'),
+  ('45678', 'CS-101',  'Fall',   2025, 'F'),
+  ('45678', 'CS-101',  'Spring', 2026, 'B+'),
+  ('45678', 'CS-315',  'Spring', 2026, 'B'),
+  ('54321', 'CS-101',  'Fall',   2025, 'A-'),
+  ('54321', 'CS-190',  'Spring', 2026, 'B+'),
+  ('55739', 'MU-199',  'Spring', 2026, 'A-'),
+  ('76653', 'MA-201',  'Fall',   2025, 'C'),
+  ('98765', 'CS-101',  'Fall',   2025, 'C-'),
+  ('98765', 'CS-315',  'Spring', 2026, 'B'),
+  ('98988', 'BIO-101', 'Spring', 2026, 'A'),
+  ('98988', 'CS-347',  'Spring', 2027, NULL),
+  ('70557', 'CS-347',  'Spring', 2027, NULL),
+  ('54321', 'MA-201',  'Spring', 2027, NULL);
+
+-- New in week 3 ------------------------------------------------------------
+
+CREATE TABLE teaches (
+  id         char(5) REFERENCES instructor,
+  course_id  varchar(8) REFERENCES course,
+  semester   varchar(6) CHECK (semester IN ('Fall', 'Spring', 'Summer')),
+  year       integer CHECK (year BETWEEN 2000 AND 2100),
+  PRIMARY KEY (id, course_id, semester, year)
+);
+
+CREATE TABLE advisor (
+  s_id       char(5) PRIMARY KEY REFERENCES student,
+  i_id       char(5) NOT NULL REFERENCES instructor
+);
+
+-- A department with no instructors, students or courses yet.
+INSERT INTO department VALUES ('Economics', 'Watson', 70000);
+
+-- A new hire whose salary is not set yet.
+INSERT INTO instructor VALUES ('98345', 'Noor Haddad', 'Mathematics', NULL);
+
+-- A student who has not declared a department.
+INSERT INTO student VALUES ('61234', 'Emery Walsh', NULL, 12);
+
+-- A course in the catalog that nobody teaches or takes yet.
+INSERT INTO course VALUES ('CS-319', 'Image Processing', 'Comp. Sci.', 3);
+
+INSERT INTO teaches VALUES
+  ('10101', 'CS-101',  'Fall',   2025),
+  ('10101', 'CS-347',  'Fall',   2025),
+  ('10101', 'CS-315',  'Spring', 2026),
+  ('12121', 'CS-190',  'Spring', 2026),
+  ('45565', 'CS-101',  'Spring', 2026),
+  ('45565', 'CS-347',  'Spring', 2027),
+  ('15151', 'MA-201',  'Fall',   2025),
+  ('15151', 'MA-201',  'Spring', 2027),
+  ('22222', 'PHY-101', 'Fall',   2025),
+  ('32343', 'HIS-351', 'Spring', 2026),
+  ('83821', 'MU-199',  'Spring', 2026),
+  ('76543', 'BIO-101', 'Spring', 2026);
+
+INSERT INTO advisor VALUES
+  ('00128', '45565'),
+  ('12345', '10101'),
+  ('19991', '32343'),
+  ('23121', '22222'),
+  ('44553', '22222'),
+  ('45678', '33456'),
+  ('54321', '10101'),
+  ('76653', '15151'),
+  ('98765', '15151'),
+  ('98988', '76543');
+
+-- New in week 5 ------------------------------------------------------------
+
+-- prereq: course_id requires prereq_id first. Both are courses, so both are
+-- foreign keys to course; a course cannot require itself.
+CREATE TABLE prereq (
+  course_id  varchar(8) REFERENCES course,
+  prereq_id  varchar(8) REFERENCES course,
+  PRIMARY KEY (course_id, prereq_id),
+  CHECK (course_id <> prereq_id)
+);
+
+INSERT INTO prereq VALUES
+  ('CS-190', 'CS-101'),
+  ('CS-315', 'CS-190'),
+  ('CS-319', 'CS-315'),
+  ('CS-319', 'MA-201'),
+  ('CS-347', 'CS-101'),
+  ('CS-347', 'MA-201');
+
+-- table_info(name): one row per column of a table, with its type, whether it
+-- may be NULL, and the keys it takes part in (with ON DELETE, when it is not the
+-- default). Like psql's \d, for the playground.
+--   SELECT * FROM table_info('advisor');
+CREATE OR REPLACE FUNCTION table_info(t text)
+RETURNS TABLE (column_name text, data_type text, nulls text, keys text)
+LANGUAGE sql STABLE AS $$
+  SELECT a.attname::text,
+         format_type(a.atttypid, a.atttypmod),
+         CASE WHEN a.attnotnull THEN 'not null' ELSE 'null allowed' END,
+         coalesce((
+           SELECT string_agg(
+                    CASE con.contype WHEN 'p' THEN 'primary key' WHEN 'u' THEN 'unique'
+                                     ELSE 'references ' || con.confrelid::regclass::text END
+                    || CASE WHEN cardinality(con.conkey) > 1 THEN ' (' || (
+                         SELECT string_agg(x.attname, ', ' ORDER BY k.ord)
+                         FROM unnest(con.conkey) WITH ORDINALITY AS k(n, ord)
+                         JOIN pg_attribute x ON x.attrelid = con.conrelid AND x.attnum = k.n) || ')'
+                       ELSE '' END
+                    || CASE WHEN con.contype = 'f' THEN CASE con.confdeltype
+                         WHEN 'c' THEN ' on delete cascade' WHEN 'n' THEN ' on delete set null'
+                         WHEN 'd' THEN ' on delete set default' WHEN 'r' THEN ' on delete restrict'
+                         ELSE '' END ELSE '' END,
+                    '; ' ORDER BY CASE con.contype WHEN 'p' THEN 1 WHEN 'u' THEN 2 ELSE 3 END,
+                                  con.confrelid::regclass::text)
+           FROM pg_constraint con
+           WHERE con.conrelid = a.attrelid AND a.attnum = ANY (con.conkey)
+             AND con.contype IN ('p', 'u', 'f')), '')
+  FROM pg_attribute a
+  WHERE a.attrelid = to_regclass(t) AND a.attnum > 0 AND NOT a.attisdropped
+  ORDER BY a.attnum
+$$;
+
+-- Week 7: two wide tables built from the university, the kind of table a
+-- spreadsheet export produces. Both repeat facts on purpose.
+DROP TABLE IF EXISTS inst_dept, takes_flat CASCADE;
+
+-- One row per instructor, with the department's building and budget copied in.
+CREATE TABLE inst_dept (
+  id         char(5) PRIMARY KEY,
+  name       varchar(30) NOT NULL,
+  salary     numeric(8,2),
+  dept_name  varchar(20),
+  building   varchar(15),
+  budget     numeric(12,2)
+);
+INSERT INTO inst_dept
+SELECT i.id, i.name, i.salary, d.dept_name, d.building, d.budget
+FROM instructor i JOIN department d ON d.dept_name = i.dept_name;
+
+-- One row per enrollment, with the student's and the course's facts copied in.
+CREATE TABLE takes_flat (
+  id         char(5),
+  name       varchar(30),
+  dept_name  varchar(20),
+  course_id  varchar(8),
+  title      varchar(40),
+  credits    integer,
+  semester   varchar(6),
+  year       integer,
+  grade      varchar(2),
+  PRIMARY KEY (id, course_id, semester, year)
+);
+INSERT INTO takes_flat
+SELECT s.id, s.name, s.dept_name, c.course_id, c.title, c.credits, t.semester, t.year, t.grade
+FROM takes t JOIN student s ON s.id = t.id JOIN course c ON c.course_id = t.course_id;
+
+-- CS 4600/5200 Database Theory and Applications, Spring 2027
+-- Week 7: the tutoring center's sign-in sheet, typed into one wide table.
+-- One row per tutoring session. Used by the week 7 playground and Lab 5.
+-- Runs on PostgreSQL 14 or newer. It drops the tutoring tables first, so it
+-- is safe to run again whenever you want the starting data back.
+
+DROP TABLE IF EXISTS tutoring, tutor_session, tutee, tutor, subject_center,
+  center, advises CASCADE;
+
+CREATE TABLE tutoring (
+  student_id    char(3),
+  student_name  varchar(30),
+  student_email varchar(40),
+  tutor_id      char(2),
+  tutor_name    varchar(30),
+  subject       varchar(20),
+  center        varchar(20),
+  center_room   varchar(20),
+  session_date  date,
+  minutes       integer
+);
+
+INSERT INTO tutoring VALUES
+  ('S01', 'Ava Brooks', 'abrooks@example.edu', 'T1', 'Marco Silva', 'Calculus', 'Math Lab', 'Hale 104', '2027-01-19', 60),
+  ('S01', 'Ava Brooks', 'abrooks@example.edu', 'T1', 'Marco Silva', 'Calculus', 'Math Lab', 'Hale 104', '2027-01-26', 45),
+  ('S01', 'Ava Brooks', 'abrooks@example.edu', 'T5', 'Noah Kim', 'Writing', 'Writing Center', 'Library 2B', '2027-02-02', 30),
+  ('S02', 'Liam Ortega', 'lortega@example.edu', 'T4', 'Sam Rivers', 'Calculus', 'Math Lab', 'Hale 104', '2027-01-20', 60),
+  ('S02', 'Liam Ortega', 'lortega@example.edu', 'T2', 'Jun Park', 'Statistics', 'Math Lab', 'Hale 104', '2027-01-27', 45),
+  ('S02', 'Liam Ortega', 'lortega@example.edu', 'T4', 'Sam Rivers', 'Calculus', 'Math Lab', 'Hale 104', '2027-02-03', 60),
+  ('S03', 'Jia Lee', 'jlee@example.edu', 'T3', 'Elena Petrova', 'Chemistry', 'Science Hub', 'Morrow 210', '2027-01-21', 45),
+  ('S03', 'Jia Lee', 'jlee@example.edu', 'T3', 'Elena Petrova', 'Chemistry', 'Science Hub', 'Morrow 210', '2027-01-28', 60),
+  ('S03', 'Jia Lee', 'j.lee@example.edu', 'T1', 'Marco Silva', 'Calculus', 'Math Lab', 'Hale 104', '2027-02-04', 30),
+  ('S04', 'Noor Saleh', 'nsaleh@example.edu', 'T5', 'Noah Kim', 'Writing', 'Writing Center', 'Library 2B', '2027-01-19', 60),
+  ('S04', 'Noor Saleh', 'nsaleh@example.edu', 'T2', 'Jun Park', 'Statistics', 'Math Lab', 'Hale 104', '2027-01-26', 30),
+  ('S04', 'Noor Saleh', 'nsaleh@example.edu', 'T5', 'Noah Kim', 'Writing', 'Writing Center', 'Library 2B', '2027-02-09', 45),
+  ('S05', 'Ethan Cole', 'ecole@example.edu', 'T4', 'Sam Rivers', 'Calculus', 'Math Lab', 'Hale 104', '2027-01-22', 30),
+  ('S05', 'Ethan Cole', 'ecole@example.edu', 'T3', 'Elena Petrov', 'Chemistry', 'Science Hub', 'Morrow 210', '2027-02-05', 60),
+  ('S06', 'Maya Singh', 'msingh@example.edu', 'T2', 'Jun Park', 'Statistics', 'Math Lab', 'Hale 104', '2027-01-20', 60),
+  ('S06', 'Maya Singh', 'msingh@example.edu', 'T1', 'Marco Silva', 'Calculus', 'Math Lab', 'Hale 104', '2027-01-27', 45),
+  ('S06', 'Maya Singh', 'msingh@example.edu', 'T2', 'Jun Park', 'Statistics', 'Math Lab', 'Hale 104', '2027-02-03', 60),
+  ('S06', 'Maya Singh', 'msingh@example.edu', 'T5', 'Noah Kim', 'Writing', 'Writing Center', 'Library 2B', '2027-02-10', 30),
+  ('S07', 'Owen Price', 'oprice@example.edu', 'T3', 'Elena Petrova', 'Chemistry', 'Science Hub', 'Morrow 210', '2027-01-25', 45),
+  ('S07', 'Owen Price', 'oprice@example.edu', 'T4', 'Sam Rivers', 'Calculus', 'Math Lab', 'Hale 104', '2027-02-01', 60),
+  ('S08', 'Zara Ali', 'zali@example.edu', 'T5', 'Noah Kim', 'Writing', 'Writing Center', 'Library 2B', '2027-01-21', 45),
+  ('S08', 'Zara Ali', 'zali@example.edu', 'T3', 'Elena Petrova', 'Chemistry', 'Science Hub', 'Morrow 210', '2027-01-28', 30),
+  ('S08', 'Zara Ali', 'zali@example.edu', 'T5', 'Noah Kim', 'Writing', 'Writing Center', 'Library 2B', '2027-02-04', 60),
+  ('S08', 'Zara Ali', 'zali@example.edu', 'T2', 'Jun Park', 'Statistics', 'Math Lab', 'Hale 104', '2027-02-11', 45);
+
+</script>
+<script type="module" src="../../assets/playground.js"></script>
+</body>
+</html>

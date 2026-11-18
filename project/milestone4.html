@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Project Milestone 4 — Tuning, Demo and Walkthrough · CS 4600/5200</title>
+<meta name="description" content="CS 4600/5200 project milestone 4: make your project's slow queries fast with indexes and prove it from EXPLAIN ANALYZE, explain one plan step by step, test your transaction with two sessions at once and restore a backup; then demo the application and walk through its code in class. Eight points; report due Sunday, April 25, demo Tuesday, April 27.">
+<link rel="stylesheet" href="../assets/course.css">
+<link rel="stylesheet" href="../assets/db.css">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to the milestone</a>
+
+<div class="doc">
+<header class="doc-masthead">
+  <p class="inst"><span>CS 4600/5200 · Database Theory and Applications</span><span>Weeks 12 to 15 · <a href="index.html">Term project</a></span><span><a href="../index.html">Course home</a></span></p>
+  <h1>Milestone 4: tuning, demo and walkthrough</h1>
+  <p class="tagline">Your application works. Now make it fast where it matters, and show that it is: with the query plans from your own data, not a guess. Then make sure two people using it at once can't break your rules, and that a backup really brings it back. Last, you show it running and explain how it works.</p>
+</header>
+
+<dl class="facts">
+  <div><dt>Report due</dt><dd>Sunday, April 25, 11:59 p.m. CT</dd></div>
+  <div><dt>Demo</dt><dd>Tuesday, April 27, in class</dd></div>
+  <div><dt>Submit</dt><dd>One zip file per team, uploaded to Brightspace</dd></div>
+  <div><dt>Worth</dt><dd>8 of the project's 25 points</dd></div>
+</dl>
+
+<nav class="toc" aria-labelledby="toc-h">
+  <h2 id="toc-h">On this page</h2>
+  <ol>
+    <li><a href="#idx">Part A: indexes, with proof</a></li>
+    <li><a href="#plan">Part B: one plan, step by step</a></li>
+    <li><a href="#tx">Part C: two users at once, and a backup</a></li>
+    <li><a href="#grad">Part D: CS 5200 only</a></li>
+    <li><a href="#demo">The demo and walkthrough</a></li>
+    <li><a href="#submit">What to submit and how it is graded</a></li>
+    <li><a href="#help">Questions people usually ask</a></li>
+  </ol>
+</nav>
+
+<main id="main">
+
+<section id="idx" aria-labelledby="idx-h">
+  <h2 id="idx-h">Part A: indexes, with proof</h2>
+  <p>Work on the data you loaded for milestone 3, at least 1,000 rows in your busiest table. Run <code>ANALYZE</code> first, so the planner knows what you loaded. Weeks 10 to 12 and <a href="../weeks/week11/lab7.html">Lab 7</a> are the model.</p>
+  <ol>
+    <li><strong>Choose three queries</strong> your program actually runs: the ones a user waits for most, or runs most often. Include at least one that looks up a few rows and one report over many.</li>
+    <li><strong>Measure each one before</strong>, with the values your program would pass:
+<pre>EXPLAIN (ANALYZE, BUFFERS, COSTS OFF, TIMING OFF)
+SELECT …;</pre>
+      Note the plan's top steps and its buffers.</li>
+    <li><strong>Add the indexes that help</strong>, at least two in all, with <code>CREATE INDEX</code>, and measure each query again. A composite index, a partial index or an index on an expression counts, if your query needs it.</li>
+    <li><strong>Keep one index you tried and dropped</strong>, because the plan didn't use it or it didn't pay. Say why, with its numbers. Week 11's worked example, where one index helped one query fifty times over and another not at all, is the kind of reasoning wanted.</li>
+  </ol>
+  <p>In the report, a table for the three queries: the query in a line, the plan step and buffers before, the index, and the plan step and buffers after. Then one paragraph on what each index costs: its size from <code>pg_relation_size</code>, and which of your inserts and updates now have to maintain it.</p>
+</section>
+
+<section id="plan" aria-labelledby="plan-h">
+  <h2 id="plan-h">Part B: one plan, step by step</h2>
+  <p>Take the most interesting of the three, best one with a join, and explain its plan after your indexes, from the innermost step out:</p>
+  <ul>
+    <li>What each step does, in a sentence, and why the planner chose it over the alternatives week 11 named (for a join: nested loop, hash join or merge join).</li>
+    <li>For each step, the rows the planner expected beside the rows it got. Where they differ ten times or more, follow week 12's checklist: <code>ANALYZE</code>, <code>CREATE STATISTICS</code> for related columns, a higher statistics target, or a rewrite. Say what you tried and what changed.</li>
+    <li>One thing that would make the planner choose differently: more rows, a different value, or an index you dropped.</li>
+  </ul>
+  <p>Have this plan open at the walkthrough. You may be asked about any step of it.</p>
+</section>
+
+<section id="tx" aria-labelledby="tx-h">
+  <h2 id="tx-h">Part C: two users at once, and a backup</h2>
+  <p>Milestone 3's transaction kept a business rule for one user. Week 13 and <a href="../weeks/week13/lab8.html">Lab 8</a> showed what goes wrong when two users run it at the same moment.</p>
+  <ul>
+    <li><strong>Test it with two sessions.</strong> As in Lab 8, this needs PostgreSQL installed on your own computer, not Colab. In two psql windows, run your transaction's statements interleaved so that both pass the rule's check before either commits. Record both windows in <code>m4_two_sessions.txt</code>, marking the order of the steps. Does the rule still hold afterwards?</li>
+    <li><strong>Choose a fix and show it working.</strong> Either lock what the check reads (<code>SELECT … FOR UPDATE</code>) or run the transaction at <code>SERIALIZABLE</code>. Rerun the same interleaving and record it too. In the report, say which you chose and why, and what it costs your users.</li>
+    <li><strong>Retry in the program.</strong> If your transaction can fail with a serialization failure or a deadlock, the program retries it a few times before telling the user, as on week 13's slide on retrying (psycopg raises <code>errors.SerializationFailure</code>).</li>
+    <li><strong>Restore a backup.</strong> Back up your database with <code>pg_dump</code>, as in week 14, restore it into a new, empty database, and check that each table's row count matches. Put the three or four commands and the counts in the report.</li>
+  </ul>
+</section>
+
+<section id="grad" aria-labelledby="grad-h">
+  <h2 id="grad-h">Part D: CS 5200 only</h2>
+  <ul>
+    <li><strong>The NoSQL feature, finished and argued.</strong> Your <code>jsonb</code> part from milestones 2 and 3, with an index that serves its search: a GIN index or an index on an expression, measured before and after like Part A. In the report, about a page: why this part of your data suits a document, what you embedded and what you referenced, and what it costs, in week 15's terms (fixed shape, joins, keys, updates). Say what you would change if this part had to be sharded over several machines, and what the shard key would be.</li>
+    <li><strong>The paper critique</strong>, <code>m4_critique.pdf</code>, as <a href="papers.html">the paper critique page</a> sets out. It is 2 of this milestone's 8 points.</li>
+  </ul>
+</section>
+
+<section id="demo" aria-labelledby="demo-h">
+  <h2 id="demo-h">The demo and walkthrough</h2>
+  <p>On Tuesday, April 27, after the lecture, each team has 10 minutes. The order is posted in Brightspace.</p>
+  <ul>
+    <li><strong>Demo, 3 minutes:</strong> your application running on your own data, start to finish. Show a search, a change, a change your rules refuse, and the transaction from Part C.</li>
+    <li><strong>Walkthrough, 6 minutes:</strong> I pick parts of your code, your SQL and your report. Each partner explains one part, and either may be asked about any of it. Expect "why this and not that?" more than "what does this line do?".</li>
+    <li>One minute to change over, so come ready: laptop charged, database loaded, the program already open, and your report open at its query plans.</li>
+  </ul>
+  <p>Online students do the same 10 minutes on a video call in week 15, sharing their screen; how to book a time is posted in Brightspace. The demo and walkthrough can't be late. If you can't be there on April 27, tell me before then and we will find another time that week.</p>
+  <p>The course's AI policy applies here most of all: a part of your code or report that you can't explain earns no credit.</p>
+</section>
+
+<section id="submit" aria-labelledby="sub-h">
+  <h2 id="sub-h">What to submit and how it is graded</h2>
+  <p>Upload <strong>one zip file</strong> to the Milestone 4 assignment in Brightspace by Sunday, April 25. Name it <code>m4_lastname_firstname.zip</code>; a team uses both last names, like <code>m4_rivera_nguyen.zip</code>, and only one partner uploads it. Put these files in it:</p>
+  <ul>
+    <li><code>m4_report.pdf</code>: your names; Part A's table and paragraph; Part B's explanation; Part C's choice, its cost and the backup commands; for CS 5200, Part D's argument; and one line on how you used AI tools, if at all. About four pages, five for CS 5200, not counting plans.</li>
+    <li><code>m4_tuning.sql</code>: the ANALYZE, the three queries with their EXPLAINs, the indexes you kept, and the one you dropped.</li>
+    <li><code>m4_plans.txt</code>: what psql printed when you ran <code>m4_tuning.sql</code> twice: once before the indexes and once after.</li>
+    <li><code>m4_two_sessions.txt</code>: both windows of Part C's test, before and after the fix.</li>
+    <li>The program as it stands now, with its schema and loader, as in milestone 3.</li>
+    <li>For CS 5200: <code>m4_critique.pdf</code>.</li>
+  </ul>
+  <div class="fig-scroll" tabindex="0" role="region" aria-label="Milestone 4 rubric, 8 points">
+  <table class="tbl">
+    <caption>Milestone 4 rubric, 8 points</caption>
+    <thead><tr><th scope="col">Item</th><th scope="col">What earns full credit</th><th scope="col" class="num">CS 4600</th><th scope="col" class="num">CS 5200</th></tr></thead>
+    <tbody>
+      <tr><td>Indexes</td><td>Three real queries measured before and after, indexes that help, one dropped with its reason, and what the indexes cost.</td><td class="num">1.5</td><td class="num">1</td></tr>
+      <tr><td>Plan explained</td><td>Every step right and in your own words, estimates checked against actual rows, and week 12's checklist followed where they differ.</td><td class="num">1</td><td class="num">0.75</td></tr>
+      <tr><td>Transactions and backup</td><td>The two-session test shows the problem and the fix, the choice is argued, the program retries, and the restored copy matches.</td><td class="num">1</td><td class="num">0.75</td></tr>
+      <tr><td>NoSQL feature</td><td>Indexed and measured, and argued in week 15's terms, with a shard key.</td><td class="num">—</td><td class="num">0.5</td></tr>
+      <tr><td>Demo</td><td>Runs on your data in the time, and shows the search, a change, a refusal and the transaction.</td><td class="num">1.5</td><td class="num">1</td></tr>
+      <tr><td>Walkthrough</td><td>Each partner explains their part and answers "why this and not that?" about the code, the SQL and the report.</td><td class="num">3</td><td class="num">2</td></tr>
+      <tr><td>Paper critique</td><td>As graded on <a href="papers.html">the paper critique page</a>.</td><td class="num">—</td><td class="num">2</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>The report loses 10% per day for up to three days and is not accepted after that. A team with a CS 5200 student is graded on the CS 5200 column.</p>
+</section>
+
+<section id="help" aria-labelledby="help-h">
+  <h2 id="help-h">Questions people usually ask</h2>
+  <ul>
+    <li><strong>My queries are already fast. What do I write?</strong> Fast at 1,000 rows may not be at 100,000. Measure the buffers, not the milliseconds, and say what the plan would do with more rows. You may load more invented rows to show it.</li>
+    <li><strong>The planner ignores my new index.</strong> That is a finding: run <code>ANALYZE</code>, check the plan again, and if it still isn't used, it may be your dropped index. Say why.</li>
+    <li><strong>My transaction can't break with two users.</strong> Show the interleaving that would be the worst case and explain why it is safe, with the isolation level and the locks it takes.</li>
+    <li><strong>Can I change my program after the report is in?</strong> You may fix bugs before the demo. Say what you changed at the start of the walkthrough.</li>
+    <li><strong>Anything else</strong>: office hours, Tuesday and Wednesday 12:00–3:00 p.m., MIC room D159, or the project discussion in Brightspace.</li>
+  </ul>
+</section>
+</main>
+
+<footer>
+  <p>CS 4600/5200 · Database Theory and Applications · University of Central Missouri · Dr. Gorkem Kar · Spring 2027</p>
+</footer>
+</div>
+</body>
+</html>

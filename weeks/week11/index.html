@@ -1,0 +1,698 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Week 11 — Query Processing · CS 4600/5200</title>
+<meta name="description" content="CS 4600/5200 week 11: how a query is evaluated. Parsing, optimizing and executing; measuring cost in pages; selection with and without indexes; external sort-merge; nested loop, block nested loop, indexed nested loop, merge and hash joins with their costs on a 100,000-row table; grouping and anti joins; pipelining, the iterator model and reading EXPLAIN ANALYZE.">
+<link rel="stylesheet" href="../../assets/course.css">
+<link rel="stylesheet" href="../../assets/db.css">
+</head>
+<body>
+<a class="skip-link" href="#s1">Skip to the first slide</a>
+
+<div class="deck-stage">
+<main class="deck" aria-label="Week 11 lecture slides: query processing">
+
+<!-- 1 ─────────────────────────────────────────────────────────── title -->
+<section class="slide slide--title" id="s1">
+  <p class="course-line">CS 4600/5200 · Database Theory and Applications · Week 11 of 15</p>
+  <h1>Query Processing</h1>
+  <p class="subtitle">
+    Last week, rows on pages and indexes to find them. This week, what PostgreSQL does with the pages
+    once it has them: sorting more data than fits in memory, three ways to join two tables, and how
+    a plan hands rows from step to step, so that you can read any plan EXPLAIN shows you.
+  </p>
+  <p class="byline">
+    Dr. Gorkem Kar
+    <span>University of Central Missouri</span>
+    <span>School of Computer Science and Cybersecurity</span>
+  </p>
+  <div class="title-art">
+<svg viewBox="0 0 380 330" aria-hidden="true" focusable="false" style="--dg-k:1">
+<g class="v-in" style="--d:0.10s"><rect class="dg-box-t" x="140" y="30" width="120" height="40" rx="4"/><text class="dg-xs" x="200" y="56" text-anchor="middle">Limit</text></g>
+<g class="v-in" style="--d:0.30s"><rect class="dg-box-t" x="140" y="110" width="120" height="40" rx="4"/><text class="dg-xs" x="200" y="136" text-anchor="middle">Hash Join</text></g>
+<g class="v-in" style="--d:0.50s"><rect class="dg-box" x="50" y="200" width="120" height="40" rx="4"/><text class="dg-xs" x="110" y="226" text-anchor="middle">Seq Scan</text></g>
+<g class="v-in" style="--d:0.70s"><rect class="dg-box" x="230" y="200" width="120" height="40" rx="4"/><text class="dg-xs" x="290" y="226" text-anchor="middle">Hash</text></g>
+<g class="v-in" style="--d:0.90s"><rect class="dg-box" x="230" y="275" width="120" height="40" rx="4"/><text class="dg-xs" x="290" y="301" text-anchor="middle">Seq Scan</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.20s" d="M110 150 L200 72"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.40s" d="M110 200 L160 152"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.60s" d="M290 200 L240 152"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.80s" d="M290 275 L290 242"/>
+</svg>
+  </div>
+  
+</section>
+
+<!-- 2 ─────────────────────────────────────────────── where we are -->
+<section class="slide" id="s2">
+  <h2>Where we are</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div>
+        <h3>Last week</h3>
+        <ul>
+          <li>Rows live on 8 kB pages; a query costs the pages it touches.</li>
+          <li>A B+-tree finds one row in a few page reads.</li>
+          <li><code>big_student</code>: 10,000 rows, 76 pages. <code>big_takes</code>: 100,000 rows, 736 pages.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>This week</h3>
+        <ul>
+          <li>The algorithm behind each step of a plan, and what it costs.</li>
+          <li>Why the same join can cost 812 pages or 7 million.</li>
+          <li><strong>Next week:</strong> how the planner chooses among them.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="callout">
+      <span class="mark" aria-hidden="true">→</span>
+      <p>Milestone 4 asks you to explain one of your project's plans, step by step. Today gives you the words for every step.</p>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 3 ─────────────────────────────────────────────── the three steps -->
+<section class="slide" id="s3">
+  <h2>From SQL to rows, in three steps</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:1000px">
+<svg style="--dg-k:1" viewBox="0 0 1000 300" role="img" aria-labelledby="qst qsd">
+<title id="qst">From SQL text to result rows: parse, optimize, evaluate</title>
+<desc id="qsd">Five boxes from left to right, joined by arrows. The SQL text goes to the parser, which checks the syntax and the names and translates the query into a relational algebra expression. The optimizer turns that expression into an execution plan, choosing among many equivalent plans with the help of statistics about the tables. The executor runs the plan, reading pages through the buffer pool, and returns the result rows. Under each step, what shows it: a syntax error comes from the parser, EXPLAIN shows the optimizer&#x27;s plan, and EXPLAIN ANALYZE shows what the executor did.</desc>
+<defs><marker id="qsa" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#0e5a6b"/></marker></defs>
+<g class="v-in" style="--d:0.10s"><rect class="dg-box-m" x="10" y="60" width="150" height="60" rx="6"/><text class="dg-sm-b" x="85.0" y="97" text-anchor="middle">SQL text</text></g>
+<g class="v-in" style="--d:0.60s"><rect class="dg-box" x="210" y="60" width="150" height="60" rx="6"/><text class="dg-sm-b" x="285.0" y="97" text-anchor="middle">Parser</text></g>
+<g class="v-in" style="--d:1.10s"><rect class="dg-box-t" x="420" y="60" width="160" height="60" rx="6"/><text class="dg-sm-b" x="500.0" y="97" text-anchor="middle">Optimizer</text></g>
+<g class="v-in" style="--d:1.60s"><rect class="dg-box" x="640" y="60" width="150" height="60" rx="6"/><text class="dg-sm-b" x="715.0" y="97" text-anchor="middle">Executor</text></g>
+<g class="v-in" style="--d:2.10s"><rect class="dg-box-m" x="850" y="60" width="140" height="60" rx="6"/><text class="dg-sm-b" x="920.0" y="97" text-anchor="middle">Result rows</text></g>
+<path class="dg-line v-draw" pathLength="1" style="--d:0.40s" d="M162 90 H206" marker-end="url(#qsa)"/>
+<g class="v-in" style="--d:0.50s"><text class="dg-xs" x="185.0" y="50" text-anchor="middle">query</text></g>
+<path class="dg-line v-draw" pathLength="1" style="--d:0.90s" d="M362 90 H416" marker-end="url(#qsa)"/>
+<g class="v-in" style="--d:1.00s"><text class="dg-xs" x="390.0" y="50" text-anchor="middle">algebra</text></g>
+<path class="dg-line v-draw" pathLength="1" style="--d:1.40s" d="M582 90 H636" marker-end="url(#qsa)"/>
+<g class="v-in" style="--d:1.50s"><text class="dg-xs" x="610.0" y="50" text-anchor="middle">plan</text></g>
+<path class="dg-line v-draw" pathLength="1" style="--d:1.90s" d="M792 90 H846" marker-end="url(#qsa)"/>
+<g class="v-in" style="--d:2.00s"><text class="dg-xs" x="820.0" y="50" text-anchor="middle">rows</text></g>
+<g class="v-in" style="--d:2.40s"><rect class="dg-wash" x="420" y="170" width="160" height="46" rx="4"/><text class="dg-xs" x="500" y="198" text-anchor="middle">statistics</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:2.50s" d="M500 168 V124" marker-end="url(#qsa)"/>
+<g class="v-in" style="--d:2.70s"><rect class="dg-wash" x="640" y="170" width="150" height="46" rx="4"/><text class="dg-xs" x="715" y="198" text-anchor="middle">pages, via buffers</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:2.80s" d="M715 168 V124" marker-end="url(#qsa)"/>
+<g class="v-in" style="--d:3.20s"><text class="dg-xs" x="285" y="260" text-anchor="middle">syntax errors</text><text class="dg-xs dg-mono" x="500" y="260" text-anchor="middle">EXPLAIN</text><text class="dg-xs dg-mono" x="715" y="260" text-anchor="middle">EXPLAIN ANALYZE</text><text class="dg-xs" x="285" y="284" text-anchor="middle">come from here</text><text class="dg-xs" x="500" y="284" text-anchor="middle">shows this plan</text><text class="dg-xs" x="715" y="284" text-anchor="middle">shows what it did</text></g>
+</svg>
+      <figcaption><strong>Figure 11.1.</strong> The parser checks and translates; the optimizer picks a plan from many equivalent ones; the executor runs it.</figcaption>
+    </figure>
+    <ul>
+      <li>A <strong>plan</strong> is a tree of operations, each with a chosen algorithm: not just "join", but "hash join, building on <code>big_student</code>".</li>
+      <li>This week: the algorithms. Next week: the optimizer.</li>
+    </ul>
+  </div>
+  
+</section>
+
+<!-- 4 ─────────────────────────────────────────────── cost -->
+<section class="slide" id="s4">
+  <h2>Measuring cost: pages, again</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <ul>
+        <li>The textbook counts <strong>block transfers</strong> (<em>b</em>) and <strong>seeks</strong> (<em>S</em>): cost = <em>b</em> × t<sub>T</sub> + <em>S</em> × t<sub>S</sub>.</li>
+        <li>On an SSD seeks are cheap, so today we count pages read and written, as EXPLAIN's <code>BUFFERS</code> does.</li>
+        <li>CPU work matters too, but reading pages usually dominates.</li>
+        <li>Worst case, memory holds only a few pages; best case, everything is already in the buffer pool.</li>
+      </ul>
+      <div class="fig-scroll" tabindex="0" role="region" aria-label="The numbers for this week">
+      <table class="tbl tbl--compact">
+        <caption>The numbers for this week</caption>
+        <thead><tr><th scope="col">Symbol</th><th scope="col">Meaning</th><th scope="col" class="num">Here</th></tr></thead>
+        <tbody>
+          <tr><td><em>n</em><sub>r</sub></td><td>rows of <code>big_student</code></td><td class="num">10,000</td></tr>
+          <tr><td><em>b</em><sub>r</sub></td><td>its pages</td><td class="num">76</td></tr>
+          <tr><td><em>n</em><sub>s</sub></td><td>rows of <code>big_takes</code></td><td class="num">100,000</td></tr>
+          <tr><td><em>b</em><sub>s</sub></td><td>its pages</td><td class="num">736</td></tr>
+          <tr><td><em>h</em></td><td>levels of either primary key index</td><td class="num">2</td></tr>
+          <tr><td><em>M</em></td><td>pages of memory for one step</td><td class="num">512 (4 MB)</td></tr>
+        </tbody>
+      </table>
+      </div>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 5 ─────────────────────────────────────────────── section -->
+<section class="slide slide--section" id="s5">
+  <h2>Selection and sorting</h2>
+  <p>Finding the rows, and putting them in order.</p>
+  
+</section>
+
+<!-- 6 ─────────────────────────────────────────────── selection -->
+<section class="slide" id="s6">
+  <h2>Selection: scan everything, or follow an index</h2>
+  <div class="slide-main">
+    <div class="fig-scroll" tabindex="0" role="region" aria-label="Algorithms for a selection">
+    <table class="tbl tbl--compact">
+      <caption>Algorithms for a selection, and their cost in pages</caption>
+      <thead><tr><th scope="col">Algorithm</th><th scope="col">When</th><th scope="col">Cost</th><th scope="col">On <code>big_takes</code></th></tr></thead>
+      <tbody>
+        <tr><td>Linear scan</td><td>any condition</td><td><em>b</em><sub>s</sub></td><td><code>student_no = 4321</code>: 736 pages for 10 rows</td></tr>
+        <tr><td>Index, equality on a key</td><td>primary key or unique</td><td><em>h</em> + 1</td><td><code>reg_id = 4321</code>: 3 pages</td></tr>
+        <tr><td>Index, range on the key</td><td>&lt;, &gt;, BETWEEN</td><td><em>h</em> + pages of the matches</td><td><code>reg_id BETWEEN 4321 AND 4330</code>: 3 pages</td></tr>
+        <tr><td>Secondary index</td><td>equality or range, not the table's order</td><td><em>h</em> + up to one page per match</td><td><code>student_no = 4321</code>, indexed: 12 pages</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <ul>
+      <li>A secondary index can be worse than a scan: matching rows are scattered, and each may cost its own page.</li>
+    </ul>
+    <p><a class="try" href="playground.html#select">Playground example 1.1</a></p>
+  </div>
+  
+</section>
+
+<!-- 7 ─────────────────────────────────────────────── conjunctions -->
+<section class="slide" id="s7">
+  <h2>Two conditions, two indexes</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <pre class="code">-- with an index on course_id
+-- and another on year
+SELECT * FROM big_takes
+WHERE course_id = 'MU-199'
+  AND year = 2015;
+
+Bitmap Heap Scan on big_takes
+    264 rows, 264 pages
+  BitmapAnd
+    Bitmap Index Scan on year_idx
+        3,704 matches, 5 pages
+    Bitmap Index Scan on course_idx
+        7,143 matches, 8 pages</pre>
+      <ul>
+        <li>Each index gives the addresses of its matches as a bitmap, one bit per row.</li>
+        <li><strong>AND</strong> the bitmaps, then visit only the pages of rows in both: 13 index pages, then 264 table pages, instead of all 736.</li>
+        <li>For <strong>OR</strong>, the same with a BitmapOr.</li>
+        <li>The textbook calls this intersection of identifiers (A9); one composite index on both columns would do it in one.</li>
+      </ul>
+    </div>
+    <p><a class="try" href="playground.html#select">Playground example 1.2</a></p>
+  </div>
+  
+</section>
+
+<!-- 8 ─────────────────────────────────────────────── external sort -->
+<section class="slide" id="s8">
+  <h2>Sorting more than fits in memory</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:1000px">
+<svg style="--dg-k:1" viewBox="0 0 1000 360" role="img" aria-labelledby="est esd">
+<title id="est">External sort-merge of 12 pages with 3 pages of memory</title>
+<desc id="esd">Four columns, left to right. First, the input: 12 pages in no order. Second, run creation: the sort reads 3 pages at a time, as many as fit in memory, sorts them, and writes them out as one sorted run, giving 4 runs of 3 pages. Third, merge pass 1: with 3 pages of memory, 2 runs are merged at a time, one input page from each and one output page, giving 2 runs of 6 pages. Fourth, merge pass 2: the last 2 runs are merged into one sorted result of 12 pages. Each pass reads and writes every page once.</desc>
+<defs><marker id="esa" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#0e5a6b"/></marker></defs>
+<g class="v-in" style="--d:0.20s"><text class="dg-sm-b" x="20" y="26">input, unsorted</text></g>
+<rect class="dg-box-m v-in" style="--d:0.30s" x="20" y="42" width="150" height="16" rx="2"/>
+<rect class="dg-box-m v-in" style="--d:0.38s" x="20" y="60" width="150" height="16" rx="2"/>
+<rect class="dg-box-m v-in" style="--d:0.46s" x="20" y="78" width="150" height="16" rx="2"/>
+<rect class="dg-box-m v-in" style="--d:0.54s" x="20" y="96" width="150" height="16" rx="2"/>
+<rect class="dg-box-m v-in" style="--d:0.62s" x="20" y="114" width="150" height="16" rx="2"/>
+<rect class="dg-box-m v-in" style="--d:0.70s" x="20" y="132" width="150" height="16" rx="2"/>
+<rect class="dg-box-m v-in" style="--d:0.78s" x="20" y="150" width="150" height="16" rx="2"/>
+<rect class="dg-box-m v-in" style="--d:0.86s" x="20" y="168" width="150" height="16" rx="2"/>
+<rect class="dg-box-m v-in" style="--d:0.94s" x="20" y="186" width="150" height="16" rx="2"/>
+<rect class="dg-box-m v-in" style="--d:1.02s" x="20" y="204" width="150" height="16" rx="2"/>
+<rect class="dg-box-m v-in" style="--d:1.10s" x="20" y="222" width="150" height="16" rx="2"/>
+<rect class="dg-box-m v-in" style="--d:1.18s" x="20" y="240" width="150" height="16" rx="2"/>
+<g class="v-in" style="--d:1.20s"><text class="dg-sm-b" x="270" y="26">4 sorted runs</text></g>
+<rect class="dg-box-t v-in" style="--d:1.30s" x="270" y="42" width="150" height="16" rx="2"/>
+<rect class="dg-box-t v-in" style="--d:1.30s" x="270" y="60" width="150" height="16" rx="2"/>
+<rect class="dg-box-t v-in" style="--d:1.30s" x="270" y="78" width="150" height="16" rx="2"/>
+<g class="v-in" style="--d:1.40s"><text class="dg-xs" x="430" y="74.0">run 1</text></g>
+<rect class="dg-box-t v-in" style="--d:1.38s" x="270" y="102" width="150" height="16" rx="2"/>
+<rect class="dg-box-t v-in" style="--d:1.38s" x="270" y="120" width="150" height="16" rx="2"/>
+<rect class="dg-box-t v-in" style="--d:1.38s" x="270" y="138" width="150" height="16" rx="2"/>
+<g class="v-in" style="--d:1.48s"><text class="dg-xs" x="430" y="134.0">run 2</text></g>
+<rect class="dg-box-t v-in" style="--d:1.46s" x="270" y="162" width="150" height="16" rx="2"/>
+<rect class="dg-box-t v-in" style="--d:1.46s" x="270" y="180" width="150" height="16" rx="2"/>
+<rect class="dg-box-t v-in" style="--d:1.46s" x="270" y="198" width="150" height="16" rx="2"/>
+<g class="v-in" style="--d:1.56s"><text class="dg-xs" x="430" y="194.0">run 3</text></g>
+<rect class="dg-box-t v-in" style="--d:1.54s" x="270" y="222" width="150" height="16" rx="2"/>
+<rect class="dg-box-t v-in" style="--d:1.54s" x="270" y="240" width="150" height="16" rx="2"/>
+<rect class="dg-box-t v-in" style="--d:1.54s" x="270" y="258" width="150" height="16" rx="2"/>
+<g class="v-in" style="--d:1.64s"><text class="dg-xs" x="430" y="254.0">run 4</text></g>
+<path class="dg-line v-draw" pathLength="1" style="--d:1.00s" d="M230 150 H262" marker-end="url(#esa)"/>
+<g class="v-in" style="--d:2.20s"><text class="dg-sm-b" x="520" y="26">merge pass 1</text></g>
+<rect class="dg-box-t v-in" style="--d:2.30s" x="520" y="42" width="150" height="16" rx="2"/>
+<rect class="dg-box-t v-in" style="--d:2.30s" x="520" y="60" width="150" height="16" rx="2"/>
+<rect class="dg-box-t v-in" style="--d:2.30s" x="520" y="78" width="150" height="16" rx="2"/>
+<rect class="dg-box-t v-in" style="--d:2.30s" x="520" y="96" width="150" height="16" rx="2"/>
+<rect class="dg-box-t v-in" style="--d:2.30s" x="520" y="114" width="150" height="16" rx="2"/>
+<rect class="dg-box-t v-in" style="--d:2.30s" x="520" y="132" width="150" height="16" rx="2"/>
+<g class="v-in" style="--d:2.40s"><text class="dg-xs" x="680" y="101.0">run 1</text></g>
+<rect class="dg-box-t v-in" style="--d:2.38s" x="520" y="156" width="150" height="16" rx="2"/>
+<rect class="dg-box-t v-in" style="--d:2.38s" x="520" y="174" width="150" height="16" rx="2"/>
+<rect class="dg-box-t v-in" style="--d:2.38s" x="520" y="192" width="150" height="16" rx="2"/>
+<rect class="dg-box-t v-in" style="--d:2.38s" x="520" y="210" width="150" height="16" rx="2"/>
+<rect class="dg-box-t v-in" style="--d:2.38s" x="520" y="228" width="150" height="16" rx="2"/>
+<rect class="dg-box-t v-in" style="--d:2.38s" x="520" y="246" width="150" height="16" rx="2"/>
+<g class="v-in" style="--d:2.48s"><text class="dg-xs" x="680" y="215.0">run 2</text></g>
+<path class="dg-line v-draw" pathLength="1" style="--d:2.00s" d="M480 150 H512" marker-end="url(#esa)"/>
+<g class="v-in" style="--d:3.20s"><text class="dg-sm-b" x="770" y="26">merge pass 2</text></g>
+<rect class="dg-ok v-in" style="--d:3.30s" x="770" y="42" width="150" height="16" rx="2"/>
+<rect class="dg-ok v-in" style="--d:3.30s" x="770" y="60" width="150" height="16" rx="2"/>
+<rect class="dg-ok v-in" style="--d:3.30s" x="770" y="78" width="150" height="16" rx="2"/>
+<rect class="dg-ok v-in" style="--d:3.30s" x="770" y="96" width="150" height="16" rx="2"/>
+<rect class="dg-ok v-in" style="--d:3.30s" x="770" y="114" width="150" height="16" rx="2"/>
+<rect class="dg-ok v-in" style="--d:3.30s" x="770" y="132" width="150" height="16" rx="2"/>
+<rect class="dg-ok v-in" style="--d:3.30s" x="770" y="150" width="150" height="16" rx="2"/>
+<rect class="dg-ok v-in" style="--d:3.30s" x="770" y="168" width="150" height="16" rx="2"/>
+<rect class="dg-ok v-in" style="--d:3.30s" x="770" y="186" width="150" height="16" rx="2"/>
+<rect class="dg-ok v-in" style="--d:3.30s" x="770" y="204" width="150" height="16" rx="2"/>
+<rect class="dg-ok v-in" style="--d:3.30s" x="770" y="222" width="150" height="16" rx="2"/>
+<rect class="dg-ok v-in" style="--d:3.30s" x="770" y="240" width="150" height="16" rx="2"/>
+<g class="v-in" style="--d:3.40s"><text class="dg-xs" x="930" y="155.0">sorted</text></g>
+<path class="dg-line v-draw" pathLength="1" style="--d:3.00s" d="M730 150 H762" marker-end="url(#esa)"/>
+<g class="v-in" style="--d:3.60s"><text class="dg-sm" x="20" y="318">b = 12 pages, M = 3 pages: ⌈12 / 3⌉ = 4 runs, then ⌈log₂ 4⌉ = 2 merge passes, merging M − 1 = 2 runs at a time.</text><text class="dg-sm" x="20" y="346">Every pass reads and writes all 12 pages: 12 × (2 × 2 + 1) = 60 page transfers, not counting the final write.</text></g>
+</svg>
+      <figcaption><strong>Figure 11.2.</strong> External sort-merge: sort memory-sized runs, then merge M − 1 runs at a time until one is left.</figcaption>
+    </figure>
+  </div>
+  
+</section>
+
+<!-- 9 ─────────────────────────────────────────────── sorting in PostgreSQL -->
+<section class="slide" id="s9">
+  <h2>Sorting in PostgreSQL</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <pre class="code">-- big_student by name: 76 pages
+Sort Method: quicksort  Memory: 736kB
+
+-- the same, with work_mem = '64kB'
+Sort Method: external merge  Disk: 448kB
+Buffers: shared hit=76,
+         temp read=108 written=117
+
+-- big_takes by grade, year, LIMIT 5
+Sort Method: top-N heapsort</pre>
+      <ul>
+        <li>Fits in <code>work_mem</code> (4 MB by default): <strong>quicksort</strong> in memory.</li>
+        <li>Doesn't fit: <strong>external merge</strong>, runs in temporary files. <code>temp read</code> and <code>written</code> count their pages.</li>
+        <li>With a LIMIT: <strong>top-N heapsort</strong> keeps only the best N rows as it reads.</li>
+        <li>An index in the right order: <strong>no sort at all</strong> (week 10).</li>
+      </ul>
+    </div>
+    <p><a class="try" href="playground.html#sort">Playground examples 2.1 and 2.2</a></p>
+  </div>
+  
+</section>
+
+<!-- 10 ────────────────────────────────────────────── section -->
+<section class="slide slide--section" id="s10">
+  <h2>Joins</h2>
+  <p>The same result, three very different amounts of work.</p>
+  
+</section>
+
+<!-- 11 ────────────────────────────────────────────── nested loops -->
+<section class="slide" id="s11">
+  <h2>Nested loop and block nested loop</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <pre class="code">for each row r in big_student:
+    for each row s in big_takes:
+        if r.student_no = s.student_no:
+            output (r, s)</pre>
+      <ul>
+        <li>Works for any join condition, even <code>&lt;</code> or <code>LIKE</code>.</li>
+        <li>Row at a time: big_takes is read once per student. <em>n</em><sub>r</sub> × <em>b</em><sub>s</sub> + <em>b</em><sub>r</sub> = 10,000 × 736 + 76 = <strong>7,360,076</strong> pages.</li>
+        <li><strong>Block</strong> nested loop: read big_takes once per <em>page</em> of students instead. <em>b</em><sub>r</sub> × <em>b</em><sub>s</sub> + <em>b</em><sub>r</sub> = <strong>56,012</strong> pages.</li>
+        <li>With <em>M</em> pages of memory, hold <em>M</em> − 2 student pages at a time: ⌈<em>b</em><sub>r</sub> / (<em>M</em> − 2)⌉ × <em>b</em><sub>s</sub> + <em>b</em><sub>r</sub>. If all of big_student fits: 812.</li>
+      </ul>
+    </div>
+    <p><a class="try" href="playground.html#join">The join explorer, in the playground</a></p>
+  </div>
+  
+</section>
+
+<!-- 12 ────────────────────────────────────────────── indexed nested loop -->
+<section class="slide" id="s12">
+  <h2>Indexed nested loop: great for a few rows, terrible for many</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div>
+        <p>For each outer row, look up its matches through an index on the inner table. Cost: <em>b</em><sub>r</sub> + <em>n</em><sub>r</sub> × <em>c</em>, where <em>c</em> is one lookup.</p>
+        <div class="fig-scroll" tabindex="0" role="region" aria-label="Indexed nested loop, measured">
+        <table class="tbl tbl--compact">
+          <caption>Indexed nested loop, measured</caption>
+          <thead><tr><th scope="col">Outer rows</th><th scope="col" class="num">Lookups</th><th scope="col" class="num">Pages</th></tr></thead>
+          <tbody>
+            <tr><td>one student, 4321</td><td class="num">1</td><td class="num">15</td></tr>
+            <tr><td>20 students named Sage Chen</td><td class="num">20</td><td class="num">316</td></tr>
+            <tr><td>all of <code>big_takes</code>, Music students inside</td><td class="num">100,000</td><td class="num">300,736</td></tr>
+          </tbody>
+        </table>
+        </div>
+      </div>
+      <ul>
+        <li>One student: 3 pages for the student, 12 for their enrollments. Nothing else is close.</li>
+        <li>100,000 lookups of 3 pages each: <em>n</em><sub>r</sub> × <em>c</em> grows with every outer row.</li>
+        <li>So "is there an index?" is the wrong question. "How many outer rows?" is the right one.</li>
+      </ul>
+    </div>
+    <p><a class="try" href="playground.html#join">Playground examples 3.3 and 3.4</a></p>
+  </div>
+  
+</section>
+
+<!-- 13 ────────────────────────────────────────────── merge join -->
+<section class="slide" id="s13">
+  <h2>Merge join: sort both, then zip them together</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <pre class="code">Merge Join            10,000 rows
+  Sort                 1,000 rows
+    Seq Scan on big_student
+  Sort                99,971 rows
+    Seq Scan on big_takes</pre>
+      <ul>
+        <li>With both inputs sorted on the join key, one pass down each finds every match: <em>b</em><sub>r</sub> + <em>b</em><sub>s</sub> = 812 pages.</li>
+        <li>Plus the sorts, unless an index or an earlier step already gives the order.</li>
+        <li>Only for equality joins (and a few range conditions).</li>
+        <li>It stops when either side runs out: here it never asked for the last 29 enrollments.</li>
+      </ul>
+    </div>
+    <p><a class="try" href="playground.html#join">Playground example 3.2</a></p>
+  </div>
+  
+</section>
+
+<!-- 14 ────────────────────────────────────────────── hash join -->
+<section class="slide" id="s14">
+  <h2>Hash join: what PostgreSQL chose</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:1000px">
+<svg style="--dg-k:1" viewBox="0 0 1000 340" role="img" aria-labelledby="hjt hjd">
+<title id="hjt">A hash join: build a hash table on the smaller input, then probe it</title>
+<desc id="hjd">Left: the build input, four students, each hashed on student_no mod 3 into a bucket of an in-memory hash table: bucket 0 holds Quinn (9) and Kai (3); bucket 1 is empty; bucket 2 holds Avery (5) and Sage (8). Right: the probe input, the enrollments, read one at a time. The enrollment 3, CS-190 hashes to bucket 0 and is compared with only Quinn and Kai; it matches Kai and the pair is returned. The enrollment 7, MA-201 hashes to bucket 1, which is empty, so it is dropped with no comparison. Each input is read once.</desc>
+<defs><marker id="hja" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#0e5a6b"/></marker></defs>
+<g class="v-in" style="--d:0.10s"><text class="dg-sm-b" x="20" y="26">1. build: the smaller input</text></g>
+<g class="v-in" style="--d:0.20s"><rect class="dg-box" x="20" y="42" width="150" height="32" rx="3"/><text class="dg-xs dg-mono" x="32" y="63">5  Avery</text></g>
+<g class="v-in" style="--d:0.32s"><rect class="dg-box" x="20" y="82" width="150" height="32" rx="3"/><text class="dg-xs dg-mono" x="32" y="103">9  Quinn</text></g>
+<g class="v-in" style="--d:0.44s"><rect class="dg-box" x="20" y="122" width="150" height="32" rx="3"/><text class="dg-xs dg-mono" x="32" y="143">3  Kai</text></g>
+<g class="v-in" style="--d:0.56s"><rect class="dg-box" x="20" y="162" width="150" height="32" rx="3"/><text class="dg-xs dg-mono" x="32" y="183">8  Sage</text></g>
+<g class="v-in" style="--d:0.90s"><text class="dg-xs" x="250" y="92" text-anchor="middle">hash on</text><text class="dg-xs" x="250" y="110" text-anchor="middle">student_no mod 3</text></g>
+<path class="dg-line v-draw" pathLength="1" style="--d:0.90s" d="M176 124 H322" marker-end="url(#hja)"/>
+<g class="v-in" style="--d:1.20s"><text class="dg-sm-b" x="330" y="26">hash table, in memory</text></g>
+<g class="v-in" style="--d:1.30s"><rect class="dg-ok" x="330" y="42" width="260" height="42" rx="3"/><text class="dg-xs" x="342" y="68">bucket 0</text><text class="dg-xs dg-mono" x="430" y="68">Quinn 9, Kai 3</text></g>
+<g class="v-in" style="--d:1.45s"><rect class="dg-box-t" x="330" y="94" width="260" height="42" rx="3"/><text class="dg-xs" x="342" y="120">bucket 1</text><text class="dg-xs dg-mono" x="430" y="120">empty</text></g>
+<g class="v-in" style="--d:1.60s"><rect class="dg-box-t" x="330" y="146" width="260" height="42" rx="3"/><text class="dg-xs" x="342" y="172">bucket 2</text><text class="dg-xs dg-mono" x="430" y="172">Avery 5, Sage 8</text></g>
+<g class="v-in" style="--d:2.00s"><text class="dg-sm-b" x="680" y="26">2. probe: each enrollment, once</text></g>
+<g class="v-in" style="--d:2.20s"><rect class="dg-ok" x="680" y="42" width="140" height="32" rx="3"/><text class="dg-xs dg-mono" x="692" y="63">3  CS-190</text><text class="dg-xs dg-txt-ok" x="680" y="96">→ bucket 0: matches Kai ✓</text></g>
+<g class="v-in" style="--d:2.80s"><rect class="dg-box" x="680" y="112" width="140" height="32" rx="3"/><text class="dg-xs dg-mono" x="692" y="133">7  MA-201</text><text class="dg-xs" x="680" y="166">→ bucket 1: empty, dropped</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:2.40s" d="M676 58 C640 58, 630 62, 596 62" marker-end="url(#hja)"/>
+<g class="v-in" style="--d:3.40s"><text class="dg-sm" x="20" y="260">Each input is read once: 76 + 736 = 812 pages for the real tables. The build side is read whole before the first probe.</text><text class="dg-sm" x="20" y="290">If the hash table does not fit in work_mem, both inputs are first split into partitions on disk (batches),</text><text class="dg-sm" x="20" y="316">and each pair of partitions is joined in turn: about three times as many page reads and writes.</text></g>
+</svg>
+      <figcaption><strong>Figure 11.3.</strong> A hash join reads each input once. Only rows in the same bucket are ever compared.</figcaption>
+    </figure>
+    <p><a class="try" href="playground.html#join">Playground examples 3.1 and 3.5</a></p>
+  </div>
+  
+</section>
+
+<!-- 15 ────────────────────────────────────────────── join comparison -->
+<section class="slide" id="s15">
+  <h2>Five ways, one join</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:1000px">
+<svg style="--dg-k:1" viewBox="0 0 1000 330" role="img" aria-labelledby="jct jcd">
+<title id="jct">Pages read to join big_student and big_takes, five ways</title>
+<desc id="jcd">A bar chart on a logarithmic scale: each grid line is ten times the one before. Nested loop, one student at a time, scanning all of big_takes for each: 7,360,076 pages, from the formula. Indexed nested loop, with big_takes outside and three pages of big_student_pkey for each of its 100,000 rows: 300,736 pages, measured. Block nested loop, one student page at a time: 56,012 pages, from the formula. Merge join: 812 pages read from the tables, measured, plus the work of sorting both. Hash join: 812 pages, measured, the plan PostgreSQL chose.</desc>
+<path class="dg-line-q" d="M250 34 V262"/>
+<text class="dg-xs" x="250.0" y="284" text-anchor="middle">10⁰</text>
+<path class="dg-line-q" d="M330 34 V262"/>
+<text class="dg-xs" x="330.0" y="284" text-anchor="middle">10¹</text>
+<path class="dg-line-q" d="M410 34 V262"/>
+<text class="dg-xs" x="410.0" y="284" text-anchor="middle">10²</text>
+<path class="dg-line-q" d="M490 34 V262"/>
+<text class="dg-xs" x="490.0" y="284" text-anchor="middle">10³</text>
+<path class="dg-line-q" d="M570 34 V262"/>
+<text class="dg-xs" x="570.0" y="284" text-anchor="middle">10⁴</text>
+<path class="dg-line-q" d="M650 34 V262"/>
+<text class="dg-xs" x="650.0" y="284" text-anchor="middle">10⁵</text>
+<path class="dg-line-q" d="M730 34 V262"/>
+<text class="dg-xs" x="730.0" y="284" text-anchor="middle">10⁶</text>
+<path class="dg-line-q" d="M810 34 V262"/>
+<text class="dg-xs" x="810.0" y="284" text-anchor="middle">10⁷</text>
+<text class="dg-xs" x="250" y="312">pages read (each line is ten times the last)</text>
+<g class="v-in" style="--d:0.20s"><text class="dg-sm-b" x="10" y="55">nested loop</text><text class="dg-xs" x="10" y="74">n(r) × b(s) + b(r)</text></g>
+<rect class="dg-bar-a v-grow" style="--d:0.30s" x="250" y="42" width="549" height="26" rx="2"/>
+<g class="v-in" style="--d:0.60s"><text class="dg-xs" x="807.3505839101543" y="61">7,360,076 (formula)</text></g>
+<g class="v-in" style="--d:0.60s"><text class="dg-sm-b" x="10" y="100">indexed nested loop</text><text class="dg-xs" x="10" y="119">b(s) + n(s) × 3</text></g>
+<rect class="dg-bar v-grow" style="--d:0.70s" x="250" y="87" width="438" height="26" rx="2"/>
+<g class="v-in" style="--d:1.00s"><text class="dg-xs" x="696.2548335205471" y="106">300,736 (measured)</text></g>
+<g class="v-in" style="--d:1.00s"><text class="dg-sm-b" x="10" y="145">block nested loop</text><text class="dg-xs" x="10" y="164">b(r) × b(s) + b(r)</text></g>
+<rect class="dg-bar-a v-grow" style="--d:1.10s" x="250" y="132" width="380" height="26" rx="2"/>
+<g class="v-in" style="--d:1.40s"><text class="dg-xs" x="637.8624864111874" y="151">56,012 (formula)</text></g>
+<g class="v-in" style="--d:1.40s"><text class="dg-sm-b" x="10" y="190">merge join</text><text class="dg-xs" x="10" y="209">b(r) + b(s), plus two sorts</text></g>
+<rect class="dg-bar v-grow" style="--d:1.50s" x="250" y="177" width="233" height="26" rx="2"/>
+<g class="v-in" style="--d:1.80s"><text class="dg-xs" x="490.764482339294" y="196">812 (measured)</text></g>
+<g class="v-in" style="--d:1.80s"><text class="dg-sm-b" x="10" y="235">hash join</text><text class="dg-xs" x="10" y="254">b(r) + b(s)</text></g>
+<rect class="dg-bar v-grow" style="--d:1.90s" x="250" y="222" width="233" height="26" rx="2"/>
+<g class="v-in" style="--d:2.20s"><text class="dg-xs" x="490.764482339294" y="241">812 (measured)</text></g>
+</svg>
+      <figcaption><strong>Figure 11.4.</strong> Pages to join all of <code>big_student</code> with all of <code>big_takes</code>. Teal bars were measured in the playground; cardinal bars come from the formulas.</figcaption>
+    </figure>
+    <ul>
+      <li>Many rows on both sides, equality condition: <strong>hash join</strong>. Few outer rows and an index: <strong>indexed nested loop</strong>. Inputs already sorted: <strong>merge join</strong>.</li>
+    </ul>
+  </div>
+  
+</section>
+
+<!-- 16 ────────────────────────────────────────────── section -->
+<section class="slide slide--section" id="s16">
+  <h2>Other operations, and whole plans</h2>
+  <p>Grouping, duplicates, and rows handed up one at a time.</p>
+  
+</section>
+
+<!-- 17 ────────────────────────────────────────────── other operations -->
+<section class="slide" id="s17">
+  <h2>Grouping, duplicates and NOT EXISTS reuse the same two ideas</h2>
+  <div class="slide-main">
+    <div class="fig-scroll" tabindex="0" role="region" aria-label="Other operations and their plan nodes">
+    <table class="tbl tbl--compact">
+      <caption>Other operations and their plan nodes</caption>
+      <thead><tr><th scope="col">SQL</th><th scope="col">By hashing</th><th scope="col">By sorting</th></tr></thead>
+      <tbody>
+        <tr><td><code>GROUP BY</code>, aggregates</td><td><code>HashAggregate</code></td><td><code>GroupAggregate</code> over a <code>Sort</code></td></tr>
+        <tr><td><code>DISTINCT</code>, <code>UNION</code></td><td><code>HashAggregate</code>, <code>HashSetOp</code></td><td><code>Unique</code> over a <code>Sort</code></td></tr>
+        <tr><td><code>NOT EXISTS</code>, <code>EXCEPT</code></td><td><code>Hash Anti Join</code></td><td><code>Merge Anti Join</code></td></tr>
+        <tr><td><code>LEFT JOIN</code></td><td><code>Hash Left Join</code></td><td><code>Merge Left Join</code></td></tr>
+      </tbody>
+    </table>
+    </div>
+    <ul>
+      <li>Grouping is a join of a table with itself on the group key: bring equal values together, by hash or by order.</li>
+      <li><code>SELECT course_id, count(*) FROM big_takes GROUP BY course_id</code>: 10 groups, so a hash table of 10 entries.</li>
+    </ul>
+    <p><a class="try" href="playground.html#other">Playground examples 4.1 and 4.2</a></p>
+  </div>
+  
+</section>
+
+<!-- 18 ────────────────────────────────────────────── materialize vs pipeline -->
+<section class="slide" id="s18">
+  <h2>Materialize, or pipeline?</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div>
+        <h3>Materialization</h3>
+        <ul>
+          <li>Run each step to the end and write its whole result to a temporary table; the next step reads that.</li>
+          <li>Simple, but every intermediate result is written and read again.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Pipelining</h3>
+        <ul>
+          <li>Each step hands its rows straight to the next, as they are produced.</li>
+          <li>No temporary tables, and the first rows come out early.</li>
+          <li>PostgreSQL pipelines wherever it can. A <code>Materialize</code> node in a plan marks the exceptions.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="callout">
+      <span class="mark" aria-hidden="true">→</span>
+      <p>Each plan node is an <strong>iterator</strong> with three operations: <code>open()</code>, <code>next()</code>, which returns one row, and <code>close()</code>. The top node calls <code>next()</code> on its children, and so on down.</p>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 19 ────────────────────────────────────────────── pipeline and LIMIT -->
+<section class="slide" id="s19">
+  <h2>Rows on demand, and the steps that block</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:1000px">
+<svg style="--dg-k:1" viewBox="0 0 1000 360" role="img" aria-labelledby="plt pld">
+<title id="plt">Rows on demand: a LIMIT over a scan, and over a sort</title>
+<desc id="pld">Two plan trees side by side, read from the top. Left: Limit 5 over Seq Scan on big_takes. The limit asks the scan for the next row five times, then stops asking; the scan returns 5 rows and reads 2 pages. Right: Limit 5 over Sort over Seq Scan. The limit asks the sort for its first row, but the sort cannot answer until it has seen every row, so it asks the scan 100,000 times and the scan reads all 736 pages. The scan is pipelined in both trees; the sort is a blocking step.</desc>
+<defs><marker id="pla" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#0e5a6b"/></marker></defs>
+<g class="v-in" style="--d:0.10s"><rect class="dg-box-t" x="40" y="50" width="200" height="44" rx="4"/><text class="dg-sm-b" x="140" y="78" text-anchor="middle">Limit 5</text></g>
+<g class="v-in" style="--d:0.40s"><rect class="dg-box" x="40" y="140" width="200" height="44" rx="4"/><text class="dg-sm-b" x="140" y="168" text-anchor="middle">Seq Scan</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.40s" d="M110 94 V136" marker-end="url(#pla)"/>
+<path class="dg-line v-draw" pathLength="1" style="--d:1.60s" d="M170 136 V96" marker-end="url(#pla)"/>
+<g class="v-in" style="--d:1.70s"><text class="dg-xs" x="252" y="116">asked 5 times; 2 pages read</text></g>
+<g class="v-in" style="--d:1.30s"><rect class="dg-box-t" x="530" y="50" width="200" height="44" rx="4"/><text class="dg-sm-b" x="630" y="78" text-anchor="middle">Limit 5</text></g>
+<g class="v-in" style="--d:1.60s"><rect class="dg-warn" x="530" y="140" width="200" height="44" rx="4"/><text class="dg-sm-b" x="630" y="168" text-anchor="middle">Sort</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:2.60s" d="M600 94 V136" marker-end="url(#pla)"/>
+<path class="dg-line v-draw" pathLength="1" style="--d:2.80s" d="M660 136 V96" marker-end="url(#pla)"/>
+<g class="v-in" style="--d:2.90s"><text class="dg-xs" x="742" y="116">first row only after all are in</text></g>
+<g class="v-in" style="--d:1.90s"><rect class="dg-box" x="530" y="230" width="200" height="44" rx="4"/><text class="dg-sm-b" x="630" y="258" text-anchor="middle">Seq Scan</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:3.00s" d="M600 184 V226" marker-end="url(#pla)"/>
+<path class="dg-line v-draw" pathLength="1" style="--d:3.20s" d="M660 226 V186" marker-end="url(#pla)"/>
+<g class="v-in" style="--d:3.30s"><text class="dg-xs" x="742" y="206">asked 100,000 times; 736 pages</text></g>
+<g class="v-in" style="--d:3.60s"><text class="dg-xs" x="40" y="316">teal arrow: next() asks for a row; black arrow: a row comes back</text><text class="dg-sm" x="40" y="344">A sort, and the build side of a hash join, must take in every row first: they block the pipeline.</text></g>
+</svg>
+      <figcaption><strong>Figure 11.5.</strong> The same scan, under two different parents. Under the LIMIT it stops after 5 rows; under the sort it has to read the whole table.</figcaption>
+    </figure>
+    <p><a class="try" href="playground.html#pipe">Playground examples 5.1 and 5.2</a></p>
+  </div>
+  
+</section>
+
+<!-- 20 ────────────────────────────────────────────── reading a plan -->
+<section class="slide" id="s20">
+  <h2>Reading a plan: from the inside out</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <pre class="code">EXPLAIN (ANALYZE, BUFFERS, COSTS OFF, TIMING OFF)
+SELECT s.name, t.course_id
+FROM big_student s
+JOIN big_takes t ON t.student_no = s.student_no
+WHERE s.dept_name = 'Music';
+
+Hash Join (actual rows=10000 loops=1)
+  Hash Cond: (t.student_no = s.student_no)
+  Buffers: shared hit=812
+  -> Seq Scan on big_takes t (rows=100000)
+       Buffers: shared hit=736
+  -> Hash (rows=1000)
+       Buckets: 1024  Batches: 1  Memory Usage: 46kB
+       -> Seq Scan on big_student s (rows=1000)
+            Filter: (dept_name = 'Music')
+            Rows Removed by Filter: 9000
+            Buffers: shared hit=76</pre>
+      <ol>
+        <li>Start at the deepest line: scan <code>big_student</code>, keep 1,000 Music students of 10,000 (76 pages).</li>
+        <li>Build a hash table of them: one batch, 46 kB, fits in memory.</li>
+        <li>Scan all of <code>big_takes</code>, probing with each row (736 pages).</li>
+        <li>10,000 matches come out of the top. Buffers at each line include the lines below it: 76 + 736 = 812.</li>
+      </ol>
+    </div>
+    <p><a class="try" href="playground.html#join">Playground example 3.1</a></p>
+  </div>
+  
+</section>
+
+<!-- 21 ────────────────────────────────────────────── worked example -->
+<section class="slide" id="s21">
+  <h2>Worked example: one query, two plans</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div>
+        <h3>All Music students' enrollments</h3>
+        <ul>
+          <li>1,000 outer rows: an index lookup for each would cost about 1,000 × 12 pages.</li>
+          <li>Hash join, 812 pages, with or without an index on <code>big_takes (student_no)</code>.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Student 4321's enrollments</h3>
+        <ul>
+          <li>One outer row. Without an index on <code>big_takes (student_no)</code>: nested loop, 739 pages (3 + 736).</li>
+          <li>With the index: nested loop, 15 pages (3 + 12).</li>
+        </ul>
+      </div>
+    </div>
+    <div class="callout">
+      <span class="mark" aria-hidden="true">→</span>
+      <p>The index on <code>big_takes (student_no)</code> helps the second query fifty times over and the first not at all. Whether an index pays depends on the queries your application runs.</p>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 22 ────────────────────────────────────────────── takeaways -->
+<section class="slide" id="s22">
+  <h2>Takeaways</h2>
+  <div class="slide-main">
+    <ol class="steps">
+      <li><span class="n" aria-hidden="true">1</span><div><strong>A plan is a tree of algorithms.</strong><p>Each node is one, with a cost in pages you can estimate.</p></div></li>
+      <li><span class="n" aria-hidden="true">2</span><div><strong>Memory decides how to sort.</strong><p>In memory, a quicksort; beyond it, runs on disk and merge passes.</p></div></li>
+      <li><span class="n" aria-hidden="true">3</span><div><strong>Three join families.</strong><p>Nested loop for few outer rows, hash for many, merge when sorted.</p></div></li>
+      <li><span class="n" aria-hidden="true">4</span><div><strong>Hashing and sorting do the rest.</strong><p>GROUP BY, DISTINCT and NOT EXISTS reuse the same two ideas.</p></div></li>
+      <li><span class="n" aria-hidden="true">5</span><div><strong>Rows flow up on demand.</strong><p>A LIMIT can stop a scan early; a sort or a hash build blocks it.</p></div></li>
+    </ol>
+  </div>
+  
+</section>
+
+<!-- 23 ────────────────────────────────────────────── this week -->
+<section class="slide" id="s23">
+  <h2>This week's work</h2>
+  <div class="slide-main">
+    <div class="week-work">
+      <div>
+        <h3>Read</h3>
+        <ul>
+          <li>Chapter 15 (query processing), sections 15.1 to 15.7.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Do</h3>
+        <ul>
+          <li>The <a href="playground.html">week 11 playground</a>: the join explorer and 8 exercises.</li>
+          <li>Quiz 11 in Brightspace.</li>
+          <li><a href="lab7.html">Lab 7</a>: predict the cost of each join, then measure it.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Due</h3>
+        <ul>
+          <li><span class="due">Sunday, April 4, 11:59 p.m. CT</span>: <a href="../../project/milestone3.html">project milestone 3</a>. CS 5200: name your paper in its notes.</li>
+          <li><span class="due">Sunday, April 11, 11:59 p.m. CT</span>: Lab 7.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="callout" style="margin-top:auto">
+      <span class="mark" aria-hidden="true">→</span>
+      <p><strong>Next week:</strong> how the optimizer chooses. Equivalent expressions, row estimates from statistics, join order, and what happens when an estimate is wrong.</p>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 24 ────────────────────────────────────────────── resources -->
+<section class="slide" id="s24">
+  <h2>Free resources</h2>
+  <div class="slide-main">
+    <ul class="resources">
+      <li><a href="https://www.postgresql.org/docs/current/using-explain.html">Using EXPLAIN</a><span class="src">PostgreSQL documentation</span><p>Reading plans, EXPLAIN ANALYZE, and the BUFFERS option, with examples.</p></li>
+      <li><a href="https://www.postgresql.org/docs/current/runtime-config-query.html">Query planning settings</a><span class="src">PostgreSQL documentation</span><p>The enable_ settings used in the playground, and what each one turns off.</p></li>
+      <li><a href="https://www.postgresql.org/docs/current/runtime-config-resource.html">Resource consumption</a><span class="src">PostgreSQL documentation</span><p>work_mem, and why a sort or a hash spills to disk.</p></li>
+      <li><a href="playground.html">Week 11 playground</a><span class="src">this course</span><p>The join explorer, and every algorithm on these slides, run on 100,000 rows in your browser.</p></li>
+    </ul>
+  </div>
+  
+</section>
+
+</main>
+</div>
+<script src="../../assets/deck.js"></script>
+</body>
+</html>

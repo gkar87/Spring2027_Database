@@ -1,0 +1,61 @@
+CS 4600/5200 Lab 2: answers
+===========================
+
+Name:
+Student ID:
+Course (CS 4600 or CS 5200):
+Section (online or face to face):
+
+Save this file as plain text. Your queries go in lab2.sql. Here, write the
+number of rows each query returned, and answer the written questions in
+your own words. Leave the headings as they are.
+
+
+Part B: row counts
+------------------
+
+Q1  rows:
+Q2  rows:
+Q3  rows:
+Q4  rows:
+Q5  rows:
+Q6  rows:
+Q7  rows:
+Q8  rows:
+Q9  rows:
+Q10 rows:
+
+
+Part C: short answers
+---------------------
+
+W1. Why is Emery Walsh missing from the NOT IN query's result?
+    (2 to 4 sentences)
+
+Answer:
+
+
+W2. The two LEFT JOIN queries: give each row count, then explain why moving
+    t.year = 2027 from ON to WHERE changes the answer. (2 to 4 sentences)
+
+First query rows:
+Second query rows:
+Answer:
+
+
+Part D: CS 5200 only (CS 4600 students may leave this blank)
+------------------------------------------------------------
+
+Q11 rows:
+Q12 rows:
+
+Q12. Why would WHERE id NOT IN (SELECT id FROM takes) also give the right
+     answer, when the NOT IN in W1 did not? (1 or 2 sentences)
+
+Answer:
+
+
+AI use. Did you use a generative AI tool for this lab? If yes, say which
+tool, what you asked it, and what you kept. If no, write "None".
+
+Answer:

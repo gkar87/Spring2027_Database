@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lab 7 — Predict the Cost, Then Measure It · CS 4600/5200</title>
+<meta name="description" content="CS 4600/5200 Lab 7: predict the pages each join algorithm reads with the textbook's cost formulas, then measure them with EXPLAIN ANALYZE on a 100,000-row table: hash, merge and indexed nested loop joins, sorts that spill to disk, LIMIT and pipelining, grouping and an anti join.">
+<link rel="stylesheet" href="../../assets/course.css">
+<link rel="stylesheet" href="../../assets/db.css">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to the lab</a>
+
+<div class="doc">
+<header class="doc-masthead">
+  <p class="inst"><span>CS 4600/5200 · Database Theory and Applications</span><span>Week 11</span><span><a href="../../index.html">Course home</a></span></p>
+  <h1>Lab 7: Predict the cost, then measure it</h1>
+  <p class="tagline">The registrar's reports slow down every term as the tables grow. Before anyone buys a bigger server, you work out on paper what each way of running the main join should cost, then make PostgreSQL run it each way and count the pages it really reads.</p>
+</header>
+
+<dl class="facts">
+  <div><dt>Due</dt><dd>Sunday, April 11, 11:59 p.m. CT</dd></div>
+  <div><dt>Time</dt><dd>About 2 hours, half of it in class</dd></div>
+  <div><dt>Submit</dt><dd>One zip file, uploaded to Brightspace</dd></div>
+  <div><dt>Worth</dt><dd>One of the labs (labs are 25% of the grade)</dd></div>
+</dl>
+
+<nav class="toc" aria-labelledby="toc-h">
+  <h2 id="toc-h">On this page</h2>
+  <ol>
+    <li><a href="#files">Files for this lab</a></li>
+    <li><a href="#read">Reading a plan's page counts</a></li>
+    <li><a href="#a">Part A: the join explorer (20 minutes)</a></li>
+    <li><a href="#p">Part B: predict, then measure</a></li>
+    <li><a href="#c">Part C: three short answers</a></li>
+    <li><a href="#d">Part D: CS 5200 only</a></li>
+    <li><a href="#submit">What to submit and how it is graded</a></li>
+    <li><a href="#help">If something goes wrong</a></li>
+  </ol>
+</nav>
+
+<main id="main">
+
+<section id="files" aria-labelledby="files-h">
+  <h2 id="files-h">Files for this lab</h2>
+  <p>Put all four files in one folder, for example <code>Documents/cs5200/lab7</code>:</p>
+  <ul>
+    <li><a href="university.sql" download>university.sql</a>: the university database, the same as in weeks 5 to 10.</li>
+    <li><a href="big_tables.sql" download>big_tables.sql</a>: the two generated tables from weeks 10 and 11, <code>big_student</code> (10,000 rows) and <code>big_takes</code> (100,000 rows).</li>
+    <li><a href="lab7.sql" download>lab7.sql</a>: the starter file for your SQL, with one comment for each question.</li>
+    <li><a href="lab7_answers.txt" download>lab7_answers.txt</a>: the starter file for your predictions, the numbers you measured and your written answers.</li>
+  </ul>
+  <p>The first lines of <code>lab7.sql</code> reload both files, so every run starts from the same data with no extra indexes. Run the whole file each time:</p>
+<pre>psql -d university -e -f lab7.sql &gt; lab7_output.txt 2&gt;&amp;1</pre>
+  <p>On Windows, add <code>-U postgres</code> after <code>psql</code>. In Colab, start the line with <code>!</code>. Loading the big tables takes a few seconds.</p>
+</section>
+
+<section id="read" aria-labelledby="read-h">
+  <h2 id="read-h">Reading a plan's page counts</h2>
+  <p>Every EXPLAIN in this lab uses the same options, so your output and the grader's can be compared line by line:</p>
+<pre>EXPLAIN (ANALYZE, BUFFERS, COSTS OFF, TIMING OFF)
+SELECT …;</pre>
+  <ul>
+    <li><code>ANALYZE</code> runs the query. <code>BUFFERS</code> adds a <code>Buffers:</code> line under each step.</li>
+    <li>A step's pages are its <code>shared hit</code> plus its <code>read</code>, if any. They include the pages of the steps indented under it, so the top step's count is the whole query's.</li>
+    <li><code>temp read</code> and <code>temp written</code> count pages of temporary files, used when a sort or a hash does not fit in memory.</li>
+    <li>A line <code>Buffers:</code> under <code>Planning:</code> is the planner reading the catalog. Leave it out.</li>
+  </ul>
+  <p>Questions that change a setting with <code>SET</code> end with <code>RESET ALL;</code>, so the next question starts from the defaults. Your PostgreSQL version may pick a slightly different inner step than the slides show; write down what <em>your</em> output says, and the written answers explain it.</p>
+</section>
+
+<section id="a" aria-labelledby="a-h">
+  <h2 id="a-h">Part A: the join explorer (20 minutes)</h2>
+  <p>Open the <a href="playground.html#join">week 11 playground</a> and its join explorer. Run each of the four algorithms to the end and write its comparisons and page reads in the answers file. Then solve the playground's exercises 1 to 4; they are not graded, but they are Q2 to Q4 on a smaller join.</p>
+</section>
+
+<section id="p" aria-labelledby="p-h">
+  <h2 id="p-h">Part B: predict, then measure</h2>
+  <p><strong>Predict first.</strong> Before you run anything, fill in P1 to P4 in the answers file with the formulas from slides 11 to 14, using b<sub>r</sub> = 76, n<sub>r</sub> = 10,000 for <code>big_student</code>, b<sub>s</sub> = 736, n<sub>s</sub> = 100,000 for <code>big_takes</code>, and c = 3 pages for one primary key lookup. A wrong prediction loses nothing, as long as W1 explains it.</p>
+  <p>Then write each statement in <code>lab7.sql</code> under its comment, run the whole file, and copy the numbers into the answers file.</p>
+  <ol class="qs">
+    <li><p><strong>Q1.</strong> One query on <code>pg_class</code>: <code>relname</code>, pages (<code>pg_relation_size(oid) / 8192</code>) and rows (<code>reltuples</code>) for <code>big_student</code>, <code>big_takes</code>, <code>big_student_pkey</code> and <code>big_takes_pkey</code>.</p></li>
+    <li><p><strong>Q2.</strong> EXPLAIN the join of every student with every enrollment, settings as they are: <code>SELECT count(*) FROM big_student s JOIN big_takes t ON t.student_no = s.student_no</code>. Record the join method and the pages at the top step.</p></li>
+    <li><p><strong>Q3.</strong> The same join as a merge join: <code>SET enable_hashjoin = off;</code> and <code>SET enable_nestloop = off;</code>, the EXPLAIN, then <code>RESET ALL;</code>. How did <code>big_student</code> arrive in <code>student_no</code> order: a Sort, or an index scan?</p></li>
+    <li><p><strong>Q4.</strong> The same join as an indexed nested loop: turn off <code>enable_hashjoin</code>, <code>enable_mergejoin</code> and <code>enable_memoize</code>, EXPLAIN, then <code>RESET ALL;</code>. Record how many times the inner step ran (<code>loops</code>).</p></li>
+    <li><p><strong>Q5.</strong> <code>SET work_mem = '64kB';</code>, then EXPLAIN <code>SELECT * FROM big_takes ORDER BY course_id, year</code>, then <code>RESET ALL;</code>. Record the sort method and the temp pages read and written.</p></li>
+    <li><p><strong>Q6.</strong> The same sort with the default <code>work_mem</code>, then the same with <code>LIMIT 10</code>. Two EXPLAINs.</p></li>
+    <li><p><strong>Q7.</strong> Three EXPLAINs of the enrollments with grade <code>'F'</code>, each with <code>LIMIT 5</code>: (a) in no order, (b) <code>ORDER BY year</code>, (c) <code>ORDER BY reg_id</code>.</p></li>
+    <li><p><strong>Q8.</strong> For each department, the number of F grades its students received: <code>dept_name</code>, <code>f_grades</code>, most first, then by <code>dept_name</code>. Run the query, then EXPLAIN it, and name the step that does the grouping.</p></li>
+    <li><p><strong>Q9.</strong> Student 4321's name with each <code>course_id</code> and <code>year</code> they took, as a join of the two big tables. EXPLAIN it; then <code>CREATE INDEX big_takes_student_idx ON big_takes (student_no);</code>; then EXPLAIN it again.</p></li>
+    <li><p><strong>Q10.</strong> How many Music students took no course in 2027? Use <code>NOT EXISTS</code>. Run it, then show its plan with <code>EXPLAIN (COSTS OFF)</code>, and name the join step.</p></li>
+  </ol>
+</section>
+
+<section id="c" aria-labelledby="c-h">
+  <h2 id="c-h">Part C: three short answers</h2>
+  <p>In <code>lab7_answers.txt</code>, in your own words, a short paragraph each:</p>
+  <ol class="qs">
+    <li><p><strong>W1.</strong> Compare P1 to P4 with what Q2 to Q4 measured. Which matched, which did not, and why? Then explain why PostgreSQL chose its plan for Q2 but a nested loop for Q9, in terms of the number of outer rows.</p></li>
+    <li><p><strong>W2.</strong> Compute the textbook's cost for Q5's sort, b × (2⌈log<sub>M−1</sub>(b / M)⌉ + 1), with b = 736 and M = 8 pages (64 kB). Compare it with Q5's temp read plus temp written, and give one reason they differ.</p></li>
+    <li><p><strong>W3.</strong> In Q7, which query read the most pages, though all three return five rows? Which step blocks the pipeline there, and what index would let it stop early?</p></li>
+  </ol>
+</section>
+
+<section id="d" aria-labelledby="d-h">
+  <h2 id="d-h">Part D: CS 5200 only</h2>
+  <ol class="qs">
+    <li><p><strong>D1.</strong> A block nested loop with M pages of memory costs ⌈b<sub>r</sub> / (M − 2)⌉ × b<sub>s</sub> + b<sub>r</sub>. Compute it for M = 3, 10 and 78, with b<sub>r</sub> = 76 and b<sub>s</sub> = 736, and show the arithmetic.</p></li>
+    <li><p><strong>D2.</strong> In <code>lab7.sql</code>: turn off <code>enable_hashjoin</code>, <code>enable_mergejoin</code>, <code>enable_indexscan</code>, <code>enable_bitmapscan</code> and <code>enable_memoize</code>, then EXPLAIN the join of the Music students with their enrollments (<code>WHERE s.dept_name = 'Music'</code>), then <code>RESET ALL;</code>. Record the join method, the pages and the execution time. The pages match a hash join's; the time does not. Explain why, using the line <code>Rows Removed by Join Filter</code>. This EXPLAIN takes a few seconds; that is the point.</p></li>
+  </ol>
+</section>
+
+<section id="submit" aria-labelledby="sub-h">
+  <h2 id="sub-h">What to submit and how it is graded</h2>
+  <p>Upload <strong>one zip file</strong> to the Lab 7 assignment in Brightspace. Name it <code>lab7_lastname_firstname.zip</code>, for example <code>lab7_rivera_jamie.zip</code>, and put these three files in it:</p>
+  <ul>
+    <li><code>lab7.sql</code>: your statements, under the question comments.</li>
+    <li><code>lab7_output.txt</code>: what psql printed when you ran the whole file.</li>
+    <li><code>lab7_answers.txt</code>: your predictions, numbers and written answers, saved as plain text, with one line at the end on how you used AI tools, if at all.</li>
+  </ul>
+  <p>To make the zip, put the three files in one folder and select them, then: on Windows, right-click and choose <strong>Compress to ZIP file</strong> (on Windows 10, <strong>Send to › Compressed (zipped) folder</strong>); on macOS, right-click and choose <strong>Compress 3 Items</strong>; on Linux or in Colab, run:</p>
+<pre>zip lab7_lastname_firstname.zip lab7.sql lab7_output.txt lab7_answers.txt</pre>
+  <p>Before you upload, open the zip and check that <code>lab7_output.txt</code> shows a plan or a result under every question, with no errors. The latest upload before the deadline is graded. Late work loses 10% per day, for up to three days.</p>
+  <div class="fig-scroll" tabindex="0" role="region" aria-label="Lab 7 rubric, 10 points">
+  <table class="tbl">
+    <caption>Lab 7 rubric, 10 points</caption>
+    <thead><tr><th scope="col">Item</th><th scope="col">What earns full credit</th><th scope="col" class="num">Points</th></tr></thead>
+    <tbody>
+      <tr><td>Questions Q1–Q9</td><td>Each statement runs and does what was asked, with the settings changed and reset as the question says, and the numbers copied correctly into the answers file.</td><td class="num">5</td></tr>
+      <tr><td>Predictions and Part A</td><td>P1 to P4 worked from the formulas with the arithmetic shown, and the explorer's four rows filled in.</td><td class="num">1</td></tr>
+      <tr><td>Output</td><td><code>lab7_output.txt</code> shows the whole file running from the reload, with no errors.</td><td class="num">1</td></tr>
+      <tr><td>Written (W1–W3)</td><td>Each answer uses your own measured numbers and explains them in terms of the algorithms.</td><td class="num">1</td></tr>
+      <tr><td>Q10 and Part D</td><td>CS 4600: Q10 correct, with its join step named, 2 points. CS 5200: Q10, 1 point; D1 and D2, 1 point.</td><td class="num">2</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>As with every lab, you may be asked to walk through your file in office hours or in class. You may use AI tools to explain an error message or a term, but the statements, the predictions and the written answers must be your own.</p>
+</section>
+
+<section id="help" aria-labelledby="help-h">
+  <h2 id="help-h">If something goes wrong</h2>
+  <ul>
+    <li><strong>"big_tables.sql: No such file or directory"</strong>: the four files are not in the same folder. Move them together and run again.</li>
+    <li><strong>"relation "department" does not exist"</strong> while loading: <code>big_tables.sql</code> ran before <code>university.sql</code>. Leave the first lines of <code>lab7.sql</code> as they were given.</li>
+    <li><strong>"relation "big_takes_student_idx" already exists"</strong>: you ran Q9 on its own, after a full run. Run the whole file; the reload removes the index.</li>
+    <li><strong>A later question shows a merge join or a nested loop you did not ask for</strong>: an earlier question is missing its <code>RESET ALL;</code>.</li>
+    <li><strong>Your page counts differ from a classmate's by a few</strong>: different PostgreSQL versions read the catalog a little differently. Use your own numbers; the written answers explain them.</li>
+    <li><strong>Anything else</strong>: copy the exact message and bring it to office hours, Tuesday and Wednesday 12:00–3:00 p.m., MIC room D159, or post it in the week 11 discussion in Brightspace.</li>
+  </ul>
+</section>
+</main>
+
+<footer>
+  <p>CS 4600/5200 · Database Theory and Applications · University of Central Missouri · Dr. Gorkem Kar · Spring 2027</p>
+</footer>
+</div>
+</body>
+</html>

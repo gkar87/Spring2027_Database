@@ -1,0 +1,69 @@
+CS 4600/5200 Lab 4: answers
+===========================
+
+Name:
+Student ID:
+Course (CS 4600 or CS 5200):
+Section (online or face to face):
+
+Save this file as plain text. Your statements go in lab4.sql. Here, write
+the number of rows each question's last SELECT returned, and answer the
+written questions in your own words. Leave the headings as they are.
+
+
+Part B: row counts
+------------------
+
+Q1  rows:
+Q2  rows:
+Q3  rows:
+Q4  rows:
+Q5  enrollments left:
+Q6  enrollments after the two INSERTs:
+Q7  rows:
+Q8  rows:
+Q9  rows:
+Q10 takes rows left:          advisor rows left:
+
+
+Part C: short answers
+---------------------
+
+W1. dept_stats without DISTINCT: give the three counts it shows for
+    Comp. Sci., then the true counts, and explain where the extra rows
+    come from. (2 to 4 sentences)
+
+Without DISTINCT:
+True counts:
+Answer:
+
+
+W2. In Q6, one INSERT failed and one worked. Which, and why did the CHECK
+    let the second one in? How would you stop a grade of NULL, if you
+    wanted to, and why might you not want to? (2 to 4 sentences)
+
+Answer:
+
+
+Part D: CS 5200 only (CS 4600 students may leave this blank)
+------------------------------------------------------------
+
+Q11 tot_cred for Alex Johnson:        tot_cred for Quinn Davis:
+
+Q11. Why did Alex Johnson's tot_cred go up only once, after two UPDATEs?
+     (1 to 2 sentences)
+
+Answer:
+
+Q12. What happened to each of the three statements you ran as grader,
+     and why? (one line each)
+
+SELECT from transcript:
+UPDATE of a grade:
+SELECT salary:
+
+
+AI use. Did you use a generative AI tool for this lab? If yes, say which
+tool, what you asked it, and what you kept. If no, write "None".
+
+Answer:

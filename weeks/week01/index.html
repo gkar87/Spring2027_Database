@@ -1,0 +1,1138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Week 1 — Why Databases, and the Relational Model · CS 4600/5200</title>
+<meta name="description" content="CS 4600/5200 week 1: how the course runs, why a DBMS beats files, levels of abstraction, DBMS architecture, and the relational model: relations, schemas, keys, foreign keys and NULL.">
+<link rel="stylesheet" href="../../assets/course.css">
+<link rel="stylesheet" href="../../assets/db.css">
+</head>
+<body>
+<a class="skip-link" href="#s1">Skip to the first slide</a>
+
+<div class="deck-stage">
+<main class="deck" aria-label="Week 1 lecture slides: Why databases, and the relational model">
+
+<!-- 1 ─────────────────────────────────────────────────────────── title -->
+<section class="slide slide--title" id="s1">
+  <p class="course-line">CS 4600/5200 · Database Theory and Applications · Week 1 of 15</p>
+  <h1>Why Databases, and the Relational Model</h1>
+  <p class="subtitle">
+    Almost every program you will write keeps data that must outlive it, be shared,
+    and stay correct. This week: why we hand that job to a database system, and the
+    one idea, the relation, that most of them are built on.
+  </p>
+  <p class="byline">
+    Dr. Gorkem Kar
+    <span>University of Central Missouri</span>
+    <span>School of Computer Science and Cybersecurity</span>
+  </p>
+  <div class="title-art">
+<svg viewBox="0 0 400 330" aria-hidden="true" focusable="false" style="--dg-k:1">
+<defs><marker id="ta" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#0e5a6b"/></marker></defs>
+<g class="v-in" style="--d:0.2s">
+<rect class="dg-box" x="0" y="20" width="160" height="124" rx="6"/>
+<rect class="dg-box-a" x="0" y="20" width="160" height="32" rx="6"/>
+<text class="dg-sm-b" x="12" y="42">student</text>
+<text class="dg-sm" x="12" y="76">id</text>
+<text class="dg-sm" x="12" y="100">name</text>
+<text class="dg-sm dg-teal" x="12" y="124">dept_name</text>
+</g>
+<g class="v-in" style="--d:0.5s">
+<rect class="dg-box" x="230" y="0" width="160" height="124" rx="6"/>
+<rect class="dg-box-a" x="230" y="0" width="160" height="32" rx="6"/>
+<text class="dg-sm-b" x="242" y="22">department</text>
+<text class="dg-sm" x="242" y="56">dept_name</text>
+<text class="dg-sm" x="242" y="80">building</text>
+<text class="dg-sm" x="242" y="104">budget</text>
+</g>
+<g class="v-in" style="--d:0.8s">
+<rect class="dg-box" x="130" y="190" width="160" height="124" rx="6"/>
+<rect class="dg-box-a" x="130" y="190" width="160" height="32" rx="6"/>
+<text class="dg-sm-b" x="142" y="212">course</text>
+<text class="dg-sm" x="142" y="246">course_id</text>
+<text class="dg-sm" x="142" y="270">title</text>
+<text class="dg-sm dg-teal" x="142" y="294">dept_name</text>
+</g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.1s" d="M160 100 C 200 100, 200 82, 226 82" marker-end="url(#ta)"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.4s" d="M290 290 C 330 290, 350 250, 340 130" marker-end="url(#ta)"/>
+</svg>
+  </div>
+  
+</section>
+
+<!-- 2 ─────────────────────────────────────────────── course logistics -->
+<section class="slide" id="s2">
+  <h2>How this course runs</h2>
+  <div class="slide-main">
+    <table class="tbl facts-tbl">
+      <caption class="visually-hidden">Course logistics</caption>
+      <tbody>
+        <tr><th scope="row">Class</th><td>Tuesdays, 3:00–5:40 p.m. CT, face to face at the Missouri Innovation Campus (MIC). Room to be announced.</td></tr>
+        <tr><th scope="row">Online section</th><td>The same lecture, recorded each Tuesday and posted in Brightspace. Labs are written to be done on your own.</td></tr>
+        <tr><th scope="row">Office hours</th><td>Tuesday and Wednesday, 12:00–3:00 p.m., MIC room D159.</td></tr>
+        <tr><th scope="row">Contact</th><td>kar@ucmo.edu · (660) 543-6612</td></tr>
+        <tr><th scope="row">Deadlines</th><td>Sunday, 11:59 p.m. CT, unless the assignment says otherwise.</td></tr>
+        <tr><th scope="row">Late work</th><td>Labs and project milestones lose 10% per day for up to three days, then are not accepted. Quizzes and exams are never late.</td></tr>
+        <tr><th scope="row">Exams</th><td>Midterm on Tuesday, March 2, in class. Comprehensive final in finals week, May 3–7.</td></tr>
+      </tbody>
+    </table>
+    <div class="callout" style="margin-top:auto">
+      <span class="mark" aria-hidden="true">§</span>
+      <p>The syllabus has every date. If anything on a slide disagrees with the syllabus, the syllabus wins, and please tell me.</p>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 3 ─────────────────────────────────────── two numbers, grading -->
+<section class="slide" id="s3">
+  <h2>Two course numbers, one course</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div>
+        <table class="tbl">
+          <caption>How the grade is made</caption>
+          <thead><tr><th scope="col">Component</th><th scope="col" class="num">Weight</th></tr></thead>
+          <tbody>
+            <tr><td>Quizzes: 10 questions at the end of each lecture, lowest two dropped</td><td class="num">10%</td></tr>
+            <tr><td>Labs 0–8 (and Lab 9 for CS 5200)</td><td class="num">25%</td></tr>
+            <tr><td>Term project, four milestones (5 + 5 + 7 + 8)</td><td class="num">25%</td></tr>
+            <tr><td>Midterm, March 2</td><td class="num">20%</td></tr>
+            <tr><td>Final, finals week</td><td class="num">20%</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="fill" style="gap:16px">
+        <div class="panel">
+          <h3>CS 4600 and CS 5200 together</h3>
+          <p>Same lectures, labs and exams. Graduate students do a little more, and every handout marks it with <span class="tag-grad">Graduate (CS 5200)</span>.</p>
+          <ul>
+            <li>Lab 9: one feature in a NoSQL store.</li>
+            <li>In the project: a NoSQL feature and a two-page critique of a research paper.</li>
+          </ul>
+        </div>
+        <div class="panel panel--key">
+          <h3>Generative AI</h3>
+          <p>Limited use: only where an assignment says so, and always acknowledged. In the final milestone, every team explains its own code in a short walkthrough.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 4 ─────────────────────────────────────────── what a Tuesday is -->
+<section class="slide" id="s4">
+  <h2>What a Tuesday looks like</h2>
+  <div class="slide-main">
+    <div class="split" style="align-items:start">
+      <ol class="steps">
+        <li><span class="n" aria-hidden="true">1</span><div><strong>Lecture with live SQL, about 70 minutes</strong><p>Every query on a slide is also in the week's playground.</p></div></li>
+        <li><span class="n" aria-hidden="true">2</span><div><strong>Break, 10 minutes</strong><p>Then we switch to laptops.</p></div></li>
+        <li><span class="n" aria-hidden="true">3</span><div><strong>Guided lab, about 60 minutes</strong><p>You leave with the lab half done. The rest is due Sunday.</p></div></li>
+        <li><span class="n" aria-hidden="true">4</span><div><strong>Quiz, 10 minutes</strong><p>Ten questions on today's lecture, in Brightspace.</p></div></li>
+      </ol>
+      <div class="panel panel--accent">
+        <h3>Each week's Brightspace module</h3>
+        <ul>
+          <li><strong>Slides</strong>: this deck, which also prints to PDF.</li>
+          <li><strong>Recording</strong>, with checked captions and a transcript.</li>
+          <li><strong>Playground</strong>: a web page where every example runs on a real PostgreSQL inside your browser.</li>
+          <li><strong>Lab</strong> handout and starter files.</li>
+          <li><strong>Quiz</strong>.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 5 ────────────────────────────────────────────────── the term -->
+<section class="slide" id="s5">
+  <h2>The term in three parts: use it, design it, look under the hood</h2>
+  <div class="slide-main">
+    <figure class="fig">
+      <svg style="--dg-k:1" viewBox="0 0 1136 214" role="img" aria-labelledby="f5t f5d">
+        <title id="f5t">The fifteen weeks of the course, grouped into three parts</title>
+        <desc id="f5d">Weeks 1 to 5 use databases: the relational model, relational algebra and SQL. Weeks 6 to 8 design them: E-R modeling, normalization, then the midterm in week 8. Spring break follows. Weeks 9 to 15 look under the hood: application development, storage and indexes, query processing and optimization, transactions, recovery and administration, and NoSQL. The final exam is in finals week.</desc>
+        <g class="v-in" style="--d:0.15s">
+          <rect class="dg-box-a" x="0"   y="0" width="350" height="56" rx="4"/>
+          <rect class="dg-box-t" x="355" y="0" width="210" height="56" rx="4"/>
+          <rect class="dg-box-m" x="570" y="0" width="66"  height="56" rx="4"/>
+          <rect class="dg-box"   x="641" y="0" width="495" height="56" rx="4"/>
+          <text class="dg-txt-b" x="175" y="34" text-anchor="middle">Use it</text>
+          <text class="dg-txt-b" x="460" y="34" text-anchor="middle">Design it</text>
+          <text class="dg-txt-s" x="603" y="34" text-anchor="middle">break</text>
+          <text class="dg-txt-b" x="888" y="34" text-anchor="middle">Look under the hood</text>
+        </g>
+        <g class="v-in" style="--d:0.60s">
+          <!-- week chips: 71 px pitch -->
+          <rect class="dg-box-m" x="0"   y="72" width="66" height="40" rx="4"/><text class="dg-txt" x="33"  y="98" text-anchor="middle">1</text>
+          <rect class="dg-box-m" x="71"  y="72" width="66" height="40" rx="4"/><text class="dg-txt" x="104" y="98" text-anchor="middle">2</text>
+          <rect class="dg-box-m" x="142" y="72" width="66" height="40" rx="4"/><text class="dg-txt" x="175" y="98" text-anchor="middle">3</text>
+          <rect class="dg-box-m" x="213" y="72" width="66" height="40" rx="4"/><text class="dg-txt" x="246" y="98" text-anchor="middle">4</text>
+          <rect class="dg-box-m" x="284" y="72" width="66" height="40" rx="4"/><text class="dg-txt" x="317" y="98" text-anchor="middle">5</text>
+          <rect class="dg-box-m" x="355" y="72" width="66" height="40" rx="4"/><text class="dg-txt" x="388" y="98" text-anchor="middle">6</text>
+          <rect class="dg-box-m" x="426" y="72" width="66" height="40" rx="4"/><text class="dg-txt" x="459" y="98" text-anchor="middle">7</text>
+          <rect class="dg-box-a" x="497" y="72" width="66" height="40" rx="4"/><text class="dg-txt-b" x="530" y="98" text-anchor="middle">8</text>
+          <rect class="dg-box-m" x="641" y="72" width="66" height="40" rx="4"/><text class="dg-txt" x="674" y="98" text-anchor="middle">9</text>
+          <rect class="dg-box-m" x="712" y="72" width="66" height="40" rx="4"/><text class="dg-txt" x="745" y="98" text-anchor="middle">10</text>
+          <rect class="dg-box-m" x="783" y="72" width="66" height="40" rx="4"/><text class="dg-txt" x="816" y="98" text-anchor="middle">11</text>
+          <rect class="dg-box-m" x="854" y="72" width="66" height="40" rx="4"/><text class="dg-txt" x="887" y="98" text-anchor="middle">12</text>
+          <rect class="dg-box-m" x="925" y="72" width="66" height="40" rx="4"/><text class="dg-txt" x="958" y="98" text-anchor="middle">13</text>
+          <rect class="dg-box-m" x="996" y="72" width="66" height="40" rx="4"/><text class="dg-txt" x="1029" y="98" text-anchor="middle">14</text>
+          <rect class="dg-box-m" x="1067" y="72" width="66" height="40" rx="4"/><text class="dg-txt" x="1100" y="98" text-anchor="middle">15</text>
+        </g>
+        <g class="v-in" style="--d:1.05s">
+          <text class="dg-txt-s" x="0"   y="142">Relational model · algebra</text>
+          <text class="dg-txt-s" x="0"   y="166">SQL, in three weeks</text>
+          <text class="dg-txt-s" x="355" y="142">E-R design · normal forms</text>
+          <text class="dg-lbl"   x="355" y="166">Week 8: midterm</text>
+          <text class="dg-txt-s" x="641" y="142">Python apps · indexes · query plans</text>
+          <text class="dg-txt-s" x="641" y="166">Transactions · recovery · NoSQL</text>
+          <text class="dg-lbl"   x="641" y="196">Project milestones in weeks 6, 8, 11 and 15</text>
+        </g>
+      </svg>
+      <figcaption><strong>Figure 1.1.</strong> Fifteen Tuesdays, January 12 to April 27. The midterm (week 8, March 2) covers weeks 1–7; the final covers everything, weighted toward weeks 9–15.</figcaption>
+    </figure>
+    <div class="callout">
+      <span class="mark" aria-hidden="true">→</span>
+      <p><strong>Why this order?</strong> You design better schemas once you have written queries against bad ones, and query plans only make sense once you know what the query asked for.</p>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 6 ─────────────────────────────────────────────── section -->
+<section class="slide slide--section" id="s6">
+  <h2>Why not just use files?</h2>
+  <p>A spreadsheet or a folder of CSV files works, until several people and programs need the same data at once, and need it to stay right.</p>
+  
+</section>
+
+<!-- 7 ─────────────────────────────────────── problems with files -->
+<section class="slide" id="s7">
+  <h2>What goes wrong when a registrar runs on files</h2>
+  <div class="slide-main">
+    <table class="tbl tbl--compact tbl--reveal">
+      <caption class="visually-hidden">Six problems with file-based data and what a DBMS does about each</caption>
+      <thead><tr><th scope="col">Problem</th><th scope="col">With files</th><th scope="col">What a DBMS does</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Redundancy</strong></td><td>A student's address is copied into the billing file and the advising file, and the copies drift apart.</td><td>Store each fact once; every program reads the same copy.</td></tr>
+        <tr><td><strong>Integrity</strong></td><td>"Credits must be positive" is checked in some programs and forgotten in others.</td><td>Constraints declared once, enforced on every change.</td></tr>
+        <tr><td><strong>Atomicity</strong></td><td>A crash halfway through moving a student between sections leaves them in both, or neither.</td><td>A transaction happens completely or not at all.</td></tr>
+        <tr><td><strong>Concurrency</strong></td><td>Two advisors add the last seat in a section at the same moment, and both succeed.</td><td>Concurrency control makes simultaneous users safe.</td></tr>
+        <tr><td><strong>Access</strong></td><td>Every new question ("who is close to graduating?") needs a new program.</td><td>A query language answers new questions without new code.</td></tr>
+        <tr><td><strong>Security</strong></td><td>Anyone who can open the file can read every column.</td><td>Users, roles and privileges per table and column.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  
+</section>
+
+<!-- 8 ─────────────────────────────────────── files versus a DBMS -->
+<section class="slide" id="s8">
+  <h2>Files copy the data; a DBMS keeps one copy and guards it</h2>
+  <div class="slide-main">
+    <figure class="fig">
+<svg style="--dg-k:1" viewBox="0 0 1136 420" role="img" aria-labelledby="ffdt ffdd">
+<title id="ffdt">Three programs with their own files, compared with three programs sharing one database</title>
+<desc id="ffdd">On the left, with files, the registrar, billing and advising programs each keep their own file. Each file holds a copy of Riley Adams's address. Two copies say 12 Elm St, but the advising copy says 48 Oak Ave, so the copies disagree. On the right, with a DBMS, the same three programs all send their requests to one DBMS, which checks every change and keeps a single student table holding one copy of the address, 12 Elm St.</desc>
+<defs><marker id="fa" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#16181d"/></marker><marker id="fb" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#9e1b32"/></marker></defs>
+<text class="dg-txt-b" x="0" y="20">With files</text>
+<g class="v-in" style="--d:0.1s"><rect class="dg-box-m" x="0" y="40" width="160" height="48" rx="4"/><text class="dg-txt" x="80" y="70" text-anchor="middle">Registrar</text></g>
+<path class="dg-line v-draw" pathLength="1" style="--d:0.5s" d="M80 88 L80 132" marker-end="url(#fa)"/>
+<g class="v-in" style="--d:0.8s"><path class="dg-box" d="M0 140 h136 l24 24 v126 h-160 z"/><path class="dg-line-q" d="M136 140 v24 h24"/><text class="dg-xs dg-mono" x="12" y="168">registrar.csv</text><text class="dg-sm" x="12" y="210">Riley Adams</text></g>
+<text class="dg-sm v-in" style="--d:1.3s" x="12" y="245">12 Elm St</text>
+<g class="v-in" style="--d:0.22s"><rect class="dg-box-m" x="180" y="40" width="160" height="48" rx="4"/><text class="dg-txt" x="260" y="70" text-anchor="middle">Billing</text></g>
+<path class="dg-line v-draw" pathLength="1" style="--d:0.6s" d="M260 88 L260 132" marker-end="url(#fa)"/>
+<g class="v-in" style="--d:0.92s"><path class="dg-box" d="M180 140 h136 l24 24 v126 h-160 z"/><path class="dg-line-q" d="M316 140 v24 h24"/><text class="dg-xs dg-mono" x="192" y="168">billing.csv</text><text class="dg-sm" x="192" y="210">Riley Adams</text></g>
+<text class="dg-sm v-in" style="--d:1.3s" x="192" y="245">12 Elm St</text>
+<g class="v-in" style="--d:0.33999999999999997s"><rect class="dg-box-m" x="360" y="40" width="160" height="48" rx="4"/><text class="dg-txt" x="440" y="70" text-anchor="middle">Advising</text></g>
+<path class="dg-line v-draw" pathLength="1" style="--d:0.7s" d="M440 88 L440 132" marker-end="url(#fa)"/>
+<g class="v-in" style="--d:1.04s"><path class="dg-box" d="M360 140 h136 l24 24 v126 h-160 z"/><path class="dg-line-q" d="M496 140 v24 h24"/><text class="dg-xs dg-mono" x="372" y="168">advising.csv</text><text class="dg-sm" x="372" y="210">Riley Adams</text></g>
+<rect class="dg-bad v-in" style="--d:1.9s" x="366" y="222" width="148" height="34" rx="4"/>
+<rect style="--d:2.0s;--d:2.0s;fill:none" class="dg-bad v-pulse" x="366" y="222" width="148" height="34" rx="4"/>
+<text class="dg-sm dg-txt-bad v-in" style="--d:1.3s" x="372" y="245" font-weight="700">48 Oak Ave</text>
+<g class="v-in" style="--d:2.2s"><text class="dg-lbl" x="0" y="322">✗ Three copies of one fact, and they disagree.</text><text class="dg-txt-s" x="0" y="348">Which address does the bill go to?</text></g>
+<path class="dg-line-q" d="M574 0 V400"/>
+<text class="dg-txt-b v-in" style="--d:2.4s" x="600" y="20">With a DBMS</text>
+<g class="v-in" style="--d:2.5s"><rect class="dg-box-m" x="600" y="40" width="160" height="48" rx="4"/><text class="dg-txt" x="680" y="70" text-anchor="middle">Registrar</text></g>
+<path class="dg-line v-draw" pathLength="1" style="--d:2.9s" d="M680 88 L790 138" marker-end="url(#fa)"/>
+<g class="v-in" style="--d:2.6s"><rect class="dg-box-m" x="780" y="40" width="160" height="48" rx="4"/><text class="dg-txt" x="860" y="70" text-anchor="middle">Billing</text></g>
+<path class="dg-line v-draw" pathLength="1" style="--d:2.98s" d="M860 88 L880 138" marker-end="url(#fa)"/>
+<g class="v-in" style="--d:2.7s"><rect class="dg-box-m" x="960" y="40" width="160" height="48" rx="4"/><text class="dg-txt" x="1040" y="70" text-anchor="middle">Advising</text></g>
+<path class="dg-line v-draw" pathLength="1" style="--d:3.06s" d="M1040 88 L970 138" marker-end="url(#fa)"/>
+<g class="v-in" style="--d:3.2s"><rect class="dg-box-a" x="660" y="144" width="420" height="62" rx="4"/><text class="dg-txt-b" x="870" y="172" text-anchor="middle">DBMS</text><text class="dg-txt-s" x="870" y="194" text-anchor="middle">checks every change, for every program</text></g>
+<path class="dg-line v-draw" pathLength="1" style="--d:3.5s" d="M870 206 L870 236" marker-end="url(#fa)"/>
+<g class="v-in" style="--d:3.7s"><path class="dg-box-t" d="M720 256 a150 14 0 0 1 300 0 v74 a150 14 0 0 1 -300 0 z"/><path class="dg-line-q" d="M720 256 a150 14 0 0 0 300 0"/><text class="dg-xs dg-mono" x="870" y="292" text-anchor="middle">student</text><text class="dg-sm" x="870" y="318" text-anchor="middle">Riley Adams · 12 Elm St</text></g>
+<g class="v-in" style="--d:4.1s"><text class="dg-lbl" x="600" y="372" style="fill:#1d6b3a">✓ One copy. Every program reads the same address.</text></g>
+</svg>
+    </figure>
+  </div>
+  
+</section>
+
+<!-- 9 ─────────────────────────────────────────── what a DBMS is -->
+<section class="slide" id="s9">
+  <h2>A database system is software that guards shared data</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div class="fill" style="gap:16px">
+        <div class="panel panel--definition">
+          <span class="term">Database</span>
+          <p>A collection of related data about one enterprise: a university, a store, a hospital.</p>
+        </div>
+        <div class="panel panel--definition">
+          <span class="term">Database management system (DBMS)</span>
+          <p>The software that stores that data and lets many users and programs define, query and change it, safely and efficiently.</p>
+        </div>
+      </div>
+      <div>
+        <h3>You have already used dozens</h3>
+        <ul>
+          <li><strong>PostgreSQL</strong>, our engine this term, free and open source.</li>
+          <li>MySQL, SQL Server, Oracle, and SQLite, which runs inside every phone.</li>
+          <li>NoSQL systems such as MongoDB, for week 15.</li>
+        </ul>
+        <div class="callout">
+          <span class="mark" aria-hidden="true">§</span>
+          <p>The point of a DBMS is to let you say <strong>what</strong> data you want and what must stay true, and to leave <strong>how</strong> to the system.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 10 ──────────────────────────────────── what developers use -->
+<section class="slide" id="s10">
+  <h2>PostgreSQL is the database developers use most</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:1000px">
+<svg style="--dg-k:1" viewBox="0 0 1000 384" role="img" aria-labelledby="sct scd">
+<title id="sct">Databases developers used most in 2025</title>
+<desc id="scd">Bar chart of the share of 26,083 Stack Overflow survey respondents who did extensive work in each database in the past year: PostgreSQL 55.6 percent; MySQL 40.5 percent; SQLite 37.5 percent; Microsoft SQL Server 30.1 percent; Redis 28 percent; MongoDB 24 percent; MariaDB 22.5 percent; Elasticsearch 16.7 percent; Oracle 10.6 percent; DynamoDB 9.8 percent.</desc>
+<path class="dg-line-q" d="M210.0 14 V340"/>
+<text class="dg-xs" style="fill:var(--muted)" x="210.0" y="362" text-anchor="middle">0%</text>
+<path class="dg-line-q" d="M440.0 14 V340"/>
+<text class="dg-xs" style="fill:var(--muted)" x="440.0" y="362" text-anchor="middle">20%</text>
+<path class="dg-line-q" d="M670.0 14 V340"/>
+<text class="dg-xs" style="fill:var(--muted)" x="670.0" y="362" text-anchor="middle">40%</text>
+<path class="dg-line-q" d="M900.0 14 V340"/>
+<text class="dg-xs" style="fill:var(--muted)" x="900.0" y="362" text-anchor="middle">60%</text>
+<text class="dg-sm-b" x="198" y="41" text-anchor="end">PostgreSQL</text>
+<rect class="dg-bar-a v-grow" style="--d:0.2s" x="210" y="25" width="639.4" height="22" rx="3"/>
+<text class="dg-sm-b v-in" style="--d:0.7s" x="857.4" y="41">55.6%</text>
+<text class="dg-sm" x="198" y="73" text-anchor="end">MySQL</text>
+<rect class="dg-bar v-grow" style="--d:0.32s" x="210" y="57" width="465.8" height="22" rx="3"/>
+<text class="dg-sm v-in" style="--d:0.82s" x="683.8" y="73">40.5%</text>
+<text class="dg-sm" x="198" y="105" text-anchor="end">SQLite</text>
+<rect class="dg-bar v-grow" style="--d:0.44s" x="210" y="89" width="431.2" height="22" rx="3"/>
+<text class="dg-sm v-in" style="--d:0.94s" x="649.2" y="105">37.5%</text>
+<text class="dg-sm" x="198" y="137" text-anchor="end">Microsoft SQL Server</text>
+<rect class="dg-bar v-grow" style="--d:0.56s" x="210" y="121" width="346.2" height="22" rx="3"/>
+<text class="dg-sm v-in" style="--d:1.06s" x="564.2" y="137">30.1%</text>
+<text class="dg-sm" x="198" y="169" text-anchor="end">Redis</text>
+<rect class="dg-bar v-grow" style="--d:0.68s" x="210" y="153" width="322.0" height="22" rx="3"/>
+<text class="dg-sm v-in" style="--d:1.18s" x="540.0" y="169">28%</text>
+<text class="dg-sm" x="198" y="201" text-anchor="end">MongoDB</text>
+<rect class="dg-bar v-grow" style="--d:0.8s" x="210" y="185" width="276.0" height="22" rx="3"/>
+<text class="dg-sm v-in" style="--d:1.3s" x="494.0" y="201">24%</text>
+<text class="dg-sm" x="198" y="233" text-anchor="end">MariaDB</text>
+<rect class="dg-bar v-grow" style="--d:0.92s" x="210" y="217" width="258.8" height="22" rx="3"/>
+<text class="dg-sm v-in" style="--d:1.42s" x="476.8" y="233">22.5%</text>
+<text class="dg-sm" x="198" y="265" text-anchor="end">Elasticsearch</text>
+<rect class="dg-bar v-grow" style="--d:1.04s" x="210" y="249" width="192.0" height="22" rx="3"/>
+<text class="dg-sm v-in" style="--d:1.54s" x="410.0" y="265">16.7%</text>
+<text class="dg-sm" x="198" y="297" text-anchor="end">Oracle</text>
+<rect class="dg-bar v-grow" style="--d:1.16s" x="210" y="281" width="121.9" height="22" rx="3"/>
+<text class="dg-sm v-in" style="--d:1.66s" x="339.9" y="297">10.6%</text>
+<text class="dg-sm" x="198" y="329" text-anchor="end">DynamoDB</text>
+<rect class="dg-bar v-grow" style="--d:1.28s" x="210" y="313" width="112.7" height="22" rx="3"/>
+<text class="dg-sm v-in" style="--d:1.78s" x="330.7" y="329">9.8%</text>
+</svg>
+      <figcaption><strong>Figure 1.2.</strong> Share of 26,083 respondents who did extensive work in each database over the past year (they could pick several, so the bars add up to more than 100%). Source: Stack Overflow Developer Survey 2025, Databases.</figcaption>
+    </figure>
+  </div>
+  
+</section>
+
+<!-- 11 ─────────────────────────────────────── levels of abstraction -->
+<section class="slide" id="s11">
+  <h2>Three levels of abstraction</h2>
+  <div class="slide-main">
+    <div class="split">
+      <div>
+        <p>A DBMS hides how data is stored behind layers, so each layer can change without breaking the one above it.</p>
+        <ul>
+          <li><strong>View level</strong>: what one application or user sees. An advisor's view has no salaries in it.</li>
+          <li><strong>Logical level</strong>: what data exists and how it relates. Tables, columns, keys.</li>
+          <li><strong>Physical level</strong>: how it is stored. Files, pages, indexes.</li>
+        </ul>
+        <div class="panel panel--key">
+          <h3>Physical data independence</h3>
+          <p>You can add an index or move files and no query has to change. Weeks 10–12 use this every day.</p>
+        </div>
+      </div>
+      <figure class="fig">
+        <svg style="--dg-k:1.04" viewBox="0 0 520 320" role="img" aria-labelledby="f9t f9d">
+          <title id="f9t">View, logical and physical levels</title>
+          <desc id="f9d">Three view boxes at the top, labelled View 1, View 2 and View n, each connect down to one logical-level box describing tables, columns and keys. The logical box connects down to one physical-level box describing files, pages and indexes.</desc>
+          <rect class="dg-box-m v-in" style="--d:0.1s" x="0"   y="0" width="150" height="54" rx="4"/>
+          <rect class="dg-box-m v-in" style="--d:0.2s" x="185" y="0" width="150" height="54" rx="4"/>
+          <rect class="dg-box-m v-in" style="--d:0.3s" x="370" y="0" width="150" height="54" rx="4"/>
+          <text class="dg-txt v-in" style="--d:0.1s" x="75"  y="33" text-anchor="middle">View 1</text>
+          <text class="dg-txt v-in" style="--d:0.2s" x="260" y="33" text-anchor="middle">View 2</text>
+          <text class="dg-txt v-in" style="--d:0.3s" x="445" y="33" text-anchor="middle">View n</text>
+          <path class="dg-line v-draw" pathLength="1" style="--d:0.6s" d="M75 54 L230 130"/>
+          <path class="dg-line v-draw" pathLength="1" style="--d:0.65s" d="M260 54 L260 130"/>
+          <path class="dg-line v-draw" pathLength="1" style="--d:0.7s" d="M445 54 L290 130"/>
+          <rect class="dg-box-a v-in" style="--d:1.0s" x="80" y="130" width="360" height="66" rx="4"/>
+          <text class="dg-txt-b" x="260" y="158" text-anchor="middle">Logical level</text>
+          <text class="dg-txt-s" x="260" y="182" text-anchor="middle">tables · columns · keys</text>
+          <path class="dg-line v-draw" pathLength="1" style="--d:1.4s" d="M260 196 L260 250"/>
+          <rect class="dg-box-t v-in" style="--d:1.7s" x="80" y="250" width="360" height="66" rx="4"/>
+          <text class="dg-txt-b" x="260" y="278" text-anchor="middle">Physical level</text>
+          <text class="dg-txt-s" x="260" y="302" text-anchor="middle">files · pages · indexes</text>
+        </svg>
+        <figcaption><strong>Figure 1.3.</strong> Many views, one logical schema, one physical layout. Changing a lower level should not disturb a higher one.</figcaption>
+      </figure>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 12 ─────────────────────────────────────── inside a DBMS -->
+<section class="slide" id="s12">
+  <h2>Inside a DBMS, and where each part shows up this term</h2>
+  <div class="slide-main">
+    <div class="split">
+      <figure class="fig">
+        <svg style="--dg-k:1.04" viewBox="0 0 520 356" role="img" aria-labelledby="f10t f10d">
+          <title id="f10t">The main components of a database system</title>
+          <desc id="f10d">Applications and users send SQL to the query processor, which parses, optimizes and executes it (weeks 3 to 5, 11 and 12). The query processor calls the storage manager, which manages the buffer pool, files and indexes (week 10). The storage manager reads and writes the disk, which holds data, indexes and the log. A transaction manager beside them handles concurrency and recovery (weeks 13 and 14).</desc>
+          <defs>
+            <marker id="a10" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#16181d"/></marker>
+          </defs>
+          <rect class="dg-box-m" x="0" y="0" width="330" height="50" rx="4"/>
+          <text class="dg-txt" x="165" y="31" text-anchor="middle">Applications and users</text>
+          <path class="dg-line v-draw" pathLength="1" style="--d:0.4s" d="M165 50 L165 82" marker-end="url(#a10)"/>
+          <text class="dg-lbl v-in" style="--d:0.4s" x="176" y="72">SQL</text>
+          <rect class="dg-box-a v-in" style="--d:0.7s" x="0" y="88" width="330" height="72" rx="4"/>
+          <text class="dg-txt-b" x="165" y="116" text-anchor="middle">Query processor</text>
+          <text class="dg-txt-s" x="165" y="140" text-anchor="middle">parse · optimize · execute</text>
+          <path class="dg-line v-draw" pathLength="1" style="--d:1.1s" d="M165 160 L165 192" marker-end="url(#a10)"/>
+          <rect class="dg-box v-in" style="--d:1.4s" x="0" y="198" width="330" height="72" rx="4"/>
+          <text class="dg-txt-b" x="165" y="226" text-anchor="middle">Storage manager</text>
+          <text class="dg-txt-s" x="165" y="250" text-anchor="middle">buffer pool · files · indexes</text>
+          <path class="dg-line v-draw" pathLength="1" style="--d:1.8s" d="M165 270 L165 300" marker-end="url(#a10)"/>
+          <rect class="dg-box-m v-in" style="--d:2.1s" x="0" y="306" width="330" height="50" rx="4"/>
+          <text class="dg-txt" x="165" y="337" text-anchor="middle">Disk: data · indexes · log</text>
+          <rect class="dg-box-t v-in" style="--d:2.5s" x="360" y="88" width="160" height="182" rx="4"/>
+          <text class="dg-txt-b" x="440" y="150" text-anchor="middle">Transaction</text>
+          <text class="dg-txt-b" x="440" y="172" text-anchor="middle">manager</text>
+          <text class="dg-txt-s" x="440" y="200" text-anchor="middle">concurrency</text>
+          <text class="dg-txt-s" x="440" y="222" text-anchor="middle">recovery</text>
+          <path class="dg-dash v-in" style="--d:2.7s" d="M330 124 L360 124 M330 234 L360 234"/>
+        </svg>
+        <figcaption><strong>Figure 1.4.</strong> A simplified DBMS. The transaction manager works alongside both layers.</figcaption>
+      </figure>
+      <div>
+        <table class="tbl">
+          <caption>Where we study each part</caption>
+          <thead><tr><th scope="col">Component</th><th scope="col">Weeks</th></tr></thead>
+          <tbody>
+            <tr><td>SQL, the language of the query processor</td><td>3–5</td></tr>
+            <tr><td>Storage, buffer pool, indexes</td><td>10</td></tr>
+            <tr><td>Executing and optimizing queries</td><td>11–12</td></tr>
+            <tr><td>Transactions and concurrency</td><td>13</td></tr>
+            <tr><td>Recovery with a log; administration</td><td>14</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 13 ─────────────────────────────────────────────── section -->
+<section class="slide slide--section" id="s13">
+  <h2>The relational model</h2>
+  <p>One data structure, the relation, and a handful of rules about it. Fifty years on, it still underlies almost every database you will use.</p>
+  
+</section>
+
+<!-- 14 ─────────────────────────────────────────────── Codd -->
+<section class="slide slide--statement" id="s14">
+  <blockquote>“Future users of large data banks must be protected from having to know how the data is organized in the machine (the internal representation).”</blockquote>
+  <p class="attrib">E. F. Codd, “A Relational Model of Data for Large Shared Data Banks,” <em>Communications of the ACM</em>, 1970. The first sentence of the paper that started the relational model.</p>
+  
+</section>
+
+<!-- 15 ─────────────────────────────────── anatomy of a relation -->
+<section class="slide" id="s15">
+  <h2>Anatomy of a relation</h2>
+  <div class="slide-main">
+    <div class="cols-2-1">
+      <div>
+        <figure class="fig">
+<svg style="--dg-k:1" viewBox="0 0 780 386" role="img" aria-labelledby="ant antd">
+<title id="ant">The parts of a relation, labelled on the instructor table</title>
+<desc id="antd">The instructor relation drawn as a table with columns id, name, dept_name and salary, showing 4 of its 10 rows. A brace over the header marks the degree: 4 attributes. The name column is highlighted as one attribute. The second row, Maria Lopez, is highlighted as one tuple. The salary column is labelled with its domain, numbers above 29,000. A brace beside the rows marks the cardinality: 10 tuples, 4 shown.</desc>
+<g class="v-in" style="--d:0s">
+<rect class="dg-box" x="96" y="64" width="480" height="200"/>
+<rect class="dg-box-m" x="96" y="64" width="480" height="40"/>
+<text class="dg-sm-b" x="106" y="90">id</text>
+<text class="dg-sm-b" x="192" y="90">name</text>
+<text class="dg-sm-b" x="342" y="90">dept_name</text>
+<text class="dg-sm-b" x="482" y="90">salary</text>
+<path class="dg-line-q" d="M96 104 H576"/>
+<text class="dg-sm" x="106" y="130">10101</text>
+<text class="dg-sm" x="192" y="130">Avery Chen</text>
+<text class="dg-sm" x="342" y="130">Comp. Sci.</text>
+<text class="dg-sm" x="482" y="130">98000</text>
+<path class="dg-line-q" d="M96 144 H576"/>
+<text class="dg-sm" x="106" y="170">15151</text>
+<text class="dg-sm" x="192" y="170">Maria Lopez</text>
+<text class="dg-sm" x="342" y="170">Mathematics</text>
+<text class="dg-sm" x="482" y="170">87000</text>
+<path class="dg-line-q" d="M96 184 H576"/>
+<text class="dg-sm" x="106" y="210">22222</text>
+<text class="dg-sm" x="192" y="210">Sam Okafor</text>
+<text class="dg-sm" x="342" y="210">Physics</text>
+<text class="dg-sm" x="482" y="210">95000</text>
+<path class="dg-line-q" d="M96 224 H576"/>
+<text class="dg-sm" x="106" y="250">83821</text>
+<text class="dg-sm" x="192" y="250">Diego Torres</text>
+<text class="dg-sm" x="342" y="250">Music</text>
+<text class="dg-sm" x="482" y="250">72000</text>
+<path class="dg-line-q" d="M182 64 V264"/>
+<path class="dg-line-q" d="M332 64 V264"/>
+<path class="dg-line-q" d="M472 64 V264"/>
+</g>
+<path class="dg-line-a v-draw" pathLength="1" style="--d:0.5s" d="M96 56 v-10 H576 v10 M336.0 46 v-8"/>
+<text class="dg-lbl v-in" style="--d:0.8s" x="336.0" y="30" text-anchor="middle">degree: 4 attributes</text>
+<rect class="dg-hl-t v-in" style="--d:1.3s" x="184" y="66" width="146" height="196" rx="3"/>
+<g class="v-in" style="--d:1.5s"><path class="dg-line-t" d="M257.0 264 v22"/><text class="dg-lbl" style="fill:var(--teal)" x="257.0" y="306" text-anchor="middle">attribute (a column)</text></g>
+<rect class="dg-hl v-in" style="--d:2.0s" x="98" y="146" width="476" height="36" rx="3"/>
+<g class="v-in" style="--d:2.2s"><path class="dg-line-a" d="M90 164.0 h-18"/><text class="dg-lbl" x="68" y="160.0" text-anchor="end">tuple</text><text class="dg-lbl" x="68" y="178.0" text-anchor="end">(a row)</text></g>
+<g class="v-in" style="--d:2.8s"><path class="dg-dash" d="M524.0 264 v52"/><text class="dg-txt-s" x="524.0" y="338" text-anchor="middle">domain: numbers above 29,000</text></g>
+<path class="dg-line-a v-draw" pathLength="1" style="--d:3.3s" d="M586 104 h10 V264 h-10 M596 184 h8"/>
+<g class="v-in" style="--d:3.6s"><text class="dg-lbl" x="612" y="180">cardinality:</text><text class="dg-lbl" x="612" y="200">10 tuples</text><text class="dg-txt-s" x="612" y="220">(4 shown)</text></g>
+</svg>
+<figcaption><strong>Figure 1.5.</strong> The relation <code>instructor</code>, 4 of its 10 tuples, with its parts labelled.</figcaption>
+</figure>
+        <p style="margin-top:6px"><a class="try" href="playground.html#relations">Run it in the playground, section 1</a></p>
+      </div>
+      <dl class="fill" style="gap:10px;margin:0">
+        <div class="panel"><dt><strong>Relation</strong></dt><dd style="margin:0">A table: here, <code>instructor</code>.</dd></div>
+        <div class="panel"><dt><strong>Attribute</strong></dt><dd style="margin:0">A named column: <code>id</code>, <code>name</code>, <code>dept_name</code>, <code>salary</code>.</dd></div>
+        <div class="panel"><dt><strong>Tuple</strong></dt><dd style="margin:0">A row: one instructor.</dd></div>
+        <div class="panel"><dt><strong>Domain</strong></dt><dd style="margin:0">The values an attribute may take: salaries are numbers above 29,000.</dd></div>
+        <div class="panel"><dt><strong>Degree and cardinality</strong></dt><dd style="margin:0">4 attributes; 10 tuples today.</dd></div>
+      </dl>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 16 ─────────────────────────────────────── schema and instance -->
+<section class="slide" id="s16">
+  <h2>Schema and instance</h2>
+  <div class="slide-main">
+    <div class="split" style="align-items:start">
+      <div class="panel panel--definition">
+        <span class="term">Relation schema</span>
+        <p>The relation's name and its attributes, with their domains. It changes rarely, by design.</p>
+      </div>
+      <div class="panel panel--definition">
+        <span class="term">Relation instance</span>
+        <p>The set of tuples at one moment. It changes every time someone is hired, enrolls or gets a grade.</p>
+      </div>
+    </div>
+    <figure class="fig">
+<svg style="--dg-k:1" viewBox="0 0 1136 202" role="img" aria-labelledby="sit sid">
+<title id="sit">One schema, three instances over the term</title>
+<desc id="sid">The schema instructor(id, name, dept_name, salary) stays the same all term. Its instance changes: 10 tuples on January 12, 11 tuples on February 1 after one hire, and 10 tuples on May 20 after one instructor retires.</desc>
+<g class="v-in" style="--d:0s"><rect class="dg-box-a" x="0" y="0" width="1136" height="40" rx="4"/><text class="dg-sm-b dg-mono" x="16" y="26">schema: instructor(id, name, dept_name, salary)</text><text class="dg-lbl" x="1120" y="26" text-anchor="end">stays the same</text></g>
+<g class="v-in" style="--d:0.5s"><text class="dg-txt-b" x="40" y="76">Jan 12</text><text class="dg-txt-s" x="130" y="76">10 tuples</text></g>
+<rect class="dg-box-m v-in" style="--d:0.5s" x="40" y="90" width="136" height="11" rx="2"/>
+<rect class="dg-box-m v-in" style="--d:0.5s" x="40" y="105" width="136" height="11" rx="2"/>
+<rect class="dg-box-m v-in" style="--d:0.5s" x="40" y="120" width="136" height="11" rx="2"/>
+<rect class="dg-box-m v-in" style="--d:0.5s" x="40" y="135" width="136" height="11" rx="2"/>
+<rect class="dg-box-m v-in" style="--d:0.5s" x="40" y="150" width="136" height="11" rx="2"/>
+<rect class="dg-box-m v-in" style="--d:0.5s" x="40" y="165" width="136" height="11" rx="2"/>
+<rect class="dg-box-m v-in" style="--d:0.5s" x="190" y="90" width="136" height="11" rx="2"/>
+<rect class="dg-box-m v-in" style="--d:0.5s" x="190" y="105" width="136" height="11" rx="2"/>
+<rect class="dg-box-m v-in" style="--d:0.5s" x="190" y="120" width="136" height="11" rx="2"/>
+<rect class="dg-box-m v-in" style="--d:0.5s" x="190" y="135" width="136" height="11" rx="2"/>
+<path class="dg-line-q" d="M370 58 V180"/>
+<g class="v-in" style="--d:1.6s"><text class="dg-txt-b" x="410" y="76">Feb 1</text><text class="dg-txt-s" x="500" y="76">11 tuples</text></g>
+<rect class="dg-box-m v-in" style="--d:1.6s" x="410" y="90" width="136" height="11" rx="2"/>
+<rect class="dg-box-m v-in" style="--d:1.6s" x="410" y="105" width="136" height="11" rx="2"/>
+<rect class="dg-box-m v-in" style="--d:1.6s" x="410" y="120" width="136" height="11" rx="2"/>
+<rect class="dg-box-m v-in" style="--d:1.6s" x="410" y="135" width="136" height="11" rx="2"/>
+<rect class="dg-box-m v-in" style="--d:1.6s" x="410" y="150" width="136" height="11" rx="2"/>
+<rect class="dg-box-m v-in" style="--d:1.6s" x="410" y="165" width="136" height="11" rx="2"/>
+<rect class="dg-box-m v-in" style="--d:1.6s" x="560" y="90" width="136" height="11" rx="2"/>
+<rect class="dg-box-m v-in" style="--d:1.6s" x="560" y="105" width="136" height="11" rx="2"/>
+<rect class="dg-box-m v-in" style="--d:1.6s" x="560" y="120" width="136" height="11" rx="2"/>
+<rect class="dg-box-m v-in" style="--d:1.6s" x="560" y="135" width="136" height="11" rx="2"/>
+<rect class="dg-ok v-move" style="--d:2.1s;--dx:-30px" x="560" y="150" width="136" height="11" rx="2"/>
+<text class="dg-lbl dg-txt-ok v-in" style="--d:2.3s" x="410" y="192">+ one hire</text>
+<path class="dg-line-q" d="M740 58 V180"/>
+<g class="v-in" style="--d:2.7s"><text class="dg-txt-b" x="780" y="76">May 20</text><text class="dg-txt-s" x="870" y="76">10 tuples</text></g>
+<rect class="dg-box-m v-in" style="--d:2.7s" x="780" y="90" width="136" height="11" rx="2"/>
+<rect class="dg-box-m v-in" style="--d:2.7s" x="780" y="105" width="136" height="11" rx="2"/>
+<rect class="dg-box-m v-in" style="--d:2.7s" x="780" y="120" width="136" height="11" rx="2"/>
+<rect class="dg-box-m v-in" style="--d:2.7s" x="780" y="135" width="136" height="11" rx="2"/>
+<rect class="dg-box-m" x="780" y="150" width="136" height="11" rx="2"/>
+<path class="dg-line-a v-draw" pathLength="1" style="--d:3.2s;stroke-width:2.4" d="M776 155.5 h144"/>
+<rect class="dg-box-m v-in" style="--d:2.7s" x="780" y="165" width="136" height="11" rx="2"/>
+<rect class="dg-box-m v-in" style="--d:2.7s" x="930" y="90" width="136" height="11" rx="2"/>
+<rect class="dg-box-m v-in" style="--d:2.7s" x="930" y="105" width="136" height="11" rx="2"/>
+<rect class="dg-box-m v-in" style="--d:2.7s" x="930" y="120" width="136" height="11" rx="2"/>
+<rect class="dg-box-m v-in" style="--d:2.7s" x="930" y="135" width="136" height="11" rx="2"/>
+<rect class="dg-box-m v-in" style="--d:2.7s" x="930" y="150" width="136" height="11" rx="2"/>
+<text class="dg-lbl dg-txt-bad v-in" style="--d:3.4000000000000004s" x="780" y="192">− one retires</text>
+</svg>
+    </figure>
+    <div class="callout">
+      <span class="mark" aria-hidden="true">≈</span>
+      <p>The same split you know from programming: the schema is a variable's <strong>type</strong>, the instance is its current <strong>value</strong>. A <strong>database schema</strong> is the set of all relation schemas: five of them in our university. <a class="try" href="playground.html#relations">Playground example 1.2</a></p>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 17 ─────────────────────────────────────── relations are sets -->
+<section class="slide" id="s17">
+  <h2>A relation is a set, and that has consequences</h2>
+  <div class="slide-main">
+    <div class="cols-3">
+      <div class="panel">
+        <h3>Order does not matter</h3>
+        <svg style="--dg-k:0.9;max-width:270px" viewBox="0 0 300 120" role="img" aria-label="Two tables with the same three tuples in different orders are the same relation.">
+<rect class="dg-box-m" x="0" y="10" width="110" height="28" rx="3"/><text class="dg-sm" x="12" y="30">Avery</text>
+<rect class="dg-box-m" x="0" y="44" width="110" height="28" rx="3"/><text class="dg-sm" x="12" y="64">Maria</text>
+<rect class="dg-box-m" x="0" y="78" width="110" height="28" rx="3"/><text class="dg-sm" x="12" y="98">Sam</text>
+<text style="--d:1.0s;fill:var(--cardinal)" class="dg-big v-in" x="150" y="70" text-anchor="middle">=</text>
+<g class="v-move" style="--d:0.3s;--dy:68px;--dx:-40px"><rect class="dg-box-m" x="190" y="10" width="110" height="28" rx="3"/><text class="dg-sm" x="202" y="30">Sam</text></g>
+<g class="v-move" style="--d:0.4s;--dy:-34px;--dx:-40px"><rect class="dg-box-m" x="190" y="44" width="110" height="28" rx="3"/><text class="dg-sm" x="202" y="64">Avery</text></g>
+<g class="v-move" style="--d:0.5s;--dy:-34px;--dx:-40px"><rect class="dg-box-m" x="190" y="78" width="110" height="28" rx="3"/><text class="dg-sm" x="202" y="98">Maria</text></g>
+</svg>
+        <p>Neither the order of tuples nor, formally, of attributes carries meaning. Ask for an order with <code>ORDER BY</code>.</p>
+      </div>
+      <div class="panel">
+        <h3>No duplicates</h3>
+        <svg style="--dg-k:0.9;max-width:270px" viewBox="0 0 300 120" role="img" aria-label="A bag with Physics, Physics and Music becomes a set with Physics and Music.">
+<defs><marker id="sd" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#16181d"/></marker></defs>
+<rect class="dg-box-m" x="0" y="10" width="110" height="28" rx="3"/><text class="dg-sm" x="12" y="30">Physics</text>
+<rect class="dg-bad" x="0" y="44" width="110" height="28" rx="3"/><text class="dg-sm" x="12" y="64">Physics</text>
+<rect class="dg-box-m" x="0" y="78" width="110" height="28" rx="3"/><text class="dg-sm" x="12" y="98">Music</text>
+<text class="dg-sm dg-txt-bad v-in" style="--d:0.6s" x="116" y="64" font-weight="700">×2</text>
+<path class="dg-line v-draw" pathLength="1" style="--d:0.9s" d="M146 60 h34" marker-end="url(#sd)"/>
+<g class="v-in" style="--d:1.3s"><rect class="dg-ok" x="190" y="27" width="110" height="28" rx="3"/><text class="dg-sm" x="202" y="47">Physics</text></g>
+<g class="v-in" style="--d:1.5s"><rect class="dg-ok" x="190" y="61" width="110" height="28" rx="3"/><text class="dg-sm" x="202" y="81">Music</text></g>
+</svg>
+        <p>A set cannot hold the same tuple twice. Every relation therefore has at least one key.</p>
+      </div>
+      <div class="panel">
+        <h3>Atomic values</h3>
+        <svg style="--dg-k:0.9;max-width:270px" viewBox="0 0 300 120" role="img" aria-label="A cell holding two phone numbers is not atomic. Two rows with one phone number each are.">
+<defs><marker id="sa" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#16181d"/></marker></defs>
+<rect class="dg-bad" x="0" y="36" width="130" height="44" rx="3"/><text class="dg-xs dg-mono" x="8" y="54">555-0101,</text><text class="dg-xs dg-mono" x="8" y="72">555-0199</text><text class="dg-sm dg-txt-bad" x="0" y="104" font-weight="700">✗ a list</text>
+<path class="dg-line v-draw" pathLength="1" style="--d:0.6s" d="M140 58 h34" marker-end="url(#sa)"/>
+<g class="v-in" style="--d:1.0s"><rect class="dg-ok" x="184" y="20" width="116" height="28" rx="3"/><text class="dg-xs dg-mono" x="194" y="39">555-0101</text></g>
+<g class="v-in" style="--d:1.2s"><rect class="dg-ok" x="184" y="54" width="116" height="28" rx="3"/><text class="dg-xs dg-mono" x="194" y="73">555-0199</text></g>
+<text class="dg-sm dg-txt-ok v-in" style="--d:1.4s" x="184" y="104" font-weight="700">✓ one per row</text>
+</svg>
+        <p>Each attribute value is indivisible: one phone number per cell, not a list. This is first normal form, week 7.</p>
+      </div>
+    </div>
+    <div class="callout">
+      <span class="mark" aria-hidden="true">!</span>
+      <p><strong>SQL bends the second rule.</strong> A SQL table or query result is a <em>bag</em> (a multiset) and may contain duplicate rows unless you declare a key or write <code>DISTINCT</code>. We will meet this difference all term.</p>
+    </div>
+    <p><a class="try" href="playground.html#sets">Count the duplicates, playground section 3</a></p>
+  </div>
+  
+</section>
+
+<!-- 18 ─────────────────────────────────────────────── keys -->
+<section class="slide" id="s18">
+  <h2>Keys: what makes a tuple unique</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div>
+        <ul>
+          <li><strong>Superkey</strong>: a set of attributes whose values identify a tuple. In <code>student</code>, {id} and {id, name} both are.</li>
+          <li><strong>Candidate key</strong>: a minimal superkey. {id} is one; {id, name} is not, because name adds nothing.</li>
+          <li><strong>Primary key</strong>: the candidate key the designer chooses. We underline it.</li>
+        </ul>
+        <div class="worked">
+          <span class="worked-label">Worked example: is {name} a key of student?</span>
+          <p>Today, no two students share a name. But a key is a promise about <strong>every</strong> legal instance, not a fact about today's data. A second Morgan Lee could enroll tomorrow, so {name} is not a key.</p>
+        </div>
+      </div>
+      <div class="fill" style="gap:16px">
+        <figure class="fig">
+<svg style="--dg-k:1" viewBox="0 0 520 210" role="img" aria-labelledby="kvt kvd">
+<title id="kvt">Superkeys contain candidate keys, which contain the primary key</title>
+<desc id="kvd">Three nested regions for the student relation. The outer region, superkeys, holds {id}, {id, name} and {id, tot_cred} among others. Inside it, candidate keys, the minimal superkeys: {id}. Inside that, the primary key the designer chose: id.</desc>
+<g class="v-in" style="--d:0.1s"><rect class="dg-box-m" x="0" y="0" width="520" height="210" rx="18"/><text class="dg-sm-b" x="18" y="28">Superkeys</text><text class="dg-xs dg-mono" x="18" y="56">{id, name}</text><text class="dg-xs dg-mono" x="18" y="80">{id, tot_cred}</text><text class="dg-xs dg-mono" x="18" y="104">{id, name, dept_name}</text><text class="dg-xs" x="18" y="128" style="fill:var(--muted)">… and more</text></g>
+<g class="v-in" style="--d:0.8s"><rect class="dg-box-t" x="232" y="22" width="270" height="168" rx="16"/><text class="dg-sm-b" x="250" y="48">Candidate keys (minimal)</text></g>
+<g class="v-in" style="--d:1.5s"><rect class="dg-box-a" x="262" y="66" width="210" height="104" rx="14"/><text class="dg-sm-b" x="280" y="92">Primary key (chosen)</text><text class="dg-txt-b dg-mono" x="367" y="140" text-anchor="middle" text-decoration="underline">id</text></g>
+</svg>
+        </figure>
+        <div class="panel panel--key">
+          <h3>A key may need several attributes</h3>
+          <p class="eq eq--tight" style="text-align:left;background:none;border:0;padding:4px 0">takes(<u>id, course_id, semester, year</u>, grade)</p>
+          <p>A student may retake a course in a later term, so id and course_id alone are not enough.</p>
+        </div>
+        <p><a class="try" href="playground.html#keys">Try to insert a duplicate key, playground section 4</a></p>
+      </div>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 19 ─────────────────────────────────── the university schema -->
+<section class="slide" id="s19">
+  <h2>Foreign keys connect relations: our university</h2>
+  <div class="slide-main">
+    <div class="cols-2-1">
+      <figure class="fig">
+        <svg style="--dg-k:0.93" viewBox="0 0 720 444" role="img" aria-labelledby="f17t f17d">
+          <title id="f17t">Schema diagram of the five-table university database</title>
+          <desc id="f17d">Five relations. department has primary key dept_name, plus building and budget. instructor has primary key id, plus name, dept_name and salary; its dept_name references department. student has primary key id, plus name, dept_name and tot_cred; its dept_name references department. course has primary key course_id, plus title, dept_name and credits; its dept_name references department. takes has primary key made of id, course_id, semester and year, plus grade; its id references student and its course_id references course.</desc>
+          <defs>
+            <marker id="a17" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#0e5a6b"/></marker>
+          </defs>
+          <!-- department --><g class="v-in" style="--d:0.1s">
+          <rect class="dg-box" x="10" y="140" width="190" height="118" rx="4"/>
+          <rect class="dg-box-a" x="10" y="140" width="190" height="30" rx="4"/>
+          <text class="dg-txt-b" x="22" y="161">department</text>
+          <text class="dg-txt" x="22" y="194" text-decoration="underline">dept_name</text>
+          <text class="dg-txt" x="22" y="217">building</text>
+          <text class="dg-txt" x="22" y="240">budget</text>
+          </g><!-- instructor --><g class="v-in" style="--d:0.3s">
+          <rect class="dg-box" x="270" y="4" width="190" height="134" rx="4"/>
+          <rect class="dg-box-a" x="270" y="4" width="190" height="30" rx="4"/>
+          <text class="dg-txt-b" x="282" y="25">instructor</text>
+          <text class="dg-txt" x="282" y="58" text-decoration="underline">id</text>
+          <text class="dg-txt" x="282" y="81">name</text>
+          <text class="dg-txt dg-teal" x="282" y="104">dept_name</text>
+          <text class="dg-txt" x="282" y="127">salary</text>
+          </g><!-- student --><g class="v-in" style="--d:0.5s">
+          <rect class="dg-box" x="270" y="154" width="190" height="134" rx="4"/>
+          <rect class="dg-box-a" x="270" y="154" width="190" height="30" rx="4"/>
+          <text class="dg-txt-b" x="282" y="175">student</text>
+          <text class="dg-txt" x="282" y="208" text-decoration="underline">id</text>
+          <text class="dg-txt" x="282" y="231">name</text>
+          <text class="dg-txt dg-teal" x="282" y="254">dept_name</text>
+          <text class="dg-txt" x="282" y="277">tot_cred</text>
+          </g><!-- course --><g class="v-in" style="--d:0.7s">
+          <rect class="dg-box" x="270" y="304" width="190" height="134" rx="4"/>
+          <rect class="dg-box-a" x="270" y="304" width="190" height="30" rx="4"/>
+          <text class="dg-txt-b" x="282" y="325">course</text>
+          <text class="dg-txt" x="282" y="358" text-decoration="underline">course_id</text>
+          <text class="dg-txt" x="282" y="381">title</text>
+          <text class="dg-txt dg-teal" x="282" y="404">dept_name</text>
+          <text class="dg-txt" x="282" y="427">credits</text>
+          </g><!-- takes --><g class="v-in" style="--d:0.9s">
+          <rect class="dg-box" x="540" y="144" width="176" height="158" rx="4"/>
+          <rect class="dg-box-a" x="540" y="144" width="176" height="30" rx="4"/>
+          <text class="dg-txt-b" x="552" y="165">takes</text>
+          <text class="dg-txt dg-teal" x="552" y="198" text-decoration="underline">id</text>
+          <text class="dg-txt dg-teal" x="552" y="221" text-decoration="underline">course_id</text>
+          <text class="dg-txt" x="552" y="244" text-decoration="underline">semester</text>
+          <text class="dg-txt" x="552" y="267" text-decoration="underline">year</text>
+          <text class="dg-txt" x="552" y="290">grade</text>
+          </g><!-- foreign keys -->
+          <g fill="none" stroke="#0e5a6b" stroke-width="1.8">
+            <path class="v-draw" pathLength="1" style="--d:1.3s" d="M268 98 H236 V188 H205" marker-end="url(#a17)"/>
+            <path class="v-draw" pathLength="1" style="--d:1.6s" d="M268 248 H236 V188"/>
+            <path class="v-draw" pathLength="1" style="--d:1.9s" d="M268 398 H236 V188"/>
+            <path class="v-draw" pathLength="1" style="--d:2.2s" d="M538 192 H498 V202 H465" marker-end="url(#a17)"/>
+            <path class="v-draw" pathLength="1" style="--d:2.5s" d="M538 215 H514 V352 H465" marker-end="url(#a17)"/>
+          </g>
+        </svg>
+        <figcaption><strong>Figure 1.6.</strong> Underlined attributes form each primary key. Arrows run from a foreign key (in teal) to the key it references.</figcaption>
+      </figure>
+      <div>
+        <div class="panel panel--definition">
+          <span class="term">Foreign key</span>
+          <p>An attribute whose every value must appear as a key value in another relation. <code>takes.id</code> must be the id of a real student.</p>
+        </div>
+        <p style="margin-top:14px">This is the whole of this week's database, and the one the playground and Lab 0 load.</p>
+        <p><a class="try" href="playground.html#schema">See it with its types in the playground</a></p>
+      </div>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 20 ──────────────────────────────────── referential integrity -->
+<section class="slide" id="s20">
+  <h2>What a foreign key forbids</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div class="worked">
+        <span class="worked-label">Rejected: a reference to nothing</span>
+        <pre class="code"><span class="k">INSERT INTO</span> student
+<span class="k">VALUES</span> (<span class="s">'00777'</span>, <span class="s">'Lee Grant'</span>, <span class="s">'Astrology'</span>, 0);</pre>
+        <p style="margin-top:10px">There is no Astrology department, so PostgreSQL reports a foreign-key violation and stores nothing.</p>
+      </div>
+      <div class="worked">
+        <span class="worked-label">Rejected: leaving others dangling</span>
+        <pre class="code"><span class="k">DELETE FROM</span> department
+<span class="k">WHERE</span> dept_name = <span class="s">'Music'</span>;</pre>
+        <p style="margin-top:10px">A student, an instructor and a course still point at Music. By default the delete is refused; in week 5 you will choose <code>ON DELETE CASCADE</code> or <code>SET NULL</code> instead.</p>
+      </div>
+    </div>
+    <div class="callout">
+      <span class="mark" aria-hidden="true">§</span>
+      <p><strong>Referential integrity</strong>: every foreign-key value matches an existing key, or is NULL. The DBMS checks it on every insert, update and delete, in every program, forever. That is the integrity row of slide 7, solved.</p>
+    </div>
+    <p><a class="try" href="playground.html#fkeys">Run both in the playground, section 5</a></p>
+  </div>
+  
+</section>
+
+<!-- 21 ──────────────────────────────────── how the FK check works -->
+<section class="slide" id="s21">
+  <h2>How the DBMS checks a foreign key</h2>
+  <div class="slide-main">
+    <figure class="fig">
+<svg style="--dg-k:1" viewBox="0 0 1136 432" role="img" aria-labelledby="fkt fkd">
+<title id="fkt">How PostgreSQL checks a foreign key on insert</title>
+<desc id="fkd">Two inserts into student arrive. The first names the department Astrology. PostgreSQL looks for Astrology among the six dept_name values in department: Comp. Sci., Mathematics, Physics, Biology, History and Music. None matches, so the insert is rejected and nothing is stored. The second insert names Physics. Physics is found, so the row is stored.</desc>
+<defs><marker id="kb" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#a1261b"/></marker><marker id="kg" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#1d6b3a"/></marker><marker id="kk" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#16181d"/></marker></defs>
+<g class="v-in" style="--d:0s"><text class="dg-sm-b dg-mono" x="470" y="44">department.dept_name</text>
+<rect class="dg-box" x="470" y="60" width="200" height="42" rx="4"/><text class="dg-sm" x="484" y="87">Comp. Sci.</text>
+<rect class="dg-box" x="470" y="110" width="200" height="42" rx="4"/><text class="dg-sm" x="484" y="137">Mathematics</text>
+<rect class="dg-box" x="470" y="160" width="200" height="42" rx="4"/><text class="dg-sm" x="484" y="187">Physics</text>
+<rect class="dg-box" x="470" y="210" width="200" height="42" rx="4"/><text class="dg-sm" x="484" y="237">Biology</text>
+<rect class="dg-box" x="470" y="260" width="200" height="42" rx="4"/><text class="dg-sm" x="484" y="287">History</text>
+<rect class="dg-box" x="470" y="310" width="200" height="42" rx="4"/><text class="dg-sm" x="484" y="337">Music</text>
+</g>
+<g class="v-move" style="--d:0.2s;--dx:-60px"><rect class="dg-box-m" x="0" y="70" width="380" height="74" rx="4"/><text class="dg-xs dg-mono" x="14" y="98">INSERT INTO student VALUES</text><text class="dg-xs dg-mono" x="14" y="124">('00777', 'Lee Grant', <tspan font-weight="700" style="fill:var(--cardinal-deep)">'Astrology'</tspan>, 0)</text></g>
+<path style="--d:0.8s;stroke:#a1261b" class="dg-line-a v-draw" pathLength="1" d="M380 107 C 420 107, 430 85, 464 81" marker-end="url(#kb)"/>
+<text class="dg-sm dg-txt-bad v-in" style="--d:1.1s" x="684" y="87" font-weight="700">≠ Astrology</text>
+<text class="dg-sm dg-txt-bad v-in" style="--d:1.28s" x="684" y="137" font-weight="700">≠ Astrology</text>
+<text class="dg-sm dg-txt-bad v-in" style="--d:1.46s" x="684" y="187" font-weight="700">≠ Astrology</text>
+<text class="dg-sm dg-txt-bad v-in" style="--d:1.64s" x="684" y="237" font-weight="700">≠ Astrology</text>
+<text class="dg-sm dg-txt-bad v-in" style="--d:1.82s" x="684" y="287" font-weight="700">≠ Astrology</text>
+<text class="dg-sm dg-txt-bad v-in" style="--d:2.0s" x="684" y="337" font-weight="700">≠ Astrology</text>
+<g class="v-in" style="--d:2.3s"><rect class="dg-bad" x="836" y="70" width="300" height="74" rx="4"/><text class="dg-sm-b dg-txt-bad" x="852" y="100">✗ No match: rejected</text><text class="dg-xs" x="852" y="124">foreign-key violation, nothing stored</text></g>
+<g class="v-move" style="--d:2.7s;--dx:-60px"><rect class="dg-box-m" x="0" y="300" width="380" height="74" rx="4"/><text class="dg-xs dg-mono" x="14" y="328">INSERT INTO student VALUES</text><text class="dg-xs dg-mono" x="14" y="354">('00999', 'Pat Morgan', <tspan font-weight="700" style="fill:var(--teal)">'Physics'</tspan>, 12)</text></g>
+<path style="--d:3.2s;stroke:#1d6b3a;stroke-width:1.8" class="dg-line v-draw" pathLength="1" d="M380 337 C 430 337, 420 181, 464 181" marker-end="url(#kg)"/>
+<rect style="--d:3.6s;fill:none;stroke-width:3" class="dg-ok v-in" x="470" y="160" width="200" height="42" rx="4"/>
+<g class="v-in" style="--d:4.0s"><rect class="dg-ok" x="836" y="300" width="300" height="74" rx="4"/><text class="dg-sm-b dg-txt-ok" x="852" y="330">✓ Physics found: stored</text><text class="dg-xs" x="852" y="354">student now has 13 tuples</text></g>
+</svg>
+      <figcaption><strong>Figure 1.7.</strong> On every insert into <code>student</code>, PostgreSQL looks the new <code>dept_name</code> up in <code>department</code>. In week 10 you will see that it uses the primary key's index, so the lookup is fast even with millions of rows.</figcaption>
+    </figure>
+  </div>
+  
+</section>
+
+<!-- 22 ─────────────────────────────────────────────── NULL -->
+<section class="slide" id="s22">
+  <h2>NULL: a value that is missing</h2>
+  <div class="slide-main">
+    <div class="split" style="align-items:start">
+      <div>
+        <p>Three Spring 2027 enrollments in <code>takes</code> have no grade yet. Their grade is <strong>NULL</strong>: unknown, or not applicable. NULL is not zero and not the empty string.</p>
+        <ul>
+          <li>Any comparison with NULL, even <code>NULL = NULL</code>, is <strong>unknown</strong>, not true.</li>
+          <li><code>WHERE</code> keeps a row only when its condition is <strong>true</strong>.</li>
+          <li>So test for it with <code>IS NULL</code> and <code>IS NOT NULL</code>.</li>
+        </ul>
+      </div>
+      <div>
+        <pre class="code"><span class="c">-- finds nothing: grade = NULL is unknown</span>
+<span class="k">SELECT</span> * <span class="k">FROM</span> takes <span class="k">WHERE</span> grade = <span class="k">NULL</span>;
+
+<span class="c">-- finds the 3 enrollments without a grade</span>
+<span class="k">SELECT</span> * <span class="k">FROM</span> takes <span class="k">WHERE</span> grade <span class="k">IS NULL</span>;</pre>
+        <p style="margin-top:14px"><a class="try" href="playground.html#nulls">Run both, playground section 6</a></p>
+      </div>
+    </div>
+    <figure class="fig">
+<svg style="--dg-k:1" viewBox="0 0 1136 196" role="img" aria-labelledby="ngt ngd">
+<title id="ngt">WHERE keeps a row only when its condition is true</title>
+<desc id="ngd">Three takes rows with grades A, B plus and NULL. Under the condition grade = NULL, every row evaluates to unknown, so WHERE keeps none of them: 0 rows. Under grade IS NULL, the rows with A and B plus evaluate to false and the NULL row to true, so WHERE keeps 1 row.</desc>
+<g class="v-in" style="--d:0.2s"><text class="dg-sm-b dg-mono" x="0" y="40">WHERE grade = NULL</text></g>
+<g class="v-in" style="--d:0.5s"><rect class="dg-box-m" x="250" y="16" width="76" height="40" rx="4"/><text class="dg-sm dg-mono" x="288" y="42" text-anchor="middle">'A'</text><rect class="dg-warn" x="334" y="16" width="92" height="40" rx="4"/><text class="dg-sm dg-txt-warn" x="380" y="42" text-anchor="middle" font-weight="700">? unknown</text></g>
+<g class="v-in" style="--d:0.75s"><rect class="dg-box-m" x="440" y="16" width="76" height="40" rx="4"/><text class="dg-sm dg-mono" x="478" y="42" text-anchor="middle">'B+'</text><rect class="dg-warn" x="524" y="16" width="92" height="40" rx="4"/><text class="dg-sm dg-txt-warn" x="570" y="42" text-anchor="middle" font-weight="700">? unknown</text></g>
+<g class="v-in" style="--d:1.0s"><rect class="dg-box-m" x="630" y="16" width="76" height="40" rx="4"/><text class="dg-sm dg-mono" x="668" y="42" text-anchor="middle">NULL</text><rect class="dg-warn" x="714" y="16" width="92" height="40" rx="4"/><text class="dg-sm dg-txt-warn" x="760" y="42" text-anchor="middle" font-weight="700">? unknown</text></g>
+<g class="v-in" style="--d:1.4s"><path class="dg-line" d="M830 36 h40"/><rect class="dg-box-a" x="878" y="16" width="258" height="40" rx="4"/><text class="dg-sm-b" x="1007" y="42" text-anchor="middle">keeps true only: 0 rows</text></g>
+<g class="v-in" style="--d:2.0s"><text class="dg-sm-b dg-mono" x="0" y="136">WHERE grade IS NULL</text></g>
+<g class="v-in" style="--d:2.3s"><rect class="dg-box-m" x="250" y="112" width="76" height="40" rx="4"/><text class="dg-sm dg-mono" x="288" y="138" text-anchor="middle">'A'</text><rect class="dg-bad" x="334" y="112" width="92" height="40" rx="4"/><text class="dg-sm dg-txt-bad" x="380" y="138" text-anchor="middle" font-weight="700">✗ false</text></g>
+<g class="v-in" style="--d:2.55s"><rect class="dg-box-m" x="440" y="112" width="76" height="40" rx="4"/><text class="dg-sm dg-mono" x="478" y="138" text-anchor="middle">'B+'</text><rect class="dg-bad" x="524" y="112" width="92" height="40" rx="4"/><text class="dg-sm dg-txt-bad" x="570" y="138" text-anchor="middle" font-weight="700">✗ false</text></g>
+<g class="v-in" style="--d:2.8s"><rect class="dg-box-m" x="630" y="112" width="76" height="40" rx="4"/><text class="dg-sm dg-mono" x="668" y="138" text-anchor="middle">NULL</text><rect class="dg-ok" x="714" y="112" width="92" height="40" rx="4"/><text class="dg-sm dg-txt-ok" x="760" y="138" text-anchor="middle" font-weight="700">✓ true</text></g>
+<g class="v-in" style="--d:3.2s"><path class="dg-line" d="M830 132 h40"/><rect class="dg-box-a" x="878" y="112" width="258" height="40" rx="4"/><text class="dg-sm-b" x="1007" y="138" text-anchor="middle">keeps true only: 1 row</text></g>
+</svg>
+      <figcaption><strong>Figure 1.8.</strong> SQL uses <strong>three-valued logic</strong>: true, false and unknown. Week 3 gives the full truth tables; for now, <code>= NULL</code> is always a bug.</figcaption>
+    </figure>
+  </div>
+  
+</section>
+
+<!-- 23 ─────────────────────────────────────── a first SQL query -->
+<section class="slide" id="s23">
+  <h2>A first query: say what, not how</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div>
+        <pre class="code"><span class="k">SELECT</span> name, salary          <span class="c">-- which columns</span>
+<span class="k">FROM</span>   instructor            <span class="c">-- which relation</span>
+<span class="k">WHERE</span>  dept_name = <span class="s">'Comp. Sci.'</span>; <span class="c">-- which rows</span></pre>
+        <table class="tbl tbl--result" style="margin-top:16px">
+          <caption>Result: 3 rows</caption>
+          <thead><tr><th scope="col">name</th><th scope="col" class="num">salary</th></tr></thead>
+          <tbody>
+            <tr><td>Avery Chen</td><td class="num">98000.00</td></tr>
+            <tr><td>Jordan Patel</td><td class="num">92000.00</td></tr>
+            <tr><td>Priya Raman</td><td class="num">75000.00</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="fill" style="gap:16px">
+        <div class="panel panel--key">
+          <h3>Declarative</h3>
+          <p>The query names the answer. It does not say which file to open, whether to use an index, or in what order to look. The optimizer decides, and it can decide differently tomorrow if the data grows.</p>
+        </div>
+        <div class="panel">
+          <h3>The result is a relation too</h3>
+          <p>So it can be the input to another query. That closure is what lets small queries compose into large ones, and it is the heart of next week's relational algebra.</p>
+        </div>
+        <p><a class="try" href="playground.html#select">Edit and run it, playground section 2</a></p>
+      </div>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 24 ───────────────────────────── evaluating FROM, WHERE, SELECT -->
+<section class="slide" id="s24">
+  <h2>Read it in this order: FROM, then WHERE, then SELECT</h2>
+  <div class="slide-main">
+    <figure class="fig">
+<svg style="--dg-k:1" viewBox="0 0 1136 404" role="img" aria-labelledby="fwt fwd">
+<title id="fwt">Evaluating the query in three steps: FROM, WHERE, SELECT</title>
+<desc id="fwd">Step 1, FROM instructor: all 10 tuples with their 4 attributes. Step 2, WHERE dept_name = Comp. Sci.: the 3 Computer Science rows, Avery Chen, Jordan Patel and Priya Raman, are kept and the other 7 are crossed out. Step 3, SELECT name, salary: only those two columns of the 3 kept rows remain. The result is Avery Chen 98000, Jordan Patel 92000 and Priya Raman 75000.</desc>
+<defs><marker id="fw" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#16181d"/></marker></defs>
+<text class="dg-sm-b v-in" style="--d:0.0s" x="0" y="30">1  FROM instructor</text>
+<text class="dg-sm-b v-in" style="--d:1.3s" x="400" y="30">2  WHERE dept_name = 'Comp. Sci.'</text>
+<text class="dg-sm-b v-in" style="--d:3.0s" x="820" y="30">3  SELECT name, salary</text>
+<g class="v-in" style="--d:0.1s">
+<rect class="dg-box" x="0" y="64" width="310" height="308"/>
+<rect class="dg-box-m" x="0" y="64" width="310" height="28"/>
+<text class="dg-xs" font-weight="700" x="6" y="83">id</text>
+<text class="dg-xs" font-weight="700" x="58" y="83">name</text>
+<text class="dg-xs" font-weight="700" x="162" y="83">dept</text>
+<text class="dg-xs" font-weight="700" x="258" y="83">salary</text>
+<text class="dg-xs" x="6" y="111">10101</text>
+<text class="dg-xs" x="58" y="111">Avery C.</text>
+<text class="dg-xs" x="162" y="111">Comp. Sci.</text>
+<text class="dg-xs" x="258" y="111">98000</text>
+<text class="dg-xs" x="6" y="139">12121</text>
+<text class="dg-xs" x="58" y="139">Jordan P.</text>
+<text class="dg-xs" x="162" y="139">Comp. Sci.</text>
+<text class="dg-xs" x="258" y="139">92000</text>
+<text class="dg-xs" x="6" y="167">15151</text>
+<text class="dg-xs" x="58" y="167">Maria L.</text>
+<text class="dg-xs" x="162" y="167">Math</text>
+<text class="dg-xs" x="258" y="167">87000</text>
+<text class="dg-xs" x="6" y="195">22222</text>
+<text class="dg-xs" x="58" y="195">Sam O.</text>
+<text class="dg-xs" x="162" y="195">Physics</text>
+<text class="dg-xs" x="258" y="195">95000</text>
+<text class="dg-xs" x="6" y="223">32343</text>
+<text class="dg-xs" x="58" y="223">Lena F.</text>
+<text class="dg-xs" x="162" y="223">History</text>
+<text class="dg-xs" x="258" y="223">61000</text>
+<text class="dg-xs" x="6" y="251">33456</text>
+<text class="dg-xs" x="58" y="251">Kofi M.</text>
+<text class="dg-xs" x="162" y="251">Physics</text>
+<text class="dg-xs" x="258" y="251">87000</text>
+<text class="dg-xs" x="6" y="279">45565</text>
+<text class="dg-xs" x="58" y="279">Priya R.</text>
+<text class="dg-xs" x="162" y="279">Comp. Sci.</text>
+<text class="dg-xs" x="258" y="279">75000</text>
+<text class="dg-xs" x="6" y="307">58583</text>
+<text class="dg-xs" x="58" y="307">Tomas N.</text>
+<text class="dg-xs" x="162" y="307">History</text>
+<text class="dg-xs" x="258" y="307">62000</text>
+<text class="dg-xs" x="6" y="335">76543</text>
+<text class="dg-xs" x="58" y="335">Hana S.</text>
+<text class="dg-xs" x="162" y="335">Biology</text>
+<text class="dg-xs" x="258" y="335">80000</text>
+<text class="dg-xs" x="6" y="363">83821</text>
+<text class="dg-xs" x="58" y="363">Diego T.</text>
+<text class="dg-xs" x="162" y="363">Music</text>
+<text class="dg-xs" x="258" y="363">72000</text>
+</g>
+<path class="dg-line v-draw" pathLength="1" style="--d:1.1s" d="M322 214 h56" marker-end="url(#fw)"/>
+<g class="v-in" style="--d:1.3s">
+<rect class="dg-box" x="400" y="64" width="310" height="308"/>
+<rect class="dg-box-m" x="400" y="64" width="310" height="28"/>
+<text class="dg-xs" font-weight="700" x="406" y="83">id</text>
+<text class="dg-xs" font-weight="700" x="458" y="83">name</text>
+<text class="dg-xs" font-weight="700" x="562" y="83">dept</text>
+<text class="dg-xs" font-weight="700" x="658" y="83">salary</text>
+<text class="dg-xs" x="406" y="111">10101</text>
+<text class="dg-xs" x="458" y="111">Avery C.</text>
+<text class="dg-xs" x="562" y="111">Comp. Sci.</text>
+<text class="dg-xs" x="658" y="111">98000</text>
+<text class="dg-xs" x="406" y="139">12121</text>
+<text class="dg-xs" x="458" y="139">Jordan P.</text>
+<text class="dg-xs" x="562" y="139">Comp. Sci.</text>
+<text class="dg-xs" x="658" y="139">92000</text>
+<text class="dg-xs" x="406" y="167">15151</text>
+<text class="dg-xs" x="458" y="167">Maria L.</text>
+<text class="dg-xs" x="562" y="167">Math</text>
+<text class="dg-xs" x="658" y="167">87000</text>
+<text class="dg-xs" x="406" y="195">22222</text>
+<text class="dg-xs" x="458" y="195">Sam O.</text>
+<text class="dg-xs" x="562" y="195">Physics</text>
+<text class="dg-xs" x="658" y="195">95000</text>
+<text class="dg-xs" x="406" y="223">32343</text>
+<text class="dg-xs" x="458" y="223">Lena F.</text>
+<text class="dg-xs" x="562" y="223">History</text>
+<text class="dg-xs" x="658" y="223">61000</text>
+<text class="dg-xs" x="406" y="251">33456</text>
+<text class="dg-xs" x="458" y="251">Kofi M.</text>
+<text class="dg-xs" x="562" y="251">Physics</text>
+<text class="dg-xs" x="658" y="251">87000</text>
+<text class="dg-xs" x="406" y="279">45565</text>
+<text class="dg-xs" x="458" y="279">Priya R.</text>
+<text class="dg-xs" x="562" y="279">Comp. Sci.</text>
+<text class="dg-xs" x="658" y="279">75000</text>
+<text class="dg-xs" x="406" y="307">58583</text>
+<text class="dg-xs" x="458" y="307">Tomas N.</text>
+<text class="dg-xs" x="562" y="307">History</text>
+<text class="dg-xs" x="658" y="307">62000</text>
+<text class="dg-xs" x="406" y="335">76543</text>
+<text class="dg-xs" x="458" y="335">Hana S.</text>
+<text class="dg-xs" x="562" y="335">Biology</text>
+<text class="dg-xs" x="658" y="335">80000</text>
+<text class="dg-xs" x="406" y="363">83821</text>
+<text class="dg-xs" x="458" y="363">Diego T.</text>
+<text class="dg-xs" x="562" y="363">Music</text>
+<text class="dg-xs" x="658" y="363">72000</text>
+</g>
+<rect style="--d:1.9s;fill:rgba(29,107,58,0.10)" class="dg-ok v-in" x="402" y="94" width="306" height="24" rx="3"/>
+<text class="dg-sm dg-txt-ok v-in" style="--d:1.9s" x="718" y="112" font-weight="700">✓</text>
+<rect style="--d:1.9s;fill:rgba(29,107,58,0.10)" class="dg-ok v-in" x="402" y="122" width="306" height="24" rx="3"/>
+<text class="dg-sm dg-txt-ok v-in" style="--d:1.9s" x="718" y="140" font-weight="700">✓</text>
+<path class="dg-line-a v-draw" pathLength="1" style="--d:1.94s;stroke:#a1261b;stroke-width:1.6" d="M404 162 h302"/>
+<text class="dg-sm dg-txt-bad v-in" style="--d:1.94s" x="718" y="168" font-weight="700">✗</text>
+<path class="dg-line-a v-draw" pathLength="1" style="--d:2.01s;stroke:#a1261b;stroke-width:1.6" d="M404 190 h302"/>
+<text class="dg-sm dg-txt-bad v-in" style="--d:2.01s" x="718" y="196" font-weight="700">✗</text>
+<path class="dg-line-a v-draw" pathLength="1" style="--d:2.08s;stroke:#a1261b;stroke-width:1.6" d="M404 218 h302"/>
+<text class="dg-sm dg-txt-bad v-in" style="--d:2.08s" x="718" y="224" font-weight="700">✗</text>
+<path class="dg-line-a v-draw" pathLength="1" style="--d:2.15s;stroke:#a1261b;stroke-width:1.6" d="M404 246 h302"/>
+<text class="dg-sm dg-txt-bad v-in" style="--d:2.15s" x="718" y="252" font-weight="700">✗</text>
+<rect style="--d:1.9s;fill:rgba(29,107,58,0.10)" class="dg-ok v-in" x="402" y="262" width="306" height="24" rx="3"/>
+<text class="dg-sm dg-txt-ok v-in" style="--d:1.9s" x="718" y="280" font-weight="700">✓</text>
+<path class="dg-line-a v-draw" pathLength="1" style="--d:2.29s;stroke:#a1261b;stroke-width:1.6" d="M404 302 h302"/>
+<text class="dg-sm dg-txt-bad v-in" style="--d:2.29s" x="718" y="308" font-weight="700">✗</text>
+<path class="dg-line-a v-draw" pathLength="1" style="--d:2.36s;stroke:#a1261b;stroke-width:1.6" d="M404 330 h302"/>
+<text class="dg-sm dg-txt-bad v-in" style="--d:2.36s" x="718" y="336" font-weight="700">✗</text>
+<path class="dg-line-a v-draw" pathLength="1" style="--d:2.43s;stroke:#a1261b;stroke-width:1.6" d="M404 358 h302"/>
+<text class="dg-sm dg-txt-bad v-in" style="--d:2.43s" x="718" y="364" font-weight="700">✗</text>
+<path class="dg-line v-draw" pathLength="1" style="--d:2.8s" d="M748 214 h56" marker-end="url(#fw)"/>
+<g class="v-in" style="--d:3.2s"><rect class="dg-box-a" x="820" y="64" width="220" height="112"/><rect class="dg-box-m" x="820" y="64" width="220" height="28"/><text class="dg-xs" font-weight="700" x="826" y="83">name</text><text class="dg-xs" font-weight="700" x="956" y="83">salary</text></g>
+<g class="v-move" style="--d:3.4s;--dx:-40px"><text class="dg-xs" x="826" y="111">Avery Chen</text><text class="dg-xs" x="956" y="111">98000</text></g>
+<g class="v-move" style="--d:3.55s;--dx:-40px"><text class="dg-xs" x="826" y="139">Jordan Patel</text><text class="dg-xs" x="956" y="139">92000</text></g>
+<g class="v-move" style="--d:3.7s;--dx:-40px"><text class="dg-xs" x="826" y="167">Priya Raman</text><text class="dg-xs" x="956" y="167">75000</text></g>
+<g class="v-in" style="--d:4.0s"><text class="dg-lbl" x="820" y="206">3 rows × 2 columns.</text><text class="dg-txt-s" x="820" y="230">The answer is a relation too.</text></g>
+</svg>
+      <figcaption><strong>Figure 1.9.</strong> The logical order of the query on the previous slide. PostgreSQL may do the work in another order, but the answer is always the one this picture gives.</figcaption>
+    </figure>
+    <p><a class="try" href="playground.html#select">Step through it yourself: Watch it run, playground example 2.1</a></p>
+  </div>
+  
+</section>
+
+<!-- 25 ─────────────────────────────────────────────── takeaways -->
+<section class="slide" id="s25">
+  <h2>What to take away</h2>
+  <div class="slide-main">
+    <ol class="steps">
+      <li><span class="n" aria-hidden="true">1</span><div><strong>A DBMS exists to keep shared data correct.</strong><p>Redundancy, integrity, atomicity, concurrency, access and security are each a job it does once for every program.</p></div></li>
+      <li><span class="n" aria-hidden="true">2</span><div><strong>Layers buy independence.</strong><p>Views over a logical schema over a physical layout; change one, keep the others.</p></div></li>
+      <li><span class="n" aria-hidden="true">3</span><div><strong>A relation is a set of tuples over named attributes.</strong><p>Schema is the type; instance is the current value. SQL results are bags.</p></div></li>
+      <li><span class="n" aria-hidden="true">4</span><div><strong>Keys and foreign keys are promises about every instance.</strong><p>The DBMS enforces them on every change.</p></div></li>
+      <li><span class="n" aria-hidden="true">5</span><div><strong>NULL means missing, and comparisons with it are unknown.</strong><p>Use IS NULL.</p></div></li>
+    </ol>
+  </div>
+  
+</section>
+
+<!-- 26 ─────────────────────────────────────────── this week -->
+<section class="slide" id="s26">
+  <h2>This week's work</h2>
+  <div class="slide-main">
+    <div class="week-work">
+      <div>
+        <h3>Read</h3>
+        <ul>
+          <li>Silberschatz, Korth and Sudarshan, <em>Database System Concepts</em>, 7th ed., chapter 1 and chapter 2 (sections 2.1–2.5).</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Do</h3>
+        <ul>
+          <li>Lab 0: install PostgreSQL (or use Colab), load the university database, run your first queries.</li>
+          <li>Week 1 playground: the six exercises. Not graded, but quiz 2 assumes them.</li>
+          <li>Project: start looking for a partner, or plan to work alone.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Due</h3>
+        <ul>
+          <li><span class="due">Sunday, January 17, 11:59 p.m. CT</span>: Lab 0.</li>
+          <li>Quiz 1: in class today; online section within 48 hours of the recording.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="callout" style="margin-top:auto">
+      <span class="mark" aria-hidden="true">→</span>
+      <p><strong>Next week:</strong> relational algebra. Six operators that give every SQL query an exact meaning, and that the optimizer rewrites behind your back.</p>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 27 ─────────────────────────────────────────── resources -->
+<section class="slide" id="s27">
+  <h2>Free resources</h2>
+  <div class="slide-main">
+    <ul class="resources">
+      <li><a href="https://www.postgresql.org/docs/current/tutorial.html">PostgreSQL tutorial</a><span class="src">postgresql.org</span><p>The official tutorial. Chapter 2 covers this week's and next week's SQL.</p></li>
+      <li><a href="https://www.postgresql.org/download/">Download PostgreSQL</a><span class="src">postgresql.org</span><p>Installers for Windows, macOS and Linux. Lab 0 walks you through it.</p></li>
+      <li><a href="https://www.db-book.com/">Database System Concepts, 7th edition</a><span class="src">db-book.com</span><p>The textbook's site: slides for every chapter and sample data.</p></li>
+      <li><a href="https://15445.courses.cs.cmu.edu/">CMU 15-445/645</a><span class="src">cmu.edu</span><p>Carnegie Mellon's course on the same textbook, with public lecture videos. Good for weeks 10–14.</p></li>
+      <li><a href="https://sqlbolt.com/">SQLBolt</a><span class="src">sqlbolt.com</span><p>Short interactive SQL lessons, if you want more practice than the playground.</p></li>
+      <li><a href="https://www.py4e.com/lessons/database">Python for Everybody: databases</a><span class="src">py4e.com</span><p>Free videos on using a database from Python. Useful before week 9 if Python is new to you.</p></li>
+    </ul>
+    <div class="callout" style="margin-top:20px">
+      <span class="mark" aria-hidden="true">→</span>
+      <p>If a Lab 0 step fails, bring the exact error message to office hours, Tuesday and Wednesday 12:00–3:00 p.m., MIC room D159.</p>
+    </div>
+  </div>
+  
+</section>
+
+</main>
+</div>
+<script src="../../assets/deck.js"></script>
+</body>
+</html>

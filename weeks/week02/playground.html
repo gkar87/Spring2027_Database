@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Week 2 Algebra Playground · CS 4600/5200</title>
+<meta name="description" content="CS 4600/5200 week 2 playground: type relational algebra, run it on a real PostgreSQL database inside your browser, see the expression tree with tuple counts, and compare it with SQL. Eight exercises with instant checks.">
+<link rel="stylesheet" href="../../assets/course.css">
+<link rel="stylesheet" href="../../assets/db.css">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to the playground</a>
+
+<div class="doc">
+<header class="doc-masthead">
+  <p class="inst"><span>CS 4600/5200 · Database Theory and Applications</span><span>Week 2 · Tuesday, January 19, 2027</span><span><a href="../../index.html">Course home</a></span></p>
+  <h1>Week 2 playground: relational algebra</h1>
+  <p class="tagline">Type an algebra expression, run it on the course database, and see the result with its expression tree. Every example from this week's slides is here, next to the SQL it becomes. Nothing you do here is graded or saved on a server.</p>
+</header>
+
+<div class="pg-bar">
+  <p class="pg-status" id="pg-status" data-state="loading"><span class="dot" aria-hidden="true"></span><span class="txt">Loading PostgreSQL in your browser…</span></p>
+  <p class="pg-progress" id="pg-progress">Exercises solved: <strong>0 of 8</strong></p>
+  <button type="button" class="btn" id="pg-reset-db">Reset database</button>
+</div>
+
+<main id="main">
+
+<section id="how" aria-labelledby="how-h">
+  <h2 id="how-h">How to use this page</h2>
+  <ul>
+    <li>Boxes marked <strong>Algebra</strong> take relational algebra. The buttons above each one insert a symbol where your cursor is, or you can type the plain word for it from the table below.</li>
+    <li>Press <strong>Run</strong>, or <kbd>Ctrl</kbd>+<kbd>Enter</kbd> (<kbd>Cmd</kbd>+<kbd>Enter</kbd> on a Mac). You get the result, the expression tree with the number of tuples at each step, and <strong>Show the SQL this became</strong>.</li>
+    <li>Results are <strong>sets</strong>, as in the algebra: no duplicate tuples. Boxes marked <strong>SQL</strong> run plain PostgreSQL, where results are bags.</li>
+    <li>Exercises have a <strong>Check answer</strong> button that compares your result with the answer. Your solved exercises are remembered in this browser only.</li>
+  </ul>
+  <div class="fig-scroll" tabindex="0" role="region" aria-label="Notation table">
+  <table class="tbl tbl--compact">
+    <caption>The notation, with the word you can type instead of each symbol</caption>
+    <thead><tr><th scope="col">Write</th><th scope="col">Or type</th><th scope="col">Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>σ[condition](R)</code></td><td><code>select[…](R)</code></td><td>Selection</td></tr>
+      <tr><td><code>π[a, b](R)</code></td><td><code>project[…](R)</code></td><td>Projection</td></tr>
+      <tr><td><code>ρ[S](R)</code> or <code>ρ[S(a, b)](R)</code></td><td><code>rename[…](R)</code></td><td>Rename the relation, and optionally its attributes</td></tr>
+      <tr><td><code>R ∪ S</code>, <code>R ∩ S</code>, <code>R − S</code></td><td><code>union</code>, <code>intersect</code>, <code>minus</code></td><td>Set operations</td></tr>
+      <tr><td><code>R × S</code></td><td><code>cross</code></td><td>Cartesian product</td></tr>
+      <tr><td><code>R ⋈ S</code>, <code>R ⋈[condition] S</code></td><td><code>join</code>, <code>join[…]</code></td><td>Natural join, theta join</td></tr>
+      <tr><td><code>R ÷ S</code></td><td><code>divide</code></td><td>Division</td></tr>
+      <tr><td><code>T ← expression</code></td><td><code>T &lt;- expression</code></td><td>Assignment, one per line; the last line is the answer</td></tr>
+      <tr><td><code>∧ ∨ ¬ ≠ ≤ ≥</code></td><td><code>and or not &lt;&gt; &lt;= &gt;=</code></td><td>In conditions</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Strings go in single quotes: <code>'Physics'</code>. When two relations share an attribute name, write <code>relation.attribute</code>, as in <code>student.dept_name</code>. A line that starts with <code>--</code> is a comment.</p>
+</section>
+
+<section id="schema" aria-labelledby="schema-h">
+  <h2 id="schema-h">The sample database</h2>
+  <p>A small university with five tables. <span class="pk">Underlined</span> attributes form the primary key; attributes marked <span class="fk">→</span> are foreign keys that point at another table.</p>
+  <figure class="fig-anim schema-fig" data-schema-map data-peek="#peek">
+<svg style="--dg-k:1" viewBox="0 0 720 444" role="group" aria-label="Map of the five tables. Each table is a button that shows its rows in the box below; its foreign keys light up when it has focus.">
+<defs><marker id="pm" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#0e5a6b"/></marker></defs>
+<path class="fk-link" data-from="instructor" data-to="department" d="M268 98 H236 V188 H205" fill="none" stroke="#0e5a6b" stroke-width="1.8" marker-end="url(#pm)"><title>instructor references department</title></path>
+<path class="fk-link" data-from="student" data-to="department" d="M268 248 H236 V188 H205" fill="none" stroke="#0e5a6b" stroke-width="1.8" marker-end="url(#pm)"><title>student references department</title></path>
+<path class="fk-link" data-from="course" data-to="department" d="M268 398 H236 V188 H205" fill="none" stroke="#0e5a6b" stroke-width="1.8" marker-end="url(#pm)"><title>course references department</title></path>
+<path class="fk-link" data-from="takes" data-to="student" d="M538 192 H498 V202 H465" fill="none" stroke="#0e5a6b" stroke-width="1.8" marker-end="url(#pm)"><title>takes references student</title></path>
+<path class="fk-link" data-from="takes" data-to="course" d="M538 215 H514 V352 H465" fill="none" stroke="#0e5a6b" stroke-width="1.8" marker-end="url(#pm)"><title>takes references course</title></path>
+<g class="tbl-node" data-table="department" tabindex="0" role="button" aria-label="department: show its rows">
+<rect class="dg-box node-frame" x="10" y="140" width="190" height="118" rx="4"/>
+<rect class="dg-box-a" x="10" y="140" width="190" height="30" rx="4"/>
+<text class="dg-txt-b" x="22" y="161">department</text>
+<text class="dg-txt" x="22" y="194" text-decoration="underline">dept_name</text>
+<text class="dg-txt" x="22" y="217">building</text>
+<text class="dg-txt" x="22" y="240">budget</text>
+</g>
+<g class="tbl-node" data-table="instructor" tabindex="0" role="button" aria-label="instructor: show its rows">
+<rect class="dg-box node-frame" x="270" y="4" width="190" height="134" rx="4"/>
+<rect class="dg-box-a" x="270" y="4" width="190" height="30" rx="4"/>
+<text class="dg-txt-b" x="282" y="25">instructor</text>
+<text class="dg-txt" x="282" y="58" text-decoration="underline">id</text>
+<text class="dg-txt" x="282" y="81">name</text>
+<text class="dg-txt dg-teal" x="282" y="104">dept_name</text>
+<text class="dg-txt" x="282" y="127">salary</text>
+</g>
+<g class="tbl-node" data-table="student" tabindex="0" role="button" aria-label="student: show its rows">
+<rect class="dg-box node-frame" x="270" y="154" width="190" height="134" rx="4"/>
+<rect class="dg-box-a" x="270" y="154" width="190" height="30" rx="4"/>
+<text class="dg-txt-b" x="282" y="175">student</text>
+<text class="dg-txt" x="282" y="208" text-decoration="underline">id</text>
+<text class="dg-txt" x="282" y="231">name</text>
+<text class="dg-txt dg-teal" x="282" y="254">dept_name</text>
+<text class="dg-txt" x="282" y="277">tot_cred</text>
+</g>
+<g class="tbl-node" data-table="course" tabindex="0" role="button" aria-label="course: show its rows">
+<rect class="dg-box node-frame" x="270" y="304" width="190" height="134" rx="4"/>
+<rect class="dg-box-a" x="270" y="304" width="190" height="30" rx="4"/>
+<text class="dg-txt-b" x="282" y="325">course</text>
+<text class="dg-txt" x="282" y="358" text-decoration="underline">course_id</text>
+<text class="dg-txt" x="282" y="381">title</text>
+<text class="dg-txt dg-teal" x="282" y="404">dept_name</text>
+<text class="dg-txt" x="282" y="427">credits</text>
+</g>
+<g class="tbl-node" data-table="takes" tabindex="0" role="button" aria-label="takes: show its rows">
+<rect class="dg-box node-frame" x="540" y="144" width="176" height="158" rx="4"/>
+<rect class="dg-box-a" x="540" y="144" width="176" height="30" rx="4"/>
+<text class="dg-txt-b" x="552" y="165">takes</text>
+<text class="dg-txt dg-teal" x="552" y="198" text-decoration="underline">id</text>
+<text class="dg-txt dg-teal" x="552" y="221" text-decoration="underline">course_id</text>
+<text class="dg-txt" x="552" y="244" text-decoration="underline">semester</text>
+<text class="dg-txt" x="552" y="267" text-decoration="underline">year</text>
+<text class="dg-txt" x="552" y="290">grade</text>
+</g>
+</svg>
+    <figcaption>Select a table, with a click or with <kbd>Tab</kbd> and <kbd>Enter</kbd>, to see its rows in the box below. Its foreign keys light up while it has focus.</figcaption>
+  </figure>
+  <div class="cell" id="peek" data-cell data-label="Peek">
+    <div class="cell-head"><label for="c00">Peek at a table</label></div>
+    <textarea id="c00">SELECT * FROM department;</textarea>
+  </div>
+  <p>The same five tables, with each attribute's type:</p>
+  <div class="schema">
+    <div class="schema-card"><h3>department</h3><ul>
+      <li><span class="pk">dept_name</span> <span class="ty">varchar(20)</span></li>
+      <li>building <span class="ty">varchar(15)</span></li>
+      <li>budget <span class="ty">numeric(12,2)</span></li></ul></div>
+    <div class="schema-card"><h3>instructor</h3><ul>
+      <li><span class="pk">id</span> <span class="ty">char(5)</span></li>
+      <li>name <span class="ty">varchar(30)</span></li>
+      <li><span class="fk">dept_name → department</span></li>
+      <li>salary <span class="ty">numeric(8,2)</span></li></ul></div>
+    <div class="schema-card"><h3>student</h3><ul>
+      <li><span class="pk">id</span> <span class="ty">char(5)</span></li>
+      <li>name <span class="ty">varchar(30)</span></li>
+      <li><span class="fk">dept_name → department</span></li>
+      <li>tot_cred <span class="ty">integer</span></li></ul></div>
+    <div class="schema-card"><h3>course</h3><ul>
+      <li><span class="pk">course_id</span> <span class="ty">varchar(8)</span></li>
+      <li>title <span class="ty">varchar(40)</span></li>
+      <li><span class="fk">dept_name → department</span></li>
+      <li>credits <span class="ty">integer</span></li></ul></div>
+    <div class="schema-card"><h3>takes</h3><ul>
+      <li><span class="pk"><span class="fk">id → student</span></span></li>
+      <li><span class="pk"><span class="fk">course_id → course</span></span></li>
+      <li><span class="pk">semester</span> <span class="ty">varchar(6)</span></li>
+      <li><span class="pk">year</span> <span class="ty">integer</span></li>
+      <li>grade <span class="ty">varchar(2)</span>, may be NULL</li></ul></div>
+  </div>
+</section>
+
+<section id="unary" aria-labelledby="un-h">
+  <h2 id="un-h">1. Selection, projection and rename</h2>
+  <p>Slide 6. σ keeps the tuples whose condition is true. The result has the same attributes as the input.</p>
+  <div class="cell" data-cell data-lang="ra" data-label="Example 1.1">
+    <div class="cell-head"><label for="c11">Example 1.1 · Algebra · Physics instructors</label></div>
+    <textarea id="c11">σ[dept_name = 'Physics'](instructor)</textarea>
+  </div>
+  <p>Slide 7. Conditions combine with ∧, ∨ and ¬.</p>
+  <div class="cell" data-cell data-lang="ra" data-label="Example 1.2">
+    <div class="cell-head"><label for="c12">Example 1.2 · Algebra · two conditions</label></div>
+    <textarea id="c12">σ[dept_name = 'Physics' ∧ salary &gt; 90000](instructor)</textarea>
+  </div>
+  <p>Slide 8. π keeps some attributes and, because the result is a set, each tuple once. Ten instructors, six departments.</p>
+  <div class="cell" data-cell data-lang="ra" data-label="Example 1.3">
+    <div class="cell-head"><label for="c13">Example 1.3 · Algebra · the departments that have instructors</label></div>
+    <textarea id="c13">π[dept_name](instructor)</textarea>
+  </div>
+  <p>SQL keeps the duplicates unless you ask for <code>DISTINCT</code>. Run this, then add <code>DISTINCT</code> after <code>SELECT</code> and run it again.</p>
+  <div class="cell" data-cell data-steps data-label="Example 1.4">
+    <div class="cell-head"><label for="c14">Example 1.4 · SQL · the same question, as a bag</label></div>
+    <textarea id="c14">SELECT dept_name FROM instructor;</textarea>
+  </div>
+  <p>Slide 9. Read a nested expression from the inside out: select first, then project. Then swap the order, <code>σ[dept_name = 'Physics'](π[name](instructor))</code>, and run it: π has already dropped <code>dept_name</code>.</p>
+  <div class="cell" data-cell data-lang="ra" data-label="Example 1.5">
+    <div class="cell-head"><label for="c15">Example 1.5 · Algebra · names of Physics instructors</label></div>
+    <textarea id="c15">π[name](σ[dept_name = 'Physics'](instructor))</textarea>
+  </div>
+  <p>Slide 10. To compare a tuple with another tuple of the same relation, give the relation a second name with ρ. Who earns more than Maria Lopez?</p>
+  <div class="cell" data-cell data-lang="ra" data-label="Example 1.6">
+    <div class="cell-head"><label for="c16">Example 1.6 · Algebra · a relation compared with itself</label></div>
+    <textarea id="c16">π[instructor.name](
+  σ[instructor.salary &gt; i2.salary ∧ i2.name = 'Maria Lopez'](
+    instructor × ρ[i2](instructor)))</textarea>
+  </div>
+</section>
+
+<section id="sets" aria-labelledby="sets-h">
+  <h2 id="sets-h">2. Union, intersection and difference</h2>
+  <p>Slide 12. F holds the courses taken in Fall 2025 and S those taken in Spring 2026. The first two lines only name results; the last line is the answer. Change <code>∪</code> to <code>∩</code> or <code>−</code> and run again.</p>
+  <div class="cell" data-cell data-lang="ra" data-label="Example 2.1">
+    <div class="cell-head"><label for="c21">Example 2.1 · Algebra · taken in either term</label></div>
+    <textarea id="c21">F ← π[course_id](σ[semester = 'Fall' ∧ year = 2025](takes))
+S ← π[course_id](σ[semester = 'Spring' ∧ year = 2026](takes))
+F ∪ S</textarea>
+  </div>
+  <div class="cell" data-cell data-lang="ra" data-label="Example 2.2">
+    <div class="cell-head"><label for="c22">Example 2.2 · Algebra · taken in both terms</label></div>
+    <textarea id="c22">F ← π[course_id](σ[semester = 'Fall' ∧ year = 2025](takes))
+S ← π[course_id](σ[semester = 'Spring' ∧ year = 2026](takes))
+F ∩ S</textarea>
+  </div>
+  <div class="cell" data-cell data-lang="ra" data-label="Example 2.3">
+    <div class="cell-head"><label for="c23">Example 2.3 · Algebra · taken in Fall 2025 but not Spring 2026</label></div>
+    <textarea id="c23">F ← π[course_id](σ[semester = 'Fall' ∧ year = 2025](takes))
+S ← π[course_id](σ[semester = 'Spring' ∧ year = 2026](takes))
+F − S</textarea>
+  </div>
+  <p>Slide 13. Both sides need the same number of attributes, with compatible types in the same positions. This one fails: names are text, credits are numbers. Change <code>tot_cred</code> to <code>name</code>, and <code>student</code> on the right to <code>instructor</code>, to get every person's name.</p>
+  <div class="cell" data-cell data-lang="ra" data-label="Example 2.4">
+    <div class="cell-head"><label for="c24">Example 2.4 · Algebra · not union-compatible</label></div>
+    <textarea id="c24">π[name](student) ∪ π[tot_cred](student)</textarea>
+  </div>
+</section>
+
+<section id="joins" aria-labelledby="joins-h">
+  <h2 id="joins-h">3. Products and joins</h2>
+  <p>Slides 14 and 15. The product pairs all 12 students with all 6 departments; the selection keeps the 12 pairs that belong together. The tree shows both counts.</p>
+  <div class="cell" data-cell data-lang="ra" data-label="Example 3.1">
+    <div class="cell-head"><label for="c31">Example 3.1 · Algebra · product, then selection</label></div>
+    <textarea id="c31">σ[student.dept_name = department.dept_name](student × department)</textarea>
+  </div>
+  <p>The theta join says the same thing in one operator.</p>
+  <div class="cell" data-cell data-lang="ra" data-label="Example 3.2">
+    <div class="cell-head"><label for="c32">Example 3.2 · Algebra · theta join</label></div>
+    <textarea id="c32">student ⋈[student.dept_name = department.dept_name] department</textarea>
+  </div>
+  <p>Slide 16. The natural join matches on every shared attribute name and keeps one copy of it. Compare the attributes with example 3.2.</p>
+  <div class="cell" data-cell data-lang="ra" data-label="Example 3.3">
+    <div class="cell-head"><label for="c33">Example 3.3 · Algebra · natural join</label></div>
+    <textarea id="c33">student ⋈ department</textarea>
+  </div>
+  <p>Slide 17. Who took which course? This gives 14 tuples, though <code>takes</code> has 22 enrollments. Look at the tree to see where they go: <code>student</code> and <code>course</code> both have <code>dept_name</code>.</p>
+  <div class="cell" data-cell data-lang="ra" data-label="Example 3.4">
+    <div class="cell-head"><label for="c34">Example 3.4 · Algebra · an accidental match</label></div>
+    <textarea id="c34">π[name, title](student ⋈ takes ⋈ course)</textarea>
+  </div>
+  <div class="cell" data-cell data-lang="ra" data-label="Example 3.5">
+    <div class="cell-head"><label for="c35">Example 3.5 · Algebra · the fix: keep only the attributes you join on</label></div>
+    <textarea id="c35">π[name, title](student ⋈ takes ⋈ π[course_id, title](course))</textarea>
+  </div>
+</section>
+
+<section id="steps" aria-labelledby="steps-h">
+  <h2 id="steps-h">4. Assignment and division</h2>
+  <p>Slide 18. Assignment names a step so the last line stays short. Courses taken by Physics majors:</p>
+  <div class="cell" data-cell data-lang="ra" data-label="Example 4.1">
+    <div class="cell-head"><label for="c41">Example 4.1 · Algebra · in three steps</label></div>
+    <textarea id="c41">phys    ← σ[dept_name = 'Physics'](student)
+enrolls ← phys ⋈ takes
+π[name, title](enrolls ⋈ π[course_id, title](course))</textarea>
+  </div>
+  <p>Slide 19. Division answers "for all" questions. Which students took every Comp. Sci. course?</p>
+  <div class="cell" data-cell data-lang="ra" data-label="Example 4.2">
+    <div class="cell-head"><label for="c42">Example 4.2 · Algebra · with ÷</label></div>
+    <textarea id="c42">R  ← π[id, course_id](takes)
+CS ← π[course_id](σ[dept_name = 'Comp. Sci.'](course))
+π[name](student ⋈ (R ÷ CS))</textarea>
+  </div>
+  <p>The same question with only the basic operators: pair every student with every CS course, take away the pairs that happened, and the students left over are missing something.</p>
+  <div class="cell" data-cell data-lang="ra" data-label="Example 4.3">
+    <div class="cell-head"><label for="c43">Example 4.3 · Algebra · division without ÷</label></div>
+    <textarea id="c43">R  ← π[id, course_id](takes)
+CS ← π[course_id](σ[dept_name = 'Comp. Sci.'](course))
+missing ← (π[id](R) × CS) − R
+π[name](student ⋈ (π[id](R) − π[id](missing)))</textarea>
+  </div>
+</section>
+
+<section id="sql" aria-labelledby="sql-h">
+  <h2 id="sql-h">5. Same answer, different work, and the SQL</h2>
+  <p>Slide 21. Both expressions find the students in a department housed in Kirk. Run both and read the counts in the two trees: the first builds 72 pairs, the second only 12.</p>
+  <div class="cell" data-cell data-lang="ra" data-label="Example 5.1">
+    <div class="cell-head"><label for="c51">Example 5.1 · Algebra · select after the product</label></div>
+    <textarea id="c51">σ[student.dept_name = department.dept_name ∧ building = 'Kirk'](student × department)</textarea>
+  </div>
+  <div class="cell" data-cell data-lang="ra" data-label="Example 5.2">
+    <div class="cell-head"><label for="c52">Example 5.2 · Algebra · push the selection down first</label></div>
+    <textarea id="c52">σ[student.dept_name = department.dept_name](student × σ[building = 'Kirk'](department))</textarea>
+  </div>
+  <p>Slide 22. The same question in SQL and in the algebra: what Physics majors took. Both give the 5 tuples of example 4.1.</p>
+  <div class="cell" data-cell data-label="Example 5.3">
+    <div class="cell-head"><label for="c53">Example 5.3 · SQL · joins written out</label></div>
+    <textarea id="c53">SELECT DISTINCT s.name, c.title
+FROM   student s
+JOIN   takes t  ON s.id = t.id
+JOIN   course c ON t.course_id = c.course_id
+WHERE  s.dept_name = 'Physics'
+ORDER BY s.name, c.title;</textarea>
+  </div>
+  <div class="cell" data-cell data-lang="ra" data-label="Example 5.4">
+    <div class="cell-head"><label for="c54">Example 5.4 · Algebra · the same query</label></div>
+    <textarea id="c54">π[name, title](σ[dept_name = 'Physics'](student) ⋈ takes ⋈ π[course_id, title](course))</textarea>
+  </div>
+  <p>SQL's <code>UNION</code> removes duplicates, like ∪. <code>UNION ALL</code> keeps them. Run this, then change <code>UNION ALL</code> to <code>UNION</code>.</p>
+  <div class="cell" data-cell data-label="Example 5.5">
+    <div class="cell-head"><label for="c55">Example 5.5 · SQL · a bag union</label></div>
+    <textarea id="c55">SELECT dept_name FROM instructor
+UNION ALL
+SELECT dept_name FROM student;</textarea>
+  </div>
+</section>
+
+<section id="exercises" aria-labelledby="ex-h">
+  <h2 id="ex-h">Exercises</h2>
+  <p>Write each answer in relational algebra, then press <strong>Check answer</strong> (or <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Enter</kbd>). Attribute names don't matter, but the attributes must come in the order asked. Exercises 1 to 6 are for everyone; 7 and 8 are a stretch.</p>
+
+  <div class="cell cell--ex" data-cell data-lang="ra" data-ex="w2e1" data-label="Exercise 1">
+    <div class="cell-head"><label for="e1">Exercise 1</label><span class="solved-badge"></span></div>
+    <div class="cell-prompt"><p>The <strong>titles</strong> of all courses worth 4 credits.</p></div>
+    <textarea id="e1"></textarea>
+    <script type="text/plain" class="solution" data-lang="ra">π[title](σ[credits = 4](course))</script>
+    <details><summary>Hint</summary><p>Select the rows first, then keep one attribute. Example 1.5 has the shape.</p></details>
+    <details><summary>Show a solution</summary><pre><code>π[title](σ[credits = 4](course))</code></pre></details>
+  </div>
+
+  <div class="cell cell--ex" data-cell data-lang="ra" data-ex="w2e2" data-label="Exercise 2">
+    <div class="cell-head"><label for="e2">Exercise 2</label><span class="solved-badge"></span></div>
+    <div class="cell-prompt"><p>The <strong>name</strong> and <strong>total credits</strong> of every student with at least 100 credits.</p></div>
+    <textarea id="e2"></textarea>
+    <script type="text/plain" class="solution" data-lang="ra">π[name, tot_cred](σ[tot_cred ≥ 100](student))</script>
+    <details><summary>Hint</summary><p>"At least" is ≥, or <code>&gt;=</code> if you type it.</p></details>
+    <details><summary>Show a solution</summary><pre><code>π[name, tot_cred](σ[tot_cred ≥ 100](student))</code></pre></details>
+  </div>
+
+  <div class="cell cell--ex" data-cell data-lang="ra" data-ex="w2e3" data-label="Exercise 3">
+    <div class="cell-head"><label for="e3">Exercise 3</label><span class="solved-badge"></span></div>
+    <div class="cell-prompt"><p>The <strong>names</strong> of students who took CS-101 but never took CS-347.</p></div>
+    <textarea id="e3"></textarea>
+    <script type="text/plain" class="solution" data-lang="ra">π[name](student ⋈ (π[id](σ[course_id = 'CS-101'](takes)) − π[id](σ[course_id = 'CS-347'](takes))))</script>
+    <details><summary>Hint</summary><p>Subtract the <em>ids</em>, not the names or whole enrollments: two enrollments are never equal tuples if their courses differ. Then join with <code>student</code> to get the names.</p></details>
+    <details><summary>Show a solution</summary><pre><code>took101 ← π[id](σ[course_id = 'CS-101'](takes))
+took347 ← π[id](σ[course_id = 'CS-347'](takes))
+π[name](student ⋈ (took101 − took347))</code></pre></details>
+  </div>
+
+  <div class="cell cell--ex" data-cell data-lang="ra" data-ex="w2e4" data-label="Exercise 4">
+    <div class="cell-head"><label for="e4">Exercise 4</label><span class="solved-badge"></span></div>
+    <div class="cell-prompt"><p>The <strong>names</strong> of students who took both CS-101 and CS-347.</p></div>
+    <textarea id="e4"></textarea>
+    <script type="text/plain" class="solution" data-lang="ra">π[name](student ⋈ (π[id](σ[course_id = 'CS-101'](takes)) ∩ π[id](σ[course_id = 'CS-347'](takes))))</script>
+    <details><summary>Hint</summary><p>Why doesn't <code>σ[course_id = 'CS-101' ∧ course_id = 'CS-347'](takes)</code> work? One tuple can't have two course ids.</p></details>
+    <details><summary>Show a solution</summary><pre><code>took101 ← π[id](σ[course_id = 'CS-101'](takes))
+took347 ← π[id](σ[course_id = 'CS-347'](takes))
+π[name](student ⋈ (took101 ∩ took347))</code></pre></details>
+  </div>
+
+  <div class="cell cell--ex" data-cell data-lang="ra" data-ex="w2e5" data-label="Exercise 5">
+    <div class="cell-head"><label for="e5">Exercise 5</label><span class="solved-badge"></span></div>
+    <div class="cell-prompt"><p>Each student's <strong>name</strong> with the <strong>building</strong> of their department.</p></div>
+    <textarea id="e5"></textarea>
+    <script type="text/plain" class="solution" data-lang="ra">π[name, building](student ⋈ department)</script>
+    <details><summary>Hint</summary><p><code>student</code> and <code>department</code> share exactly one attribute, so a natural join is safe here.</p></details>
+    <details><summary>Show a solution</summary><pre><code>π[name, building](student ⋈ department)</code></pre></details>
+  </div>
+
+  <div class="cell cell--ex" data-cell data-lang="ra" data-ex="w2e6" data-label="Exercise 6">
+    <div class="cell-head"><label for="e6">Exercise 6</label><span class="solved-badge"></span></div>
+    <div class="cell-prompt"><p>Each student's <strong>name</strong> with the <strong>title</strong> of every course they took in Spring 2026. Watch out for the trap in example 3.4.</p></div>
+    <textarea id="e6"></textarea>
+    <script type="text/plain" class="solution" data-lang="ra">π[name, title](student ⋈ σ[semester = 'Spring' ∧ year = 2026](takes) ⋈ π[course_id, title](course))</script>
+    <details><summary>Hint</summary><p>The answer has 9 tuples. If you get fewer, your join is also matching on <code>dept_name</code>.</p></details>
+    <details><summary>Show a solution</summary><pre><code>spring ← σ[semester = 'Spring' ∧ year = 2026](takes)
+π[name, title](student ⋈ spring ⋈ π[course_id, title](course))</code></pre></details>
+  </div>
+
+  <div class="cell cell--ex" data-cell data-lang="ra" data-ex="w2e7" data-label="Exercise 7">
+    <div class="cell-head"><label for="e7">Exercise 7 · stretch</label><span class="solved-badge"></span></div>
+    <div class="cell-prompt"><p>The <strong>name</strong> of the highest-paid instructor, without any aggregate function.</p></div>
+    <textarea id="e7"></textarea>
+    <script type="text/plain" class="solution" data-lang="ra">π[name](instructor) − π[i.name](σ[i.salary < j.salary](ρ[i](instructor) × ρ[j](instructor)))</script>
+    <details><summary>Hint</summary><p>Find every instructor who earns less than <em>someone</em>. Everyone else earns the most.</p></details>
+    <details><summary>Show a solution</summary><pre><code>earnsLess ← π[i.name](σ[i.salary &lt; j.salary](ρ[i](instructor) × ρ[j](instructor)))
+π[name](instructor) − earnsLess</code></pre><p>This assumes no two instructors share a name; with ids it would be safer.</p></details>
+  </div>
+
+  <div class="cell cell--ex" data-cell data-lang="ra" data-ex="w2e8" data-label="Exercise 8">
+    <div class="cell-head"><label for="e8">Exercise 8 · stretch</label><span class="solved-badge"></span></div>
+    <div class="cell-prompt"><p>The <strong>names</strong> of students who took every course offered by the Comp. Sci. department, in one line, with ÷.</p></div>
+    <textarea id="e8"></textarea>
+    <script type="text/plain" class="solution" data-lang="ra">π[name](student ⋈ (π[id, course_id](takes) ÷ π[course_id](σ[dept_name = 'Comp. Sci.'](course))))</script>
+    <details><summary>Hint</summary><p>Divide a relation of (id, course_id) pairs by a relation of course_ids. Project <code>takes</code> first, or its other attributes end up in the answer.</p></details>
+    <details><summary>Show a solution</summary><pre><code>π[name](student ⋈ (π[id, course_id](takes) ÷ π[course_id](σ[dept_name = 'Comp. Sci.'](course))))</code></pre></details>
+  </div>
+</section>
+
+<section id="scratch" aria-labelledby="scratch-h">
+  <h2 id="scratch-h">Scratch pad for Lab 1</h2>
+  <p>Try your Lab 1 answers here, then copy each one into <code>lab1_answers.txt</code>. Symbols or words both work in the answers file. Nothing here is checked or saved.</p>
+  <div class="cell" data-cell data-lang="ra" data-label="Scratch algebra">
+    <div class="cell-head"><label for="sra">Algebra scratch pad</label></div>
+    <textarea id="sra">-- Lab 1, question 1
+</textarea>
+  </div>
+  <div class="cell" data-cell data-label="Scratch SQL">
+    <div class="cell-head"><label for="ssql">SQL scratch pad</label></div>
+    <textarea id="ssql">-- Lab 1, the same question in SQL
+</textarea>
+  </div>
+</section>
+
+<section id="next" aria-labelledby="next-h">
+  <h2 id="next-h">Next</h2>
+  <p>Lab 1 asks you to write nine questions in the algebra and then in SQL. Next week moves fully into SQL: every kind of join, including outer joins, which keep the tuples a join would drop.</p>
+</section>
+</main>
+
+<footer>
+  <p>CS 4600/5200 · Database Theory and Applications · University of Central Missouri · Dr. Gorkem Kar. The database runs on <a href="https://pglite.dev/">PGlite</a>, PostgreSQL compiled to run in a web browser. The algebra is translated to SQL in your browser and run on that database.</p>
+</footer>
+</div>
+
+<script type="text/plain" id="seed-sql">
+-- CS 4600/5200 Database Theory and Applications, Spring 2027
+-- Week 1 sample database: a small university.
+-- Runs on PostgreSQL 14 or newer, and in the browser playground.
+-- Load it with:  psql -d university -f university.sql
+
+DROP TABLE IF EXISTS takes, course, student, instructor, department CASCADE;
+
+CREATE TABLE department (
+  dept_name  varchar(20) PRIMARY KEY,
+  building   varchar(15) NOT NULL,
+  budget     numeric(12,2) CHECK (budget > 0)
+);
+
+CREATE TABLE instructor (
+  id         char(5) PRIMARY KEY,
+  name       varchar(30) NOT NULL,
+  dept_name  varchar(20) REFERENCES department,
+  salary     numeric(8,2) CHECK (salary > 29000)
+);
+
+CREATE TABLE student (
+  id         char(5) PRIMARY KEY,
+  name       varchar(30) NOT NULL,
+  dept_name  varchar(20) REFERENCES department,
+  tot_cred   integer DEFAULT 0 CHECK (tot_cred >= 0)
+);
+
+CREATE TABLE course (
+  course_id  varchar(8) PRIMARY KEY,
+  title      varchar(40) NOT NULL,
+  dept_name  varchar(20) REFERENCES department,
+  credits    integer CHECK (credits > 0)
+);
+
+CREATE TABLE takes (
+  id         char(5) REFERENCES student,
+  course_id  varchar(8) REFERENCES course,
+  semester   varchar(6) CHECK (semester IN ('Fall', 'Spring', 'Summer')),
+  year       integer CHECK (year BETWEEN 2000 AND 2100),
+  grade      varchar(2),
+  PRIMARY KEY (id, course_id, semester, year)
+);
+
+INSERT INTO department VALUES
+  ('Comp. Sci.',  'Hale',   120000),
+  ('Mathematics', 'Hale',    90000),
+  ('Physics',     'Kirk',    85000),
+  ('Biology',     'Morrow',  95000),
+  ('History',     'Linden',  50000),
+  ('Music',       'Linden',  60000);
+
+INSERT INTO instructor VALUES
+  ('10101', 'Avery Chen',   'Comp. Sci.',  98000),
+  ('12121', 'Jordan Patel', 'Comp. Sci.',  92000),
+  ('15151', 'Maria Lopez',  'Mathematics', 87000),
+  ('22222', 'Sam Okafor',   'Physics',     95000),
+  ('32343', 'Lena Fischer', 'History',     61000),
+  ('33456', 'Kofi Mensah',  'Physics',     87000),
+  ('45565', 'Priya Raman',  'Comp. Sci.',  75000),
+  ('58583', 'Tomas Novak',  'History',     62000),
+  ('76543', 'Hana Sato',    'Biology',     80000),
+  ('83821', 'Diego Torres', 'Music',       72000);
+
+INSERT INTO student VALUES
+  ('00128', 'Riley Adams',   'Comp. Sci.',  102),
+  ('12345', 'Morgan Lee',    'Comp. Sci.',   32),
+  ('19991', 'Casey Brooks',  'History',      80),
+  ('23121', 'Jamie Rivera',  'Physics',     110),
+  ('44553', 'Taylor Nguyen', 'Physics',      56),
+  ('45678', 'Drew Kim',      'Physics',      46),
+  ('54321', 'Alex Johnson',  'Comp. Sci.',   54),
+  ('55739', 'Sky Martinez',  'Music',        38),
+  ('70557', 'Quinn Davis',   'Physics',       0),
+  ('76653', 'Robin Ali',     'Mathematics',  58),
+  ('98765', 'Jesse Park',    'Mathematics',  98),
+  ('98988', 'Avery Clark',   'Biology',     120);
+
+INSERT INTO course VALUES
+  ('CS-101',  'Intro to Computer Science', 'Comp. Sci.',  4),
+  ('CS-190',  'Game Design',               'Comp. Sci.',  4),
+  ('CS-315',  'Robotics',                  'Comp. Sci.',  3),
+  ('CS-347',  'Database System Concepts',  'Comp. Sci.',  3),
+  ('MA-201',  'Linear Algebra',            'Mathematics', 3),
+  ('PHY-101', 'Physical Principles',       'Physics',     4),
+  ('HIS-351', 'World History',             'History',     3),
+  ('MU-199',  'Music Video Production',    'Music',       3),
+  ('BIO-101', 'Intro to Biology',          'Biology',     4);
+
+INSERT INTO takes VALUES
+  ('00128', 'CS-101',  'Fall',   2025, 'A'),
+  ('00128', 'CS-347',  'Fall',   2025, 'A-'),
+  ('12345', 'CS-101',  'Fall',   2025, 'C'),
+  ('12345', 'CS-190',  'Spring', 2026, 'A'),
+  ('12345', 'CS-315',  'Spring', 2026, 'A'),
+  ('12345', 'CS-347',  'Fall',   2025, 'A'),
+  ('19991', 'HIS-351', 'Spring', 2026, 'B'),
+  ('23121', 'PHY-101', 'Fall',   2025, 'C+'),
+  ('44553', 'PHY-101', 'Fall',   2025, 'B-'),
+  ('45678', 'CS-101',  'Fall',   2025, 'F'),
+  ('45678', 'CS-101',  'Spring', 2026, 'B+'),
+  ('45678', 'CS-315',  'Spring', 2026, 'B'),
+  ('54321', 'CS-101',  'Fall',   2025, 'A-'),
+  ('54321', 'CS-190',  'Spring', 2026, 'B+'),
+  ('55739', 'MU-199',  'Spring', 2026, 'A-'),
+  ('76653', 'MA-201',  'Fall',   2025, 'C'),
+  ('98765', 'CS-101',  'Fall',   2025, 'C-'),
+  ('98765', 'CS-315',  'Spring', 2026, 'B'),
+  ('98988', 'BIO-101', 'Spring', 2026, 'A'),
+  ('98988', 'CS-347',  'Spring', 2027, NULL),
+  ('70557', 'CS-347',  'Spring', 2027, NULL),
+  ('54321', 'MA-201',  'Spring', 2027, NULL);
+
+</script>
+<script type="module" src="../../assets/playground.js"></script>
+</body>
+</html>

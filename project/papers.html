@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Paper Critique · CS 5200</title>
+<meta name="description" content="CS 5200 paper critique: choose one of sixteen database research papers and write a two-page critique, due with project milestone 4.">
+<link rel="stylesheet" href="../assets/course.css">
+<link rel="stylesheet" href="../assets/db.css">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to the paper list</a>
+
+<div class="doc">
+<header class="doc-masthead">
+  <p class="inst"><span>CS 4600/5200 · Database Theory and Applications</span><span>Spring 2027</span><span><a href="index.html">Term project</a></span><span><a href="../index.html">Course home</a></span></p>
+  <h1>CS 5200: the paper critique</h1>
+  <p class="tagline">Most of what this course teaches was first argued in a research paper. Pick one of the papers below, read it the way its first readers did, and write two pages on what it claims, whether the claim holds up, and what is left of it in PostgreSQL today.</p>
+</header>
+
+<dl class="facts">
+  <div><dt>Who</dt><dd>CS 5200 students, and any team with a CS 5200 student in it</dd></div>
+  <div><dt>Choose by</dt><dd>Sunday, April 4, with milestone 3</dd></div>
+  <div><dt>Due</dt><dd>Sunday, April 25, 11:59 p.m. CT, in the milestone 4 zip</dd></div>
+  <div><dt>Worth</dt><dd>2 of milestone 4's 8 points</dd></div>
+</dl>
+
+<nav class="toc" aria-labelledby="toc-h">
+  <h2 id="toc-h">On this page</h2>
+  <ol>
+    <li><a href="#list">The papers</a></li>
+    <li><a href="#read">How to read one</a></li>
+    <li><a href="#write">What the two pages hold</a></li>
+    <li><a href="#submit">What to submit and how it is graded</a></li>
+    <li><a href="#help">Questions people usually ask</a></li>
+  </ol>
+</nav>
+
+<main id="main">
+
+<section id="list" aria-labelledby="list-h">
+  <h2 id="list-h">The papers</h2>
+  <p>They are grouped by the week of the course they belong to, so you can read yours while the topic is fresh. Search for the title in the library's article search or on the web; most of them are also on the authors' or publishers' own pages. If you want a paper that is not here, email me its title by April 4 and say why.</p>
+
+  <h3>The model and the language (weeks 1 to 4)</h3>
+  <ol class="refs">
+    <li>E. F. Codd. "A Relational Model of Data for Large Shared Data Banks." <cite>Communications of the ACM</cite> 13(6), 1970. <span class="muted">Where relations, keys and the algebra start. Short, and still readable.</span></li>
+    <li>D. D. Chamberlin and R. F. Boyce. "SEQUEL: A Structured English Query Language." <cite>ACM SIGFIDET Workshop on Data Description, Access and Control</cite>, 1974. <span class="muted">The first version of SQL, and what its designers thought it was for.</span></li>
+  </ol>
+
+  <h3>Storage, indexes and query plans (weeks 10 to 12)</h3>
+  <ol class="refs" start="3">
+    <li>R. Bayer and E. McCreight. "Organization and Maintenance of Large Ordered Indexes." <cite>Acta Informatica</cite> 1(3), 1972. <span class="muted">The B-tree. Heavy on analysis; read it for the idea and the cost argument.</span></li>
+    <li>P. G. Selinger, M. M. Astrahan, D. D. Chamberlin, R. A. Lorie and T. G. Price. "Access Path Selection in a Relational Database Management System." <cite>ACM SIGMOD</cite>, 1979. <span class="muted">Cost-based optimization: the plan EXPLAIN shows you comes from this paper.</span></li>
+    <li>V. Leis, A. Gubichev, A. Mirchev, P. Boncz, A. Kemper and T. Neumann. "How Good Are Query Optimizers, Really?" <cite>Proceedings of the VLDB Endowment</cite> 9(3), 2015. <span class="muted">Tests real optimizers, PostgreSQL among them, and finds where the estimates go wrong.</span></li>
+  </ol>
+
+  <h3>Transactions and recovery (weeks 13 and 14)</h3>
+  <ol class="refs" start="6">
+    <li>J. N. Gray, R. A. Lorie, G. R. Putzolu and I. L. Traiger. "Granularity of Locks and Degrees of Consistency in a Shared Data Base." <cite>IFIP Working Conference on Modelling in Data Base Management Systems</cite>, 1976. <span class="muted">Intention locks, and the first account of isolation levels.</span></li>
+    <li>H. T. Kung and J. T. Robinson. "On Optimistic Methods for Concurrency Control." <cite>ACM Transactions on Database Systems</cite> 6(2), 1981. <span class="muted">Do the work first, check for conflicts at commit.</span></li>
+    <li>H. Berenson, P. Bernstein, J. Gray, J. Melton, E. O'Neil and P. O'Neil. "A Critique of ANSI SQL Isolation Levels." <cite>ACM SIGMOD</cite>, 1995. <span class="muted">Why the standard's definitions fall short, and snapshot isolation.</span></li>
+    <li>C. Mohan, D. Haderle, B. Lindsay, H. Pirahesh and P. Schwarz. "ARIES: A Transaction Recovery Method Supporting Fine-Granularity Locking and Partial Rollbacks Using Write-Ahead Logging." <cite>ACM Transactions on Database Systems</cite> 17(1), 1992. <span class="muted">Long. Critique sections 1 to 3 and the restart algorithm; say which parts you read.</span></li>
+  </ol>
+
+  <h3>Whole systems (any week)</h3>
+  <ol class="refs" start="10">
+    <li>M. Stonebraker and L. A. Rowe. "The Design of POSTGRES." <cite>ACM SIGMOD</cite>, 1986. <span class="muted">The goals of the system you have used all semester. Which of them survived?</span></li>
+    <li>J. M. Hellerstein, M. Stonebraker and J. Hamilton. "Architecture of a Database System." <cite>Foundations and Trends in Databases</cite> 1(2), 2007. <span class="muted">A survey of over 100 pages. Pick two sections, say which, and critique those.</span></li>
+  </ol>
+
+  <h3>Beyond one relational server (week 15)</h3>
+  <ol class="refs" start="12">
+    <li>M. Stonebraker and U. Çetintemel. "'One Size Fits All': An Idea Whose Time Has Come and Gone." <cite>IEEE International Conference on Data Engineering</cite>, 2005. <span class="muted">The case for specialized engines. A good pick if your NoSQL feature raised the question.</span></li>
+    <li>F. Chang, J. Dean, S. Ghemawat, W. C. Hsieh, D. A. Wallach, M. Burrows, T. Chandra, A. Fikes and R. E. Gruber. "Bigtable: A Distributed Storage System for Structured Data." <cite>USENIX OSDI</cite>, 2006. <span class="muted">Rows, column families and timestamps, sorted and split across many machines.</span></li>
+    <li>G. DeCandia, D. Hastorun, M. Jampani, G. Kakulapati, A. Lakshman, A. Pilchin, S. Sivasubramanian, P. Vosshall and W. Vogels. "Dynamo: Amazon's Highly Available Key-value Store." <cite>ACM SOSP</cite>, 2007. <span class="muted">Gives up consistency on purpose, and says when that is acceptable.</span></li>
+    <li>J. C. Corbett and others. "Spanner: Google's Globally-Distributed Database." <cite>USENIX OSDI</cite>, 2012. <span class="muted">Brings transactions and SQL back, across data centers.</span></li>
+    <li>A. Pavlo and M. Aslett. "What's Really New with NewSQL?" <cite>ACM SIGMOD Record</cite> 45(2), 2016. <span class="muted">A short survey; pair it with one system it describes if you choose it.</span></li>
+  </ol>
+</section>
+
+<section id="read" aria-labelledby="read-h">
+  <h2 id="read-h">How to read one</h2>
+  <p>Read it three times, each time more slowly, as S. Keshav suggests in "How to Read a Paper" (<cite>ACM SIGCOMM Computer Communication Review</cite> 37(3), 2007):</p>
+  <ol>
+    <li><strong>Ten minutes:</strong> title, abstract, introduction, the headings and the conclusion. What problem, and what do they claim?</li>
+    <li><strong>An hour:</strong> the whole paper, skipping proofs. Mark every figure and example you could redo by hand.</li>
+    <li><strong>As long as it takes:</strong> the part your critique is about, until you could explain it at the board with an example of your own.</li>
+  </ol>
+  <p>Older papers use older words: a "data bank" is a database, a "relation" may be drawn as a flat file, and SEQUEL's syntax is not quite SQL's. Translating them into this course's terms is part of the work.</p>
+</section>
+
+<section id="write" aria-labelledby="write-h">
+  <h2 id="write-h">What the two pages hold</h2>
+  <p>Two pages, 11-point type, single-spaced, with the references allowed onto a third. Use these four headings:</p>
+  <ol>
+    <li><strong>The problem and the claim</strong> (about a quarter): what was hard before this paper, and what the authors say they solved. In your words, not the abstract's.</li>
+    <li><strong>The idea, worked through</strong> (about a quarter): the central mechanism, shown on a small example of your own. Using the course's university schema, or your project's, is ideal.</li>
+    <li><strong>Does it hold up?</strong> (about a third): what the paper assumes, what its evidence shows and does not, and what has changed since it was written. Where does PostgreSQL follow it, and where does it do something else? Check the PostgreSQL documentation before you say so.</li>
+    <li><strong>One question</strong> (a few lines): the question you would ask the authors, and why it matters to someone building an application like yours.</li>
+  </ol>
+  <p>Cite the paper, the PostgreSQL documentation pages you used, and anything else you read. Quote sparingly and mark every quotation.</p>
+</section>
+
+<section id="submit" aria-labelledby="sub-h">
+  <h2 id="sub-h">What to submit and how it is graded</h2>
+  <ul>
+    <li><strong>By April 4:</strong> put the number and title of your paper in a line of the milestone 3 design notes.</li>
+    <li><strong>By April 25:</strong> add <code>m4_critique.pdf</code> to the milestone 4 zip, with your names and the paper's full reference at the top, and one line at the end on how you used AI tools, if at all.</li>
+    <li>A team writes one critique and both partners are graded on it. In the week 15 walkthrough, either partner may be asked about the paper.</li>
+  </ul>
+  <div class="fig-scroll" tabindex="0" role="region" aria-label="Paper critique rubric, 2 points">
+  <table class="tbl">
+    <caption>Paper critique rubric, 2 points</caption>
+    <thead><tr><th scope="col">Item</th><th scope="col">What earns full credit</th><th scope="col" class="num">Points</th></tr></thead>
+    <tbody>
+      <tr><td>Problem and claim</td><td>Accurate and in your own words; someone who has not read the paper knows what it set out to do.</td><td class="num">0.5</td></tr>
+      <tr><td>The idea, worked through</td><td>The central mechanism is right, on an example of your own that you could redo at the board.</td><td class="num">0.5</td></tr>
+      <tr><td>Does it hold up?</td><td>Names the assumptions and the limits of the evidence, and compares with PostgreSQL today using its documentation.</td><td class="num">0.75</td></tr>
+      <tr><td>Writing</td><td>Two pages, the four headings, citations, and the AI line.</td><td class="num">0.25</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Late work follows milestone 4: 10% per day for up to three days.</p>
+</section>
+
+<section id="help" aria-labelledby="help-h">
+  <h2 id="help-h">Questions people usually ask</h2>
+  <ul>
+    <li><strong>Can two teams choose the same paper?</strong> Yes. Write your own critique; they will read very differently.</li>
+    <li><strong>Can an AI tool summarize the paper for me?</strong> No. The course's limited-use policy applies: you may ask one to explain a term or a piece of notation, but the reading and the writing are yours, and the walkthrough will show it.</li>
+    <li><strong>The paper is long. Do I have to read all of it?</strong> For papers 9 and 11, no: say which sections you critique. For the others, yes.</li>
+    <li><strong>Can I disagree with a famous paper?</strong> Please do, with evidence. Agreeing is fine too, if you say why.</li>
+    <li><strong>Anything else</strong>: office hours, Tuesday and Wednesday 12:00–3:00 p.m., MIC room D159, or the project discussion in Brightspace.</li>
+  </ul>
+</section>
+</main>
+
+<footer>
+  <p>CS 4600/5200 · Database Theory and Applications · University of Central Missouri · Dr. Gorkem Kar · Spring 2027</p>
+</footer>
+</div>
+</body>
+</html>

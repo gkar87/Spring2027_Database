@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lab 1 — Relational Algebra · CS 4600/5200</title>
+<meta name="description" content="CS 4600/5200 Lab 1: write nine questions in relational algebra, check each in the week 2 playground, then write the same queries in SQL and run them in PostgreSQL.">
+<link rel="stylesheet" href="../../assets/course.css">
+<link rel="stylesheet" href="../../assets/db.css">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to the lab</a>
+
+<div class="doc">
+<header class="doc-masthead">
+  <p class="inst"><span>CS 4600/5200 · Database Theory and Applications</span><span>Week 2</span><span><a href="../../index.html">Course home</a></span></p>
+  <h1>Lab 1: Relational algebra, then SQL</h1>
+  <p class="tagline">You write each question twice: first as an algebra expression, which says exactly what the answer is, then as SQL, which PostgreSQL runs. When both return the same tuples, you understand the query.</p>
+</header>
+
+<dl class="facts">
+  <div><dt>Due</dt><dd>Sunday, January 24, 11:59 p.m. CT</dd></div>
+  <div><dt>Time</dt><dd>About 90 minutes, half of it in class</dd></div>
+  <div><dt>Submit</dt><dd>One zip file, uploaded to Brightspace</dd></div>
+  <div><dt>Worth</dt><dd>One of the labs (labs are 25% of the grade)</dd></div>
+</dl>
+
+<nav class="toc" aria-labelledby="toc-h">
+  <h2 id="toc-h">On this page</h2>
+  <ol>
+    <li><a href="#files">Files for this lab</a></li>
+    <li><a href="#a">Part A: warm up in the playground</a></li>
+    <li><a href="#b">Part B: nine questions in the algebra</a></li>
+    <li><a href="#c">Part C: the same questions in SQL</a></li>
+    <li><a href="#submit">What to submit and how it is graded</a></li>
+    <li><a href="#help">If something goes wrong</a></li>
+  </ol>
+</nav>
+
+<main id="main">
+
+<section id="files" aria-labelledby="files-h">
+  <h2 id="files-h">Files for this lab</h2>
+  <p>Download both into one folder, for example <code>Documents/cs5200/lab1</code>. You also need the <code>university</code> database from Lab 0. If you are not sure it is still intact, reload it: <code>psql -d university -f university.sql</code>.</p>
+  <ul>
+    <li><a href="lab1_answers.txt" download>lab1_answers.txt</a>: the starter file for your name, your algebra and your written answer.</li>
+    <li><a href="lab1.sql" download>lab1.sql</a>: the starter file for your SQL in Part C.</li>
+    <li><a href="university.sql" download>university.sql</a>: the same sample database as Lab 0, in case you need to reload it.</li>
+  </ul>
+</section>
+
+<section id="a" aria-labelledby="a-h">
+  <h2 id="a-h">Part A: warm up in the playground (15 minutes)</h2>
+  <p>Open the <a href="playground.html">week 2 playground</a> and solve exercises 1 to 6. They are not graded, but every Part B question uses one of their patterns. Run examples 3.4 and 3.5 too, and read the tuple counts in their trees: Q8 builds on them.</p>
+</section>
+
+<section id="b" aria-labelledby="b-h">
+  <h2 id="b-h">Part B: nine questions in the algebra</h2>
+  <p>Work in the playground's <a href="playground.html#scratch">scratch pad</a>. When an expression returns what the question asks for, copy it into <code>lab1_answers.txt</code> under its heading, with the number of tuples it returned. Symbols and words both work in the answers file.</p>
+  <ol class="qs">
+    <li><p><strong>Q1.</strong> The name and salary of every instructor in the Comp. Sci. department.</p></li>
+    <li><p><strong>Q2.</strong> The titles of the courses offered by departments housed in Hale.</p></li>
+    <li><p><strong>Q3.</strong> The names of instructors who earn more than 85,000 and work in a department whose budget is under 100,000.</p></li>
+    <li><p><strong>Q4.</strong> The names of students who took a course in Fall 2025 and also a course in Spring 2026.</p></li>
+    <li><p><strong>Q5.</strong> The departments where no instructor earns less than 80,000.</p></li>
+    <li><p><strong>Q6.</strong> Each student's name with the title of every course they took outside their own department. Natural join will not do this one; use a theta join.</p></li>
+    <li><p><strong>Q7.</strong> Every pair of different students in the same department, each pair listed once. You will need ρ, as on slide 10.</p></li>
+    <li><p><strong>Q8.</strong> Run <code>π[name](instructor ⋈ student)</code>. (a) In two or three sentences, say how many tuples it returns and why, naming the attributes the join matches on. (b) Write an expression that pairs each instructor's name with the name of every student in the same department.</p></li>
+    <li><p><strong>Q9a (everyone).</strong> The names of students who took every 4-credit course offered by the Comp. Sci. department, using ÷.</p></li>
+    <li><p><strong>Q9b (CS 5200 only).</strong> The same question without ÷, using only σ, π, ×, − and joins. Slide 19 shows the rewrite.</p></li>
+  </ol>
+  <div class="callout">
+    <span class="mark" aria-hidden="true">§</span>
+    <p>Check your counts against each other: Q4 needs an ∩, Q5 a −, and Q4, Q5 and Q9 each have between 2 and 4 tuples. If an expression returns 0 tuples, look at its tree in the playground to see which step empties it.</p>
+  </div>
+</section>
+
+<section id="c" aria-labelledby="c-h">
+  <h2 id="c-h">Part C: the same questions in SQL</h2>
+  <p>Write Q1 to Q8(b) in SQL in <code>lab1.sql</code>, and Q9b too if you are in CS 5200. Each query should return the same number of tuples as your algebra. Try them in the playground's SQL scratch pad first, then run the whole file in your own PostgreSQL:</p>
+<pre>psql -d university -e -f lab1.sql &gt; lab1_output.txt 2&gt;&amp;1</pre>
+  <p>On Windows, add <code>-U postgres</code> after <code>psql</code>. In Colab, start the line with <code>!</code>.</p>
+  <div class="fig-scroll" tabindex="0" role="region" aria-label="The SQL you need, from this week&#x27;s slides">
+  <table class="tbl tbl--compact">
+    <caption>The SQL you need, from this week's slides</caption>
+    <thead><tr><th scope="col">Algebra</th><th scope="col">SQL</th><th scope="col">Slide</th></tr></thead>
+    <tbody>
+      <tr><td>π, with set semantics</td><td><code>SELECT DISTINCT a, b</code></td><td>8</td></tr>
+      <tr><td>σ</td><td><code>WHERE condition</code></td><td>6</td></tr>
+      <tr><td>⋈ with a condition</td><td><code>FROM r JOIN s ON condition</code></td><td>15</td></tr>
+      <tr><td>ρ</td><td><code>FROM student s1 JOIN student s2 ON …</code></td><td>10</td></tr>
+      <tr><td>∪ ∩ −</td><td><code>UNION</code>, <code>INTERSECT</code>, <code>EXCEPT</code> between two <code>SELECT</code>s</td><td>22</td></tr>
+      <tr><td>≠</td><td><code>&lt;&gt;</code></td><td>7</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>For Q4, take the ∩ of the ids, then keep the students whose id is in it: <code>WHERE id IN (… INTERSECT …)</code>. For Q9b, SQL has no division; the PostgreSQL documentation on <a href="https://www.postgresql.org/docs/current/functions-subquery.html">subquery expressions</a> explains <code>NOT EXISTS</code>, which week 4 covers in class.</p>
+</section>
+
+<section id="submit" aria-labelledby="sub-h">
+  <h2 id="sub-h">What to submit and how it is graded</h2>
+  <p>Upload <strong>one zip file</strong> to the Lab 1 assignment in Brightspace. Name it <code>lab1_lastname_firstname.zip</code>, for example <code>lab1_rivera_jamie.zip</code>, and put these three files in it:</p>
+  <ul>
+    <li><code>lab1_answers.txt</code>: your name, your algebra for every question with its tuple count, and your answer to Q8(a).</li>
+    <li><code>lab1.sql</code>: your SQL for Part C.</li>
+    <li><code>lab1_output.txt</code>: what psql printed when you ran it.</li>
+  </ul>
+  <p>Save <code>lab1_answers.txt</code> as plain text: in TextEdit choose <strong>Format › Make Plain Text</strong> first; Notepad and VS Code save plain text already. To make the zip, put the three files in one folder and select them, then:</p>
+  <ul>
+    <li><strong>Windows:</strong> right-click and choose <strong>Compress to ZIP file</strong> (on Windows 10, <strong>Send to › Compressed (zipped) folder</strong>), then rename the zip.</li>
+    <li><strong>macOS:</strong> right-click, choose <strong>Compress 3 Items</strong>, and rename <code>Archive.zip</code>.</li>
+    <li><strong>Linux or Colab:</strong> run the line below. In Colab, start it with <code>!</code>, then right-click the zip in the file panel and choose <strong>Download</strong>.</li>
+  </ul>
+<pre>zip lab1_lastname_firstname.zip lab1_answers.txt lab1.sql lab1_output.txt</pre>
+  <p>Before you upload, open the zip and check that all three files are inside and that <code>lab1_output.txt</code> is not empty. Upload a new zip if you need to change anything before the deadline; the latest one is graded.</p>
+  <div class="fig-scroll" tabindex="0" role="region" aria-label="Lab 1 rubric, 10 points">
+  <table class="tbl">
+    <caption>Lab 1 rubric, 10 points</caption>
+    <thead><tr><th scope="col">Item</th><th scope="col">What earns full credit</th><th scope="col" class="num">Points</th></tr></thead>
+    <tbody>
+      <tr><td>Algebra (Q1–Q7, Q8b)</td><td>Each expression returns exactly the tuples asked for, with its count.</td><td class="num">4</td></tr>
+      <tr><td>SQL (Q1–Q7, Q8b)</td><td>Each query runs in your output and returns the same tuples as your algebra.</td><td class="num">3</td></tr>
+      <tr><td>Explanation (Q8a)</td><td>The right count, the three shared attributes, and why no tuple survives.</td><td class="num">1</td></tr>
+      <tr><td>Division (Q9)</td><td>CS 4600: Q9a correct, 2 points. CS 5200: Q9a, 1 point; Q9b's algebra and SQL, 1 point.</td><td class="num">2</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Late work loses 10% per day for up to three days and is not accepted after that. Under the course's limited-use AI policy, you may ask an AI tool to explain an error message or a symbol, but the expressions and queries must be your own, and you should be ready to explain any of them. Say how you used AI at the end of the answers file.</p>
+</section>
+
+<section id="help" aria-labelledby="help-h">
+  <h2 id="help-h">If something goes wrong</h2>
+  <ul>
+    <li><strong>"There is no attribute …"</strong> in the playground: an earlier π dropped that attribute, or two relations share the name and you need <code>relation.attribute</code>. The message lists the attributes that are there.</li>
+    <li><strong>Fewer tuples than you expect</strong> from a natural join: the two sides share more attribute names than you meant. Slide 17 and example 3.4 show the fix.</li>
+    <li><strong>Your SQL returns more rows than your algebra</strong>: SQL keeps duplicates. Add <code>DISTINCT</code>.</li>
+    <li><strong>"each UNION query must have the same number of columns"</strong> or <strong>"types … cannot be matched"</strong>: the two sides are not union-compatible (slide 13).</li>
+    <li><strong>Anything else</strong>: copy the exact message and bring it to office hours, Tuesday and Wednesday 12:00–3:00 p.m., MIC room D159, or post it in the week 2 discussion in Brightspace.</li>
+  </ul>
+</section>
+</main>
+
+<footer>
+  <p>CS 4600/5200 · Database Theory and Applications · University of Central Missouri · Dr. Gorkem Kar · Spring 2027</p>
+</footer>
+</div>
+</body>
+</html>

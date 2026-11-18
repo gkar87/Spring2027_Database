@@ -1,0 +1,32 @@
+CS 4600/5200 Lab 0: answers
+===========================
+
+Name:
+Student ID:
+Course (CS 4600 or CS 5200):
+Section (online or face to face):
+
+Save this file as plain text. Write each answer under its heading, in your
+own words. Leave the headings as they are, so your instructor can find each
+answer quickly.
+
+
+E1. Which constraint did your Q6 break? If the database had accepted that
+    row, what would go wrong later, and for whom? (3 or 4 sentences)
+
+Answer:
+
+
+
+E2. The primary key of takes is (id, course_id, semester, year). Using a
+    row from the data, explain why (id, course_id) alone would not be
+    enough. (3 or 4 sentences)
+
+Answer:
+
+
+
+AI use. Did you use a generative AI tool for this lab? If yes, say which
+tool, what you asked it, and what you kept. If no, write "None".
+
+Answer:

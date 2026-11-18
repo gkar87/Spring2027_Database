@@ -1,0 +1,75 @@
+CS 4600/5200 Lab 6: answers
+===========================
+
+Name:
+Student ID:
+Course (CS 4600 or CS 5200):
+Section (online or face to face):
+
+Save this file as plain text. Your SQL goes in lab6.sql and your Python in
+lab6.py. Here, write the results each question asks for, and answer the
+written questions in your own words. Leave the headings as they are.
+
+
+Part B: results
+---------------
+
+Q2  how many rows, and the student who appears twice:
+Q3  enrollments counted as registrar_app:        the error the DELETE gave:
+P1  how many students took CS-101 in Fall 2025:
+P2  rows for 'ri':          rows for ' OR 1=1 --:
+P4  the five results, in order:
+    1.
+    2.
+    3.
+    4.
+    5.
+P5  Avery Chen's salary after the raise, as previewed:
+P6  how many pages, and the ids on the last page:
+P7  the department with 0 students:
+    the counts add up to (which is not 13, because):
+
+
+Part C: short answers
+---------------------
+
+W1. Suppose find_students built its query with an f-string:
+        f"SELECT id, name FROM student WHERE name ILIKE '%{text}%'"
+    Write out the exact SQL it would send for the input  ' OR 1=1 --
+    and say what that query returns on our data and why. Then say why your
+    version, with %s, returns no rows for the same input.
+    (three to five sentences)
+
+
+W2. A first version of dept_counts read the department names with one query,
+    then ran a SELECT count(*) for each department. How many queries does
+    that send to the database here, and how many would it send for a
+    university with 300 departments? Why does the number of queries matter
+    more for a program than for psql?
+    (two to four sentences)
+
+
+W3. enroll checks the prerequisites and then inserts into takes, and commits
+    once at the end. Why should the check and the insert be in the same
+    transaction? If two copies of the program enroll the same student in the
+    same course at the same moment, what stops the student from being
+    enrolled twice?
+    (two to four sentences)
+
+
+Part D: CS 5200 only
+--------------------
+
+P8  Drew Kim's GPA:          batches fetched:
+
+D1. gpa_report streams rows through a server-side cursor and computes the
+    GPA in Python. Write the single SQL query that would compute the same
+    report in the database instead (put it here, not in lab6.py). Which
+    would you use for 13 students, and which for 300,000, and why? When
+    is a server-side cursor worth having at all?
+    (the query, then three to five sentences)
+
+
+How I used AI tools, if at all
+------------------------------
+

@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Week 8 — Midterm Review: Weeks 1 to 7 · CS 4600/5200</title>
+<meta name="description" content="CS 4600/5200 week 8: a review of weeks 1 to 7 before the midterm: keys and relational algebra, how a SQL query is evaluated, NULLs and three-valued logic, outer joins, subqueries and window functions, constraints and transactions, mapping E-R diagrams to tables, and the normalization toolkit. Project milestone 2.">
+<link rel="stylesheet" href="../../assets/course.css">
+<link rel="stylesheet" href="../../assets/db.css">
+</head>
+<body>
+<a class="skip-link" href="#s1">Skip to the first slide</a>
+
+<div class="deck-stage">
+<main class="deck" aria-label="Week 8 lecture slides: midterm review, weeks 1 to 7">
+
+<!-- 1 ─────────────────────────────────────────────────────────── title -->
+<section class="slide slide--title" id="s1">
+  <p class="course-line">CS 4600/5200 · Database Theory and Applications · Week 8 of 15</p>
+  <h1>Midterm Review: Weeks 1 to 7</h1>
+  <p class="subtitle">
+    Seven weeks in forty minutes: the ideas that the rest hangs on, the mistakes that cost the most
+    points, and one worked example of each kind of question. Then the midterm.
+  </p>
+  <p class="byline">
+    Dr. Gorkem Kar
+    <span>University of Central Missouri</span>
+    <span>School of Computer Science and Cybersecurity</span>
+  </p>
+  <div class="title-art">
+<svg viewBox="0 0 380 330" aria-hidden="true" focusable="false" style="--dg-k:1">
+<g class="v-in" style="--d:0.20s"><rect class="dg-box" x="20" y="20" width="230" height="44" rx="6"/><text class="dg-sm" x="36" y="48">algebra</text></g>
+<g class="v-in" style="--d:0.55s"><rect class="dg-box-t" x="42" y="78" width="230" height="44" rx="6"/><text class="dg-sm" x="58" y="106">SQL</text></g>
+<g class="v-in" style="--d:0.90s"><rect class="dg-box" x="64" y="136" width="230" height="44" rx="6"/><text class="dg-sm" x="80" y="164">constraints</text></g>
+<g class="v-in" style="--d:1.25s"><rect class="dg-box-t" x="86" y="194" width="230" height="44" rx="6"/><text class="dg-sm" x="102" y="222">E-R</text></g>
+<g class="v-in" style="--d:1.60s"><rect class="dg-box" x="108" y="252" width="230" height="44" rx="6"/><text class="dg-sm" x="124" y="280">normal forms</text></g>
+<g class="v-in" style="--d:2.20s"><text class="dg-sm dg-teal" x="20" y="318">seven weeks, one exam</text></g>
+</svg>
+  </div>
+  
+</section>
+
+<!-- 2 ─────────────────────────────────────────────── the exam -->
+<section class="slide" id="s2">
+  <h2>The midterm, in one slide</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <table class="tbl tbl--compact">
+        <caption>Five parts, 100 points, 90 minutes</caption>
+        <thead><tr><th scope="col">Part</th><th scope="col">Topic</th><th scope="col" class="num">Points</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td>Relational algebra</td><td class="num">15</td></tr>
+          <tr><td>2</td><td>SQL queries</td><td class="num">35</td></tr>
+          <tr><td>3</td><td>Changing data and constraints</td><td class="num">10</td></tr>
+          <tr><td>4</td><td>E-R design and mapping</td><td class="num">20</td></tr>
+          <tr><td>5</td><td>Dependencies and normal forms</td><td class="num">20</td></tr>
+        </tbody>
+      </table>
+      <ul>
+        <li>On paper, with one page of your own handwritten notes, both sides.</li>
+        <li>The university schema is printed on the exam.</li>
+        <li>CS 5200: one extra 10-point question, on dependency theory.</li>
+        <li>Show your steps: most points for closures and decompositions are for the steps.</li>
+        <li>Online section: the same exam in Brightspace, with the same time limit.</li>
+      </ul>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 3 ─────────────────────────────────────────────── section -->
+<section class="slide slide--section" id="s3">
+  <h2>The relational model and algebra</h2>
+  <p>Weeks 1 and 2: tables are sets of rows, keys identify them, and every query is a composition of a few operators.</p>
+  
+</section>
+
+<!-- 4 ─────────────────────────────────────────────── keys and operators -->
+<section class="slide" id="s4">
+  <h2>Keys, and the operators that every query is made of</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div>
+        <h3>Keys</h3>
+        <ul>
+          <li><strong>Superkey:</strong> determines the whole row.</li>
+          <li><strong>Candidate key:</strong> a superkey with nothing to spare.</li>
+          <li><strong>Primary key:</strong> the candidate key we chose; never NULL.</li>
+          <li><strong>Foreign key:</strong> values that must appear as a key in another table.</li>
+        </ul>
+      </div>
+      <table class="tbl tbl--compact">
+        <caption>The relational algebra operators</caption>
+        <thead><tr><th scope="col">Operator</th><th scope="col">Does</th><th scope="col">SQL</th></tr></thead>
+        <tbody>
+          <tr><td>σ<sub>p</sub></td><td>keep rows where p holds</td><td>WHERE</td></tr>
+          <tr><td>π<sub>A</sub></td><td>keep columns A, drop duplicates</td><td>SELECT DISTINCT</td></tr>
+          <tr><td>× and ⋈</td><td>pair rows; join keeps matching pairs</td><td>FROM, JOIN</td></tr>
+          <tr><td>∪, −, ∩</td><td>set operations on matching schemas</td><td>UNION, EXCEPT, INTERSECT</td></tr>
+          <tr><td>ρ</td><td>rename, to use a table twice</td><td>AS</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 5 ─────────────────────────────────────────────── RA worked example -->
+<section class="slide" id="s5">
+  <h2>Worked example: algebra both ways</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div class="panel">
+        <h3>English to algebra</h3>
+        <p>Names of instructors who teach a course in a department other than their own.</p>
+        <p>π<sub>name</sub>(σ<sub>instructor.dept_name ≠ course.dept_name</sub>(instructor ⋈ teaches ⋈<sub>teaches.course_id = course.course_id</sub> course))</p>
+        <p>The last join names its condition: a natural join would also match on dept_name, and lose exactly the rows we want.</p>
+      </div>
+      <div class="panel">
+        <h3>Algebra to English</h3>
+        <p>π<sub>id</sub>(student) − π<sub>s_id</sub>(advisor)</p>
+        <p>The ids of students with no advisor. Careful: the two sides have different attribute names, so strictly the right side needs ρ to rename s_id to id first.</p>
+      </div>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 6 ─────────────────────────────────────────────── section -->
+<section class="slide slide--section" id="s6">
+  <h2>SQL</h2>
+  <p>Weeks 3 to 5: one query shape, NULLs, joins, groups, subqueries, windows and changes.</p>
+  
+</section>
+
+<!-- 7 ─────────────────────────────────────────────── evaluation order -->
+<section class="slide" id="s7">
+  <h2>Read a query in the order it runs</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:1000px">
+<svg style="--dg-k:1" viewBox="0 0 1000 210" role="img" aria-labelledby="eot eod">
+<title id="eot">The order in which a SELECT query is evaluated</title>
+<desc id="eod">Six boxes from left to right, joined by arrows: FROM and JOIN build the rows; WHERE keeps rows whose condition is true; GROUP BY forms groups; HAVING keeps groups whose condition is true; SELECT computes the output columns, including window functions; ORDER BY sorts, and LIMIT cuts. Under the boxes: a column alias made in SELECT cannot be used in WHERE, GROUP BY or HAVING, because they run before it; ORDER BY can use it.</desc>
+<defs><marker id="eoa" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#0e5a6b"/></marker></defs>
+<g class="v-in" style="--d:0.20s"><rect class="dg-box" x="10" y="20" width="146" height="80" rx="6"/><text class="dg-sm-b" x="22" y="52">FROM, JOIN</text><text class="dg-xs" x="22" y="80">build the rows</text></g>
+<g class="v-in" style="--d:0.60s"><rect class="dg-box-t" x="178" y="20" width="146" height="80" rx="6"/><text class="dg-sm-b" x="190" y="52">WHERE</text><text class="dg-xs" x="190" y="80">keep true rows</text></g>
+<path class="dg-line v-draw" pathLength="1" style="--d:0.45s" d="M158 60 H174" marker-end="url(#eoa)"/>
+<g class="v-in" style="--d:1.00s"><rect class="dg-box" x="346" y="20" width="146" height="80" rx="6"/><text class="dg-sm-b" x="358" y="52">GROUP BY</text><text class="dg-xs" x="358" y="80">form groups</text></g>
+<path class="dg-line v-draw" pathLength="1" style="--d:0.85s" d="M326 60 H342" marker-end="url(#eoa)"/>
+<g class="v-in" style="--d:1.40s"><rect class="dg-box-t" x="514" y="20" width="146" height="80" rx="6"/><text class="dg-sm-b" x="526" y="52">HAVING</text><text class="dg-xs" x="526" y="80">keep true groups</text></g>
+<path class="dg-line v-draw" pathLength="1" style="--d:1.25s" d="M494 60 H510" marker-end="url(#eoa)"/>
+<g class="v-in" style="--d:1.80s"><rect class="dg-box-a" x="682" y="20" width="146" height="80" rx="6"/><text class="dg-sm-b" x="694" y="52">SELECT</text><text class="dg-xs" x="694" y="80">compute columns</text></g>
+<path class="dg-line v-draw" pathLength="1" style="--d:1.65s" d="M662 60 H678" marker-end="url(#eoa)"/>
+<g class="v-in" style="--d:2.20s"><rect class="dg-box" x="850" y="20" width="146" height="80" rx="6"/><text class="dg-sm-b" x="862" y="52">ORDER BY</text><text class="dg-xs" x="862" y="80">sort, then LIMIT</text></g>
+<path class="dg-line v-draw" pathLength="1" style="--d:2.05s" d="M830 60 H846" marker-end="url(#eoa)"/>
+<g class="v-in" style="--d:2.80s"><text class="dg-sm" x="10" y="150">Aliases made in SELECT do not exist yet in WHERE, GROUP BY or HAVING; ORDER BY can use them.</text><text class="dg-sm" x="10" y="180">Window functions run in SELECT, after WHERE: to filter on one, wrap the query in a subquery.</text></g>
+</svg>
+      <figcaption><strong>Figure 8.1.</strong> The logical order of a SELECT. Most "column does not exist" and "must appear in the GROUP BY clause" errors come from forgetting it.</figcaption>
+    </figure>
+    <div class="callout">
+      <span class="mark" aria-hidden="true">→</span>
+      <p>After GROUP BY, every column in SELECT must be grouped or inside an aggregate: a group has one row. Practice question 2f.</p>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 8 ─────────────────────────────────────────────── NULL -->
+<section class="slide" id="s8">
+  <h2>NULL means unknown, and unknown spreads</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <table class="tbl tbl--compact">
+        <caption>Three-valued logic</caption>
+        <thead><tr><th scope="col">Expression</th><th scope="col">Result</th></tr></thead>
+        <tbody>
+          <tr><td><code>NULL = NULL</code>, <code>NULL &gt; 5</code></td><td>unknown</td></tr>
+          <tr><td><code>unknown AND false</code></td><td>false</td></tr>
+          <tr><td><code>unknown OR true</code></td><td>true</td></tr>
+          <tr><td><code>unknown AND true</code>, <code>NOT unknown</code></td><td>unknown</td></tr>
+          <tr><td><code>x IS NULL</code></td><td>true or false, never unknown</td></tr>
+        </tbody>
+      </table>
+      <ul>
+        <li>WHERE and HAVING keep only <strong>true</strong>. Unknown is dropped, like false.</li>
+        <li><code>count(*)</code> counts rows; <code>count(col)</code>, <code>sum</code> and <code>avg</code> skip NULLs.</li>
+        <li><code>x NOT IN (subquery)</code> is never true if the subquery yields a NULL. Prefer NOT EXISTS.</li>
+        <li>A CHECK constraint passes on unknown: <code>CHECK (grade IN (…))</code> accepts a NULL grade.</li>
+      </ul>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 9 ─────────────────────────────────────────────── outer joins -->
+<section class="slide" id="s9">
+  <h2>An outer join's condition belongs in ON</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <pre class="code"><span class="c">-- every department, with its instructors</span>
+<span class="c">-- earning over 90,000 (0 included)</span>
+<span class="k">SELECT</span> d.dept_name, count(i.id)
+<span class="k">FROM</span> department d
+<span class="k">LEFT</span> <span class="k">JOIN</span> instructor i
+  <span class="k">ON</span> i.dept_name = d.dept_name
+ <span class="k">AND</span> i.salary &gt; 90000
+<span class="k">GROUP</span> <span class="k">BY</span> d.dept_name;</pre>
+      <ul>
+        <li>As written: all 7 departments, most with 0.</li>
+        <li>Move <code>i.salary &gt; 90000</code> to WHERE, and the unmatched rows, whose salary is NULL, are dropped: only 2 departments remain. The LEFT JOIN has become an inner join.</li>
+        <li>Count a column from the right side, <code>count(i.id)</code>, not <code>count(*)</code>, or an empty department counts 1.</li>
+      </ul>
+    </div>
+    <p><a class="try" href="playground.html#sql1">Review exercises 1 to 3</a></p>
+  </div>
+  
+</section>
+
+<!-- 10 ────────────────────────────────────────────── subqueries and windows -->
+<section class="slide" id="s10">
+  <h2>Subquery, CTE or window function?</h2>
+  <div class="slide-main">
+    <div class="cols-3">
+      <div class="panel">
+        <h3>Compare with one value</h3>
+        <p>A scalar subquery: <code>salary &gt; (SELECT avg(salary) FROM instructor)</code>. Correlate it to compare within a group.</p>
+      </div>
+      <div class="panel">
+        <h3>Test for existence</h3>
+        <p><code>EXISTS</code> or <code>NOT EXISTS</code> with a correlated subquery: "students who took a course", "courses nobody took".</p>
+      </div>
+      <div class="panel">
+        <h3>Keep every row, add a group fact</h3>
+        <p>A window function: <code>rank() OVER (PARTITION BY dept_name ORDER BY salary DESC)</code>. To filter on it, wrap it in a subquery or CTE.</p>
+      </div>
+    </div>
+    <p>A CTE (<code>WITH name AS (…)</code>) names a step to make a long query readable; <code>WITH RECURSIVE</code> follows a chain, like prerequisites. <a class="try" href="playground.html#sql2">Review exercises 4 to 7</a></p>
+  </div>
+  
+</section>
+
+<!-- 11 ────────────────────────────────────────────── changes and constraints -->
+<section class="slide" id="s11">
+  <h2>Changing data safely</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <ul>
+        <li><strong>INSERT, UPDATE, DELETE</strong>: an UPDATE or DELETE without WHERE changes every row.</li>
+        <li><strong>Constraints</strong>: NOT NULL, UNIQUE, PRIMARY KEY, CHECK, REFERENCES. A statement that breaks one is refused whole.</li>
+        <li><strong>ON DELETE</strong> on a foreign key: NO ACTION (the default) refuses the delete, CASCADE deletes the referring rows, SET NULL keeps them with a NULL.</li>
+        <li><strong>Transactions</strong>: BEGIN, then COMMIT to keep or ROLLBACK to undo everything since BEGIN.</li>
+      </ul>
+      <div class="panel">
+        <h3>Exam-style question</h3>
+        <p>Deleting the Music department: what happens, and why?</p>
+        <p>It is refused. Diego Torres, Sky Martinez and MU-199 refer to Music, and those foreign keys use NO ACTION.</p>
+      </div>
+    </div>
+    <p><a class="try" href="playground.html#ddl">Review exercise 8</a></p>
+  </div>
+  
+</section>
+
+<!-- 12 ────────────────────────────────────────────── section -->
+<section class="slide slide--section" id="s12">
+  <h2>Design</h2>
+  <p>Weeks 6 and 7: draw the world, map it to tables, then test each table's dependencies.</p>
+  
+</section>
+
+<!-- 13 ────────────────────────────────────────────── mapping -->
+<section class="slide" id="s13">
+  <h2>From E-R diagram to tables, in six rules</h2>
+  <div class="slide-main">
+    <table class="tbl tbl--compact">
+      <caption>Mapping an E-R diagram to tables</caption>
+      <thead><tr><th scope="col">In the diagram</th><th scope="col">In the tables</th></tr></thead>
+      <tbody>
+        <tr><td>Strong entity set</td><td>A table; its key is the primary key</td></tr>
+        <tr><td>Composite attribute</td><td>One column per part</td></tr>
+        <tr><td>Multivalued attribute</td><td>Its own table: owner's key plus the value, both in the key</td></tr>
+        <tr><td>Many-to-one relationship</td><td>A foreign key column on the "many" side; NOT NULL if participation is total</td></tr>
+        <tr><td>Many-to-many relationship</td><td>Its own table: both keys, together the primary key, plus its attributes</td></tr>
+        <tr><td>Weak entity set</td><td>Owner's key plus discriminator as the key; foreign key ON DELETE CASCADE</td></tr>
+      </tbody>
+    </table>
+    <p>Drawing: arrows mean one, double lines mean every (total), a double rectangle is a weak entity set. <a class="try" href="playground.html#ddl">Review exercise 9</a></p>
+  </div>
+  
+</section>
+
+<!-- 14 ────────────────────────────────────────────── FD toolkit -->
+<section class="slide" id="s14">
+  <h2>The normalization toolkit</h2>
+  <div class="slide-main">
+    <ol class="steps">
+      <li><span class="n" aria-hidden="true">1</span><div><strong>Closure.</strong><p>Start with α; add the right side of any dependency whose left side is inside; repeat until nothing changes.</p></div></li>
+      <li><span class="n" aria-hidden="true">2</span><div><strong>Keys.</strong><p>Attributes on no right side are in every key. Grow from them; a key's closure is everything, and no smaller set's is.</p></div></li>
+      <li><span class="n" aria-hidden="true">3</span><div><strong>BCNF test.</strong><p>Every non-trivial α → β has α a superkey. 3NF also allows β inside some candidate key.</p></div></li>
+      <li><span class="n" aria-hidden="true">4</span><div><strong>Decompose.</strong><p>Split on a violating α → β into (α ∪ β) and the rest without β. Lossless, because α is a key of the first part.</p></div></li>
+      <li><span class="n" aria-hidden="true">5</span><div><strong>Check preservation.</strong><p>A rule whose attributes no longer sit in one table is lost. If it matters, choose 3NF.</p></div></li>
+    </ol>
+  </div>
+  
+</section>
+
+<!-- 15 ────────────────────────────────────────────── worked FD example -->
+<section class="slide" id="s15">
+  <h2>Worked example: in 3NF, not in BCNF</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div class="panel">
+        <h3>R(A, B, C, D), F = { AB → C, C → D, D → A }</h3>
+        <ol>
+          <li>B is on no right side, so every key contains B. B<sup>+</sup> = {B}.</li>
+          <li>{A, B}<sup>+</sup> = {A, B, C, D}; {B, C}<sup>+</sup> adds D, then A: all; {B, D}<sup>+</sup> adds A, then C: all.</li>
+          <li>Candidate keys: AB, BC and BD.</li>
+        </ol>
+      </div>
+      <div>
+        <ul>
+          <li><strong>BCNF?</strong> No: in C → D, C is not a superkey (and in D → A, D is not).</li>
+          <li><strong>3NF?</strong> Yes: D is in the key BD, and A is in the key AB, so both violations are allowed.</li>
+          <li><strong>The lesson:</strong> when every attribute is in some key, the table is in 3NF whatever its dependencies, and BCNF may cost a rule.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 16 ────────────────────────────────────────────── before the exam -->
+<section class="slide" id="s16">
+  <h2>In the next ten minutes</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <ul>
+        <li>Put away everything except a pen and your one page of notes.</li>
+        <li>Read the whole exam first, and start with the part you are surest of.</li>
+        <li>About one minute per point: a 20-point part is worth 20 minutes.</li>
+        <li>If you are stuck on a query, write the parts you know and a comment for the rest. Partial queries earn partial credit.</li>
+      </ul>
+      <div class="panel panel--key">
+        <h3>After the exam</h3>
+        <p>Milestone 2 is due Sunday, March 7. Spring break is the week after, and class resumes on Tuesday, March 16.</p>
+      </div>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 17 ────────────────────────────────────────────── this week -->
+<section class="slide" id="s17">
+  <h2>This week's work</h2>
+  <div class="slide-main">
+    <div class="week-work">
+      <div>
+        <h3>Read</h3>
+        <ul>
+          <li>Nothing new. Before week 9: sections 5.1, 9.7 and 9.8, on programs that use a database.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Do</h3>
+        <ul>
+          <li>Before the exam: the <a href="practice.html">practice midterm</a> and the <a href="playground.html">review playground</a>.</li>
+          <li><a href="../../project/milestone2.html">Milestone 2</a>: tables, keys, data and five queries.</li>
+          <li>No lab this week.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Due</h3>
+        <ul>
+          <li>Midterm: today, in class.</li>
+          <li><span class="due">Sunday, March 7, 11:59 p.m. CT</span>: project milestone 2, one zip file per team in Brightspace.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="callout" style="margin-top:auto">
+      <span class="mark" aria-hidden="true">→</span>
+      <p><strong>After spring break:</strong> Python programs that talk to PostgreSQL, and why every query they send must be parameterized. Lab 6.</p>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 18 ────────────────────────────────────────────── resources -->
+<section class="slide" id="s18">
+  <h2>Free resources</h2>
+  <div class="slide-main">
+    <ul class="resources">
+      <li><a href="practice.html">Practice midterm</a><span class="src">this course</span><p>The exam's five parts, with answers to check yourself.</p></li>
+      <li><a href="playground.html">Review playground</a><span class="src">this course</span><p>Ten checked exercises, one or two from each week since the first SQL.</p></li>
+      <li><a href="../../project/milestone2.html">Project milestone 2</a><span class="src">this course</span><p>What to hand in on March 7, with the rubric.</p></li>
+      <li><a href="https://www.db-book.com/">Database System Concepts</a><span class="src">db-book.com</span><p>The textbook's site, with slides for chapters 1 to 7.</p></li>
+    </ul>
+    <div class="callout" style="margin-top:20px">
+      <span class="mark" aria-hidden="true">→</span>
+      <p>Questions before the exam? Office hours are Tuesday and Wednesday 12:00–3:00 p.m., MIC room D159, or post in the week 8 discussion in Brightspace.</p>
+    </div>
+  </div>
+  
+</section>
+
+</main>
+</div>
+<script src="../../assets/deck.js"></script>
+</body>
+</html>

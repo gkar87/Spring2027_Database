@@ -1,0 +1,73 @@
+CS 4600/5200 Lab 5: answers
+===========================
+
+Name:
+Student ID:
+Course (CS 4600 or CS 5200):
+Section (online or face to face):
+
+Save this file as plain text. Your statements go in lab5.sql. Here, write
+the numbers each question asks for, and answer the written questions in your
+own words. Leave the headings as they are.
+
+
+Part B: results
+---------------
+
+Q1  sessions:        students:        tutors:
+Q2  student_id:      emails:
+Q3  tutor_id:        names:
+Q4  rows changed by the first UPDATE:        by the second:
+Q5  violations of F1:   F2:   F3:   F4:   F5:
+Q6  rows:        key_values:        student_date_values:
+Q8  center:   subject_center:   tutor:   tutee:   tutor_session:
+Q9  missing:        extra:
+Q10 the center with the most minutes, and its minutes:
+
+
+Part C: short answers
+---------------------
+
+W1. Give one update, one insert and one delete anomaly that the original
+    tutoring table allows, each with a concrete example from its rows.
+    (one or two sentences each)
+
+Update:
+Insert:
+Delete:
+
+
+W2. Compute these closures under F1 to F5, showing each step as on slide 13,
+    and say whether each set is a superkey of tutoring.
+
+{tutor_id}+ =
+{student_id, tutor_id}+ =
+{student_id, tutor_id, session_date}+ =
+
+
+W3. In Q6, (student_id, session_date) is unique in this data too. Should it
+    be a key of tutor_session? Say why or why not, and what you would ask
+    the tutoring center. (2 to 4 sentences)
+
+Answer:
+
+
+Part D: CS 5200 only (CS 4600 students may leave this blank)
+------------------------------------------------------------
+
+Q11 violations:
+Q12 rows in advises:
+Q12 what happened to the last INSERT, and which constraint stopped it:
+
+D1. advises has the dependencies tutor_id -> subject and
+    student_id, subject -> tutor_id. Is it in BCNF? Is it in 3NF? Give its
+    candidate keys, and say why you would keep it as one table or split it.
+    (3 to 5 sentences)
+
+Answer:
+
+
+AI use. Did you use a generative AI tool for this lab? If yes, say which
+tool, what you asked it, and what you kept. If no, write "None".
+
+Answer:

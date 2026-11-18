@@ -1,0 +1,93 @@
+CS 4600/5200 Lab 8: answers
+===========================
+
+Name:
+Student ID:
+Course (CS 4600 or CS 5200):
+Section (online or face to face):
+
+Save this file as plain text. Your two transcripts go in lab8_A.txt and
+lab8_B.txt. Here, fill in what each task showed and answer the written
+questions in your own words. Leave the headings as they are.
+
+
+Setup
+-----
+
+pg_backend_pid() in session A:
+pg_backend_pid() in session B:
+
+
+Part A: results
+---------------
+
+For each task: the numbers it asks for, which step (if any) waited and which
+step released it, and any error, first line only, exactly as printed.
+
+T1  B's first SELECT, taken:          B's second SELECT, taken:
+T2  final taken:            final enrolled:
+T3  step that waited:       released by step:       B's UPDATE reported:
+    final taken:            final enrolled:
+T4  step that waited:       released by step:       B's SELECT returned taken:
+T5  B's error:
+    final taken:            final enrolled:
+T6  locktype B waited for:          mode:
+    B's wait_event_type:            wait_event:
+T7  session that got the error:     error:
+    what happened to A's waiting UPDATE:
+T8  step that waited:       final taken, BIO-101-1:      CS-319-1:
+T9  final count on duty:    did either transaction fail?
+T10 which COMMIT failed:    error:
+    on duty at the end:
+
+
+T8: your steps
+--------------
+
+Number each step and say which session runs it, as the handout does.
+
+1. A:
+2. B:
+
+
+Part B: T11
+-----------
+
+The statement that replaces the comment:
+
+00035's sections at the end:
+
+taken and enrollments for each section:
+
+What COMMIT prints without that statement, and why:
+
+
+Part C: written answers
+-----------------------
+
+W1:
+
+
+W2:
+
+
+W3:
+
+
+Part D (CS 5200 only)
+---------------------
+
+D1 rows from pg_locks:
+
+D1 answer:
+
+
+D2 final count, Repeatable Read:        Serializable:
+
+D2 answer:
+
+
+AI tools
+--------
+
+How you used AI tools in this lab, if at all, in one line:

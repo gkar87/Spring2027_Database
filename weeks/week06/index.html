@@ -1,0 +1,1087 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Week 6 — E-R Modeling: From Requirements to Tables · CS 4600/5200</title>
+<meta name="description" content="CS 4600/5200 week 6: the design process, entity sets and attributes, relationship sets, mapping cardinalities and participation, weak entity sets, specialization and aggregation, crow's foot notation, mapping an E-R diagram to tables, and a design studio critique. Project milestone 1.">
+<link rel="stylesheet" href="../../assets/course.css">
+<link rel="stylesheet" href="../../assets/db.css">
+</head>
+<body>
+<a class="skip-link" href="#s1">Skip to the first slide</a>
+
+<div class="deck-stage">
+<main class="deck" aria-label="Week 6 lecture slides: E-R modeling, from requirements to tables">
+
+<!-- 1 ─────────────────────────────────────────────────────────── title -->
+<section class="slide slide--title" id="s1">
+  <p class="course-line">CS 4600/5200 · Database Theory and Applications · Week 6 of 15</p>
+  <h1>E-R Modeling: From Requirements to Tables</h1>
+  <p class="subtitle">
+    For five weeks the tables were given. Today we design them: draw what the world holds and how its
+    parts are related, agree on the rules, and only then write CREATE TABLE.
+  </p>
+  <p class="byline">
+    Dr. Gorkem Kar
+    <span>University of Central Missouri</span>
+    <span>School of Computer Science and Cybersecurity</span>
+  </p>
+  <div class="title-art">
+<svg viewBox="0 0 380 330" aria-hidden="true" focusable="false" style="--dg-k:1">
+<g class="v-in" style="--d:0.20s">
+<rect class="dg-box" x="10" y="30" width="130" height="92"/>
+<rect class="dg-box-m" x="10" y="30" width="130" height="34"/>
+<text class="dg-sm-b" x="20" y="53">instructor</text>
+<text class="dg-sm" x="20" y="87">ID</text>
+<path class="dg-line" stroke-width="1.3" d="M20 91 h15"/>
+<text class="dg-sm" x="20" y="111">name</text>
+</g>
+<g class="v-in" style="--d:0.50s">
+<rect class="dg-box" x="240" y="30" width="130" height="92"/>
+<rect class="dg-box-m" x="240" y="30" width="130" height="34"/>
+<text class="dg-sm-b" x="250" y="53">student</text>
+<text class="dg-sm" x="250" y="87">ID</text>
+<path class="dg-line" stroke-width="1.3" d="M250 91 h15"/>
+<text class="dg-sm" x="250" y="111">name</text>
+</g>
+<g class="v-in" style="--d:1.00s">
+<polygon class="dg-box-t" points="190,169.0 250.0,200 190,231.0 130.0,200"/>
+<text class="dg-sm" x="190" y="205" text-anchor="middle">advisor</text>
+</g>
+<path class="dg-line v-draw" pathLength="1" style="--d:1.40s" d="M75 128 L150 186"/>
+<path class="dg-line v-draw" pathLength="1" style="--d:1.60s" d="M305 128 L230 186"/>
+<g class="v-in" style="--d:2.20s"><text class="dg-sm dg-teal" x="10" y="300">entities, relationships, then tables</text></g>
+</svg>
+  </div>
+  
+</section>
+
+<!-- 2 ─────────────────────────────────────────────── last week -->
+<section class="slide" id="s2">
+  <h2>Last week, in four lines</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <ol class="steps">
+        <li><span class="n" aria-hidden="true">1</span><div><strong>BEGIN, look, then COMMIT or ROLLBACK.</strong><p>A transaction is all or nothing.</p></div></li>
+        <li><span class="n" aria-hidden="true">2</span><div><strong>Constraints write the rules into the table.</strong><p>NOT NULL, UNIQUE, PRIMARY KEY, CHECK and REFERENCES.</p></div></li>
+        <li><span class="n" aria-hidden="true">3</span><div><strong>A foreign key chooses its ON DELETE action.</strong><p>NO ACTION refuses, CASCADE deletes, SET NULL keeps the row.</p></div></li>
+        <li><span class="n" aria-hidden="true">4</span><div><strong>Views name queries; triggers and grants guard changes.</strong><p>WITH RECURSIVE follows the prerequisite chain.</p></div></li>
+      </ol>
+      <div class="fill" style="gap:16px">
+        <div class="panel panel--key">
+          <h3>Today: where tables come from</h3>
+          <p>Someone decided that <code>advisor</code> has a key on <code>s_id</code> alone, so a student has one advisor. Today you learn to make that decision on purpose, in a diagram, before any SQL.</p>
+        </div>
+        <div class="panel">
+          <h3>This week is your project's first step</h3>
+          <p>Milestone 1 is a requirements page and an E-R diagram for your own application. The second half of today is a design studio to practise on.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 3 ─────────────────────────────────────────────── section -->
+<section class="slide slide--section" id="s3">
+  <h2>Why design before tables</h2>
+  <p>A design is cheap to change on paper and expensive to change once data and code depend on it.</p>
+  
+</section>
+
+<!-- 4 ─────────────────────────────────────────────── process -->
+<section class="slide" id="s4">
+  <h2>Database design moves in four steps</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:1000px">
+<svg style="--dg-k:1" viewBox="0 0 1000 210" role="img" aria-labelledby="prt prd">
+<title id="prt">Database design moves from requirements to a physical design</title>
+<desc id="prd">Four boxes from left to right, joined by arrows. One: requirements, what the users need to store and ask, written in plain language. Two: conceptual design, an E-R diagram, this week. Three: logical design, tables, keys and constraints, made by mapping the diagram and then normalizing, weeks 6 and 7. Four: physical design, indexes and storage, weeks 10 to 12. An arrow underneath runs back from the later steps to the earlier ones: designers go back when a later step shows a mistake.</desc>
+<defs><marker id="pra" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#0e5a6b"/></marker></defs>
+<g class="v-in" style="--d:0.20s"><rect class="dg-box" x="10" y="20" width="214" height="110" rx="6"/><text class="dg-sm-b" x="24" y="50">Requirements</text><text class="dg-sm" x="24" y="80">what users store and ask</text><text class="dg-xs dg-teal" x="24" y="108">plain language</text></g>
+<g class="v-in" style="--d:0.80s"><rect class="dg-box-a" x="260" y="20" width="214" height="110" rx="6"/><text class="dg-sm-b" x="274" y="50">Conceptual design</text><text class="dg-sm" x="274" y="80">entities and relationships</text><text class="dg-xs dg-teal" x="274" y="108">E-R diagram, week 6</text></g>
+<path class="dg-line v-draw" pathLength="1" style="--d:0.60s" d="M228 75 H254" marker-end="url(#pra)"/>
+<g class="v-in" style="--d:1.40s"><rect class="dg-box-t" x="510" y="20" width="214" height="110" rx="6"/><text class="dg-sm-b" x="524" y="50">Logical design</text><text class="dg-sm" x="524" y="80">tables, keys, constraints</text><text class="dg-xs dg-teal" x="524" y="108">mapping, normal forms, 6–7</text></g>
+<path class="dg-line v-draw" pathLength="1" style="--d:1.20s" d="M478 75 H504" marker-end="url(#pra)"/>
+<g class="v-in" style="--d:2.00s"><rect class="dg-box" x="760" y="20" width="214" height="110" rx="6"/><text class="dg-sm-b" x="774" y="50">Physical design</text><text class="dg-sm" x="774" y="80">indexes, files, storage</text><text class="dg-xs dg-teal" x="774" y="108">weeks 10–12</text></g>
+<path class="dg-line v-draw" pathLength="1" style="--d:1.80s" d="M728 75 H754" marker-end="url(#pra)"/>
+<path class="dg-line-q v-draw" pathLength="1" style="--d:2.60s" stroke-dasharray="6 5" d="M867.0 132 V170 H117.0 V140" marker-end="url(#pra)"/>
+<g class="v-in" style="--d:3.00s"><text class="dg-xs" x="500" y="194" text-anchor="middle">go back when a later step finds a mistake</text></g>
+</svg>
+      <figcaption><strong>Figure 6.1.</strong> From what users need to how it is stored. Today is the second box, and the start of the third.</figcaption>
+    </figure>
+    <div class="cols-2">
+      <div class="panel panel--definition">
+        <span class="term">E-R model</span>
+        <p>Entity-relationship model: a picture of the things a database is about (entities), the facts about them (attributes), and how they are connected (relationships). Peter Chen, 1976.</p>
+      </div>
+      <ul>
+        <li>The diagram is for people: users can check it before anything is built.</li>
+        <li>It maps to tables almost mechanically. Normal forms, next week, then catch what the diagram missed.</li>
+      </ul>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 5 ─────────────────────────────────────────────── two failure modes -->
+<section class="slide" id="s5">
+  <h2>Two ways a design goes wrong</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div class="panel">
+        <h3>Redundancy: the same fact stored twice</h3>
+        <p>Put the department's building in every instructor row, and moving Physics means updating every Physics instructor. Miss one, and the database disagrees with itself.</p>
+        <table class="tbl tbl--compact">
+          <caption class="visually-hidden">An instructor table that repeats the building of each department</caption>
+          <thead><tr><th scope="col">name</th><th scope="col">dept_name</th><th scope="col">building</th></tr></thead>
+          <tbody>
+            <tr><td>Sam Okafor</td><td>Physics</td><td>Watson</td></tr>
+            <tr><td>Kofi Mensah</td><td>Physics</td><td>Watson</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="panel">
+        <h3>Incompleteness: a fact with nowhere to go</h3>
+        <p>With only that table, a new department with no instructors yet has no row to hold its building. A course nobody teaches has nowhere to exist.</p>
+        <p>The fix for both is the same: one table per kind of thing, linked by keys. The E-R diagram is how we find the kinds of things.</p>
+      </div>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 6 ─────────────────────────────────────────────── section -->
+<section class="slide slide--section" id="s6">
+  <h2>Entities and attributes</h2>
+  <p>The things the database is about, and the facts it keeps about each.</p>
+  
+</section>
+
+<!-- 7 ─────────────────────────────────────────────── entity sets -->
+<section class="slide" id="s7">
+  <h2>An entity set is a set of things of one kind</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div>
+        <ul>
+          <li><strong>Entity:</strong> one thing that can be told apart from all others. Avery Chen. CS-347.</li>
+          <li><strong>Entity set:</strong> all entities of one kind, described by the same attributes. <code>instructor</code>, <code>course</code>.</li>
+          <li><strong>Attribute:</strong> a property every entity of the set has. Each has a <em>domain</em>, its allowed values.</li>
+          <li><strong>Key:</strong> attributes whose values identify one entity. Drawn underlined.</li>
+        </ul>
+        <div class="callout">
+          <span class="mark" aria-hidden="true">!</span>
+          <p>An entity set becomes a table, an entity a row, an attribute a column. The words differ because the diagram comes first.</p>
+        </div>
+      </div>
+      <div class="panel">
+        <h3>How to find them in requirements</h3>
+        <p>Read the users' description and mark the nouns. "Each <strong>instructor</strong> belongs to a <strong>department</strong> and teaches <strong>courses</strong>; a <strong>student</strong> takes courses and has an <strong>advisor</strong>."</p>
+        <p>Nouns that have facts of their own (a department has a building and a budget) are entity sets. Nouns that are only a value (a building name) are attributes. Verbs between nouns are relationships.</p>
+      </div>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 8 ─────────────────────────────────────────────── attribute kinds -->
+<section class="slide" id="s8">
+  <h2>Attributes come in several kinds</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:800px">
+<svg style="--dg-k:1" viewBox="0 0 960 470" role="img" aria-labelledby="att atd">
+<title id="att">Kinds of attributes in one entity set</title>
+<desc id="atd">The entity set instructor, drawn as a rectangle. Its attributes, top to bottom: ID, underlined because it is the primary key; name, a composite attribute with indented parts first_name, middle_initial and last_name; address, composite, with street (itself made of street_number, street_name and apt_number), city, state and zip; phone_number in braces, a multivalued attribute, so an instructor may have several; date_of_birth, a simple attribute; and age with empty parentheses, a derived attribute, computed from date_of_birth rather than stored. Labels on the right point to each kind.</desc>
+<defs><marker id="ata" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#0e5a6b"/></marker></defs>
+<g class="v-in" style="--d:0.10s">
+<rect class="dg-box" x="40" y="20" width="250" height="428"/>
+<rect class="dg-box-m" x="40" y="20" width="250" height="34"/>
+<text class="dg-sm-b" x="50" y="43">instructor</text>
+<text class="dg-sm" x="50" y="77">ID</text>
+<path class="dg-line" stroke-width="1.3" d="M50 81 h15"/>
+<text class="dg-sm" x="50" y="101">name</text>
+<text class="dg-sm" x="64" y="125">first_name</text>
+<text class="dg-sm" x="64" y="149">middle_initial</text>
+<text class="dg-sm" x="64" y="173">last_name</text>
+<text class="dg-sm" x="50" y="197">address</text>
+<text class="dg-sm" x="64" y="221">street</text>
+<text class="dg-sm" x="78" y="245">street_number</text>
+<text class="dg-sm" x="78" y="269">street_name</text>
+<text class="dg-sm" x="78" y="293">apt_number</text>
+<text class="dg-sm" x="64" y="317">city</text>
+<text class="dg-sm" x="64" y="341">state</text>
+<text class="dg-sm" x="64" y="365">zip</text>
+<text class="dg-sm" x="50" y="389">{ phone_number }</text>
+<text class="dg-sm" x="50" y="413">date_of_birth</text>
+<text class="dg-sm" x="50" y="437">age ( )</text>
+</g>
+<g class="v-in" style="--d:0.40s"><path class="dg-line-t" d="M560 72 H330" marker-end="url(#ata)"/><text class="dg-sm" x="572" y="77">key: underlined; identifies one instructor</text></g>
+<g class="v-in" style="--d:0.90s"><path class="dg-line-t" d="M560 96 H330" marker-end="url(#ata)"/><text class="dg-sm" x="572" y="101">composite: made of parts, indented below it</text></g>
+<g class="v-in" style="--d:1.40s"><path class="dg-line-t" d="M560 216 H330" marker-end="url(#ata)"/><text class="dg-sm" x="572" y="221">parts can be composite too</text></g>
+<g class="v-in" style="--d:1.90s"><path class="dg-line-t" d="M560 384 H330" marker-end="url(#ata)"/><text class="dg-sm" x="572" y="389">multivalued: braces; any number of phone numbers</text></g>
+<g class="v-in" style="--d:2.40s"><path class="dg-line-t" d="M560 432 H330" marker-end="url(#ata)"/><text class="dg-sm" x="572" y="437">derived: parentheses; computed from date_of_birth</text></g>
+</svg>
+      <figcaption><strong>Figure 6.2.</strong> One entity set showing a key, composite, multivalued and derived attributes, in the textbook's notation. <a class="try" href="playground.html#entities">See each one as tables, playground section 1</a></figcaption>
+    </figure>
+  </div>
+  
+</section>
+
+<!-- 9 ─────────────────────────────────────────────── section -->
+<section class="slide slide--section" id="s9">
+  <h2>Relationships</h2>
+  <p>How entities are connected, how many of each, and whether every entity must take part.</p>
+  
+</section>
+
+<!-- 10 ────────────────────────────────────────────── relationship sets -->
+<section class="slide" id="s10">
+  <h2>A relationship set is a set of pairs</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:960px">
+<svg style="--dg-k:1" viewBox="0 0 960 380" role="img" aria-labelledby="int ind">
+<title id="int">The advisor relationship set is a set of pairs</title>
+<desc id="ind">Left, four instructors from the database: Avery Chen, Priya Raman, Sam Okafor and Jordan Patel. Right, six students: Morgan Lee, Alex Johnson, Riley Adams, Jamie Rivera, Taylor Nguyen and Emery Walsh. Lines join each advisor pair in the advisor table: Avery Chen to Morgan Lee and to Alex Johnson; Priya Raman to Riley Adams; Sam Okafor to Jamie Rivera and to Taylor Nguyen. Every student has at most one line, so advisor is many-to-one from student to instructor. Jordan Patel and Emery Walsh have no line: participation is partial on both sides.</desc>
+<text class="dg-sm-b" x="120" y="26" text-anchor="middle">instructor</text>
+<text class="dg-sm-b" x="800" y="26" text-anchor="middle">student</text>
+<text class="dg-sm dg-teal" x="460" y="26" text-anchor="middle">advisor: pairs (student, instructor)</text>
+<rect class="dg-box" x="40" y="52" width="160" height="36" rx="18"/><text class="dg-sm" x="120" y="75" text-anchor="middle">Avery Chen</text>
+<rect class="dg-box" x="40" y="134" width="160" height="36" rx="18"/><text class="dg-sm" x="120" y="157" text-anchor="middle">Priya Raman</text>
+<rect class="dg-box" x="40" y="216" width="160" height="36" rx="18"/><text class="dg-sm" x="120" y="239" text-anchor="middle">Sam Okafor</text>
+<rect class="dg-box" x="40" y="298" width="160" height="36" rx="18"/><text class="dg-sm" x="120" y="321" text-anchor="middle">Jordan Patel</text>
+<rect class="dg-box" x="720" y="42" width="160" height="36" rx="18"/><text class="dg-sm" x="800" y="65" text-anchor="middle">Morgan Lee</text>
+<rect class="dg-box" x="720" y="97" width="160" height="36" rx="18"/><text class="dg-sm" x="800" y="120" text-anchor="middle">Alex Johnson</text>
+<rect class="dg-box" x="720" y="152" width="160" height="36" rx="18"/><text class="dg-sm" x="800" y="175" text-anchor="middle">Riley Adams</text>
+<rect class="dg-box" x="720" y="207" width="160" height="36" rx="18"/><text class="dg-sm" x="800" y="230" text-anchor="middle">Jamie Rivera</text>
+<rect class="dg-box" x="720" y="262" width="160" height="36" rx="18"/><text class="dg-sm" x="800" y="285" text-anchor="middle">Taylor Nguyen</text>
+<rect class="dg-box" x="720" y="317" width="160" height="36" rx="18"/><text class="dg-sm" x="800" y="340" text-anchor="middle">Emery Walsh</text>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:0.40s" stroke-width="2.4" d="M200 70 L720 60"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:0.85s" stroke-width="2.4" d="M200 70 L720 115"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.30s" stroke-width="2.4" d="M200 152 L720 170"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.75s" stroke-width="2.4" d="M200 234 L720 225"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:2.20s" stroke-width="2.4" d="M200 234 L720 280"/>
+<g class="v-in" style="--d:3.00s"><text class="dg-xs" x="120" y="360" text-anchor="middle">no advisee</text><text class="dg-xs" x="800" y="378" text-anchor="middle">no advisor</text></g>
+</svg>
+      <figcaption><strong>Figure 6.3.</strong> The advisor relationship set in our database: each line is one row of <code>advisor</code>.</figcaption>
+    </figure>
+    <p>A <strong>relationship</strong> associates entities; a <strong>relationship set</strong> holds all of one kind. Here: no student has two lines, Jordan Patel and Emery Walsh have none. Those two facts are the next two slides.</p>
+  </div>
+  
+</section>
+
+<!-- 11 ────────────────────────────────────────────── cardinality -->
+<section class="slide" id="s11">
+  <h2>Mapping cardinality: how many on each side</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:1000px">
+<svg style="--dg-k:1" viewBox="0 0 1000 300" role="img" aria-labelledby="cdt cdd">
+<title id="cdt">The four mapping cardinalities of a binary relationship</title>
+<desc id="cdd">Four panels, each with a column of A entities on the left and B entities on the right, joined by lines. One-to-one: each A is joined to at most one B and each B to at most one A. One-to-many: an A may be joined to several Bs, but each B to at most one A. Many-to-one: the mirror image, several As to one B, each A to at most one B. Many-to-many: any A to any number of Bs and any B to any number of As.</desc>
+<rect class="dg-wash" x="10" y="10" width="230" height="280" rx="8"/>
+<text class="dg-sm-b" x="125" y="40" text-anchor="middle">one-to-one</text>
+<text class="dg-xs" x="50" y="70" text-anchor="middle">A</text><text class="dg-xs" x="200" y="70" text-anchor="middle">B</text>
+<circle class="dg-box" cx="50" cy="100" r="11"/><circle class="dg-box" cx="200" cy="100" r="11"/>
+<circle class="dg-box" cx="50" cy="150" r="11"/><circle class="dg-box" cx="200" cy="150" r="11"/>
+<circle class="dg-box" cx="50" cy="200" r="11"/><circle class="dg-box" cx="200" cy="200" r="11"/>
+<circle class="dg-box" cx="50" cy="250" r="11"/><circle class="dg-box" cx="200" cy="250" r="11"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:0.30s" stroke-width="2.2" d="M61 100 L189 100"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:0.42s" stroke-width="2.2" d="M61 150 L189 200"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:0.54s" stroke-width="2.2" d="M61 200 L189 150"/>
+<rect class="dg-wash" x="260" y="10" width="230" height="280" rx="8"/>
+<text class="dg-sm-b" x="375" y="40" text-anchor="middle">one-to-many</text>
+<text class="dg-xs" x="300" y="70" text-anchor="middle">A</text><text class="dg-xs" x="450" y="70" text-anchor="middle">B</text>
+<circle class="dg-box" cx="300" cy="100" r="11"/><circle class="dg-box" cx="450" cy="100" r="11"/>
+<circle class="dg-box" cx="300" cy="150" r="11"/><circle class="dg-box" cx="450" cy="150" r="11"/>
+<circle class="dg-box" cx="300" cy="200" r="11"/><circle class="dg-box" cx="450" cy="200" r="11"/>
+<circle class="dg-box" cx="300" cy="250" r="11"/><circle class="dg-box" cx="450" cy="250" r="11"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.10s" stroke-width="2.2" d="M311 100 L439 100"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.22s" stroke-width="2.2" d="M311 100 L439 150"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.34s" stroke-width="2.2" d="M311 200 L439 200"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.46s" stroke-width="2.2" d="M311 200 L439 250"/>
+<rect class="dg-wash" x="510" y="10" width="230" height="280" rx="8"/>
+<text class="dg-sm-b" x="625" y="40" text-anchor="middle">many-to-one</text>
+<text class="dg-xs" x="550" y="70" text-anchor="middle">A</text><text class="dg-xs" x="700" y="70" text-anchor="middle">B</text>
+<circle class="dg-box" cx="550" cy="100" r="11"/><circle class="dg-box" cx="700" cy="100" r="11"/>
+<circle class="dg-box" cx="550" cy="150" r="11"/><circle class="dg-box" cx="700" cy="150" r="11"/>
+<circle class="dg-box" cx="550" cy="200" r="11"/><circle class="dg-box" cx="700" cy="200" r="11"/>
+<circle class="dg-box" cx="550" cy="250" r="11"/><circle class="dg-box" cx="700" cy="250" r="11"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.90s" stroke-width="2.2" d="M561 100 L689 100"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:2.02s" stroke-width="2.2" d="M561 150 L689 100"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:2.14s" stroke-width="2.2" d="M561 200 L689 200"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:2.26s" stroke-width="2.2" d="M561 250 L689 200"/>
+<rect class="dg-wash" x="760" y="10" width="230" height="280" rx="8"/>
+<text class="dg-sm-b" x="875" y="40" text-anchor="middle">many-to-many</text>
+<text class="dg-xs" x="800" y="70" text-anchor="middle">A</text><text class="dg-xs" x="950" y="70" text-anchor="middle">B</text>
+<circle class="dg-box" cx="800" cy="100" r="11"/><circle class="dg-box" cx="950" cy="100" r="11"/>
+<circle class="dg-box" cx="800" cy="150" r="11"/><circle class="dg-box" cx="950" cy="150" r="11"/>
+<circle class="dg-box" cx="800" cy="200" r="11"/><circle class="dg-box" cx="950" cy="200" r="11"/>
+<circle class="dg-box" cx="800" cy="250" r="11"/><circle class="dg-box" cx="950" cy="250" r="11"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:2.70s" stroke-width="2.2" d="M811 100 L939 100"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:2.82s" stroke-width="2.2" d="M811 100 L939 200"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:2.94s" stroke-width="2.2" d="M811 150 L939 100"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:3.06s" stroke-width="2.2" d="M811 200 L939 150"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:3.18s" stroke-width="2.2" d="M811 200 L939 250"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:3.30s" stroke-width="2.2" d="M811 250 L939 200"/>
+</svg>
+      <figcaption><strong>Figure 6.4.</strong> The four kinds of binary relationship, by how many Bs one A can have and how many As one B can have.</figcaption>
+    </figure>
+    <div class="cols-2">
+      <ul>
+        <li>advisor is <strong>many-to-one</strong> from student to instructor: many students, one advisor each.</li>
+        <li>takes is <strong>many-to-many</strong>: a student takes many courses, a course has many students.</li>
+      </ul>
+      <div class="callout" style="margin:0">
+        <span class="mark" aria-hidden="true">?</span>
+        <p>Cardinality is a business rule, not a fact about today's data. Ask the users: <em>can</em> a student ever have two advisors?</p>
+      </div>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 12 ────────────────────────────────────────────── notation -->
+<section class="slide" id="s12">
+  <h2>Arrows mean one; double lines mean every</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:820px">
+<svg style="--dg-k:1" viewBox="0 0 1000 420" role="img" aria-labelledby="ntt ntd">
+<title id="ntt">Three versions of advisor in E-R notation</title>
+<desc id="ntd">Three rows, each with instructor on the left, the advisor diamond in the middle and student on the right. Row one, many-to-many: plain lines on both sides, so a student may have several advisors and an instructor several students. Row two, one-to-many from instructor to student: the line from advisor to instructor ends in an arrow, which means one: each student has at most one advisor. Row three adds total participation and cardinality limits: a double line joins student to advisor, so every student must have an advisor, and the limits read 0..* next to instructor, an instructor advises zero or more students, and 1..1 next to student, each student has exactly one advisor.</desc>
+<defs><marker id="nta" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#1d232b"/></marker></defs>
+<g class="v-in" style="--d:0.20s"><text class="dg-sm-b" x="10" y="36">many-to-many</text></g>
+<g class="v-in" style="--d:0.20s"><rect class="dg-box" x="10" y="52" width="170" height="56"/><text class="dg-sm-b" x="95" y="86" text-anchor="middle">instructor</text><rect class="dg-box" x="820" y="52" width="170" height="56"/><text class="dg-sm-b" x="905" y="86" text-anchor="middle">student</text></g>
+<g class="v-in" style="--d:0.40s">
+<polygon class="dg-box-t" points="500,47.0 562.0,80 500,113.0 438.0,80"/>
+<text class="dg-sm" x="500" y="85" text-anchor="middle">advisor</text>
+</g>
+<path class="dg-line v-draw" pathLength="1" style="--d:0.60s" d="M438 80 L182 80"/>
+<path class="dg-line v-draw" pathLength="1" style="--d:0.70s" d="M562 80 L820 80"/>
+<g class="v-in" style="--d:1.30s"><text class="dg-sm-b" x="10" y="171">one-to-many: each student has at most one advisor</text></g>
+<g class="v-in" style="--d:1.30s"><rect class="dg-box" x="10" y="187" width="170" height="56"/><text class="dg-sm-b" x="95" y="221" text-anchor="middle">instructor</text><rect class="dg-box" x="820" y="187" width="170" height="56"/><text class="dg-sm-b" x="905" y="221" text-anchor="middle">student</text></g>
+<g class="v-in" style="--d:1.50s">
+<polygon class="dg-box-t" points="500,182.0 562.0,215 500,248.0 438.0,215"/>
+<text class="dg-sm" x="500" y="220" text-anchor="middle">advisor</text>
+</g>
+<path class="dg-line v-draw" pathLength="1" style="--d:1.70s" d="M438 215 L182 215" marker-end="url(#nta)"/>
+<path class="dg-line v-draw" pathLength="1" style="--d:1.80s" d="M562 215 L820 215"/>
+<g class="v-in" style="--d:2.40s"><text class="dg-sm-b" x="10" y="306">total participation and limits</text></g>
+<g class="v-in" style="--d:2.40s"><rect class="dg-box" x="10" y="322" width="170" height="56"/><text class="dg-sm-b" x="95" y="356" text-anchor="middle">instructor</text><rect class="dg-box" x="820" y="322" width="170" height="56"/><text class="dg-sm-b" x="905" y="356" text-anchor="middle">student</text></g>
+<g class="v-in" style="--d:2.60s">
+<polygon class="dg-box-t" points="500,317.0 562.0,350 500,383.0 438.0,350"/>
+<text class="dg-sm" x="500" y="355" text-anchor="middle">advisor</text>
+</g>
+<path class="dg-line v-draw" pathLength="1" style="--d:2.80s" d="M438 350 L182 350" marker-end="url(#nta)"/>
+<path class="dg-line v-draw" pathLength="1" style="--d:2.90s" d="M562.0 353.5 L820.0 353.5"/>
+<path class="dg-line v-draw" pathLength="1" style="--d:2.90s" d="M562.0 346.5 L820.0 346.5"/>
+<g class="v-in" style="--d:3.20s"><text class="dg-sm dg-mono" x="250" y="340">0..*</text><text class="dg-sm dg-mono" x="720" y="340">1..1</text></g>
+</svg>
+      <figcaption><strong>Figure 6.5.</strong> Three versions of advisor. <a class="try" href="playground.html#relationships">Change the rules and watch the tables change, playground section 2</a></figcaption>
+    </figure>
+    <div class="cols-2">
+      <ul>
+        <li><strong>Arrow</strong> toward an entity set: each entity on the other side is related to <em>at most one</em> of these.</li>
+        <li><strong>Double line:</strong> <em>total participation</em>, every entity of that set takes part at least once. A single line is partial.</li>
+      </ul>
+      <ul>
+        <li><strong>Limits l..h</strong> on a line: each entity of that set takes part at least l and at most h times. <code>*</code> means no limit.</li>
+        <li>1..1 next to student is "exactly one advisor": arrow and double line in one label.</li>
+      </ul>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 13 ────────────────────────────────────────────── attributes and roles -->
+<section class="slide" id="s13">
+  <h2>Relationships can have attributes, and roles</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:1000px">
+<svg style="--dg-k:1" viewBox="0 0 1000 340" role="img" aria-labelledby="rat rad">
+<title id="rat">A relationship attribute, and a relationship with roles</title>
+<desc id="rad">Left: student and course joined by the takes diamond. A dashed line joins takes to a small box with the attributes semester, year and grade: they describe one enrollment, not the student or the course. Right: course joined to itself through the prereq diamond, by two lines labelled with their roles, course_id for the course that has the prerequisite and prereq_id for the course that must come first.</desc>
+<defs><marker id="raa" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#1d232b"/></marker></defs>
+<g class="v-in" style="--d:0.10s">
+<rect class="dg-box" x="10" y="30" width="130" height="92"/>
+<rect class="dg-box-m" x="10" y="30" width="130" height="34"/>
+<text class="dg-sm-b" x="20" y="53">student</text>
+<text class="dg-sm" x="20" y="87">ID</text>
+<path class="dg-line" stroke-width="1.3" d="M20 91 h15"/>
+<text class="dg-sm" x="20" y="111">name</text>
+</g>
+<g class="v-in" style="--d:0.20s">
+<rect class="dg-box" x="10" y="200" width="130" height="92"/>
+<rect class="dg-box-m" x="10" y="200" width="130" height="34"/>
+<text class="dg-sm-b" x="20" y="223">course</text>
+<text class="dg-sm" x="20" y="257">course_id</text>
+<path class="dg-line" stroke-width="1.3" d="M20 261 h67"/>
+<text class="dg-sm" x="20" y="281">title</text>
+</g>
+<g class="v-in" style="--d:0.50s">
+<polygon class="dg-box-t" points="290,132.0 352.0,165 290,198.0 228.0,165"/>
+<text class="dg-sm" x="290" y="170" text-anchor="middle">takes</text>
+</g>
+<path class="dg-line v-draw" pathLength="1" style="--d:0.70s" d="M140 88 L240 145"/>
+<path class="dg-line v-draw" pathLength="1" style="--d:0.80s" d="M140 250 L240 185"/>
+<path class="dg-line v-draw" pathLength="1" style="--d:1.10s" stroke-dasharray="6 4" d="M352 165 H400"/>
+<g class="v-in" style="--d:1.30s"><rect class="dg-box" x="400" y="115" width="120" height="100"/><text class="dg-sm" x="412" y="142">semester</text><text class="dg-sm" x="412" y="168">year</text><text class="dg-sm" x="412" y="194">grade</text></g>
+<g class="v-in" style="--d:1.80s">
+<rect class="dg-box" x="640" y="130" width="140" height="92"/>
+<rect class="dg-box-m" x="640" y="130" width="140" height="34"/>
+<text class="dg-sm-b" x="650" y="153">course</text>
+<text class="dg-sm" x="650" y="187">course_id</text>
+<path class="dg-line" stroke-width="1.3" d="M650 191 h67"/>
+<text class="dg-sm" x="650" y="211">title</text>
+</g>
+<g class="v-in" style="--d:2.10s">
+<polygon class="dg-box-t" points="890,47.0 952.0,80 890,113.0 828.0,80"/>
+<text class="dg-sm" x="890" y="85" text-anchor="middle">prereq</text>
+</g>
+<path class="dg-line v-draw" pathLength="1" style="--d:2.30s" d="M828 80 L760 128"/>
+<path class="dg-line v-draw" pathLength="1" style="--d:2.40s" d="M890 113 L780 190"/>
+<g class="v-in" style="--d:2.80s"><text class="dg-xs dg-mono" x="700" y="98">course_id</text><text class="dg-xs dg-mono" x="860" y="168">prereq_id</text></g>
+<g class="v-in" style="--d:3.00s"><text class="dg-xs" x="640" y="330">a role names the part an entity plays</text><text class="dg-xs" x="400" y="240">attributes of the relationship</text></g>
+</svg>
+      <figcaption><strong>Figure 6.6.</strong> Left: grade belongs to one enrollment, so it is an attribute of takes. Right: prereq relates course to itself, so each line is named by its role.</figcaption>
+    </figure>
+    <div class="cols-2">
+      <p>Ask where a fact belongs. A grade is not a property of the student (they have many) or the course (it has many), but of the pair: the relationship.</p>
+      <p>A relationship between an entity set and itself is <strong>recursive</strong>. Roles say which end is which; they become the column names <code>course_id</code> and <code>prereq_id</code>.</p>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 14 ────────────────────────────────────────────── ternary -->
+<section class="slide" id="s14">
+  <h2>Some relationships join three entity sets</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:880px">
+<svg style="--dg-k:1" viewBox="0 0 880 360" role="img" aria-labelledby="tnt tnd">
+<title id="tnt">A ternary relationship: proj_guide</title>
+<desc id="tnd">Three entity sets, instructor, student and project, all joined to one diamond named proj_guide. Each relationship instance is a triple: this instructor guides this student on this project. The arrow to instructor means that for a given student and project there is at most one guiding instructor.</desc>
+<defs><marker id="tna" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#1d232b"/></marker></defs>
+<g class="v-in" style="--d:0.10s">
+<rect class="dg-box" x="10" y="30" width="150" height="92"/>
+<rect class="dg-box-m" x="10" y="30" width="150" height="34"/>
+<text class="dg-sm-b" x="20" y="53">instructor</text>
+<text class="dg-sm" x="20" y="87">ID</text>
+<path class="dg-line" stroke-width="1.3" d="M20 91 h15"/>
+<text class="dg-sm" x="20" y="111">name</text>
+</g>
+<g class="v-in" style="--d:0.30s">
+<rect class="dg-box" x="700" y="30" width="150" height="92"/>
+<rect class="dg-box-m" x="700" y="30" width="150" height="34"/>
+<text class="dg-sm-b" x="710" y="53">student</text>
+<text class="dg-sm" x="710" y="87">ID</text>
+<path class="dg-line" stroke-width="1.3" d="M710 91 h15"/>
+<text class="dg-sm" x="710" y="111">name</text>
+</g>
+<g class="v-in" style="--d:0.50s">
+<rect class="dg-box" x="355" y="230" width="170" height="92"/>
+<rect class="dg-box-m" x="355" y="230" width="170" height="34"/>
+<text class="dg-sm-b" x="365" y="253">project</text>
+<text class="dg-sm" x="365" y="287">project_id</text>
+<path class="dg-line" stroke-width="1.3" d="M365 291 h74"/>
+<text class="dg-sm" x="365" y="311">title</text>
+</g>
+<g class="v-in" style="--d:0.80s">
+<polygon class="dg-box-t" points="440,55.0 515.0,90 440,125.0 365.0,90"/>
+<text class="dg-sm" x="440" y="95" text-anchor="middle">proj_guide</text>
+</g>
+<path class="dg-line v-draw" pathLength="1" style="--d:1.00s" d="M365 90 L162 80" marker-end="url(#tna)"/>
+<path class="dg-line v-draw" pathLength="1" style="--d:1.10s" d="M515 90 L700 80"/>
+<path class="dg-line v-draw" pathLength="1" style="--d:1.20s" d="M440 125 L440 230"/>
+<g class="v-in" style="--d:1.80s"><text class="dg-xs dg-teal" x="440" y="20" text-anchor="middle">one instance: (Avery Chen, Riley Adams, robot arm)</text></g>
+</svg>
+      <figcaption><strong>Figure 6.7.</strong> proj_guide is a ternary relationship: each instance is a triple.</figcaption>
+    </figure>
+    <div class="cols-2">
+      <p>Three binary relationships (instructor–student, student–project, instructor–project) would not say <em>which</em> instructor guides a student on <em>which</em> project, when a student has two projects and two guides.</p>
+      <div class="callout" style="margin:0">
+        <span class="mark" aria-hidden="true">!</span>
+        <p>Use a ternary relationship only when the triple is the fact. Most relationships are binary; at most one arrow on a non-binary relationship, or it becomes ambiguous.</p>
+      </div>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 15 ────────────────────────────────────────────── weak entity -->
+<section class="slide" id="s15">
+  <h2>A weak entity set borrows its identity from an owner</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:1000px">
+<svg style="--dg-k:1" viewBox="0 0 1000 300" role="img" aria-labelledby="wkt wkd">
+<title id="wkt">A weak entity set: section depends on course</title>
+<desc id="wkd">course, a strong entity set, with course_id underlined and title. section, a weak entity set drawn as a double rectangle, with sec_id, semester and year underlined with dashes: together they are the discriminator, which tells apart the sections of one course. The identifying relationship sec_course is a double diamond. A double line joins section to it, because every section belongs to a course, and an arrow points to course, because it belongs to exactly one. The primary key of section is course_id, borrowed from course, plus its discriminator.</desc>
+<defs><marker id="wka" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#1d232b"/></marker></defs>
+<g class="v-in" style="--d:0.10s">
+<rect class="dg-box" x="20" y="40" width="170" height="116"/>
+<rect class="dg-box-m" x="20" y="40" width="170" height="34"/>
+<text class="dg-sm-b" x="30" y="63">course</text>
+<text class="dg-sm" x="30" y="97">course_id</text>
+<path class="dg-line" stroke-width="1.3" d="M30 101 h67"/>
+<text class="dg-sm" x="30" y="121">title</text>
+<text class="dg-sm" x="30" y="145">credits</text>
+</g>
+<g class="v-in" style="--d:0.60s">
+<polygon class="dg-box-t" points="430,64.0 505.0,100 430,136.0 355.0,100"/>
+<polygon class="dg-box-t" points="430,70.0 495.4,100 430,130.0 364.6,100"/>
+<text class="dg-sm" x="430" y="105" text-anchor="middle">sec_course</text>
+</g>
+<g class="v-in" style="--d:1.00s">
+<rect class="dg-box" x="715" y="35" width="180" height="126"/>
+<rect class="dg-box" x="720" y="40" width="170" height="116"/>
+<rect class="dg-box-m" x="720" y="40" width="170" height="34"/>
+<text class="dg-sm-b" x="730" y="63">section</text>
+<text class="dg-sm" x="730" y="97">sec_id</text>
+<path class="dg-line" stroke-width="1.3" stroke-dasharray="5 4" d="M730 101 h44"/>
+<text class="dg-sm" x="730" y="121">semester</text>
+<path class="dg-line" stroke-width="1.3" stroke-dasharray="5 4" d="M730 125 h59"/>
+<text class="dg-sm" x="730" y="145">year</text>
+<path class="dg-line" stroke-width="1.3" stroke-dasharray="5 4" d="M730 149 h30"/>
+</g>
+<path class="dg-line v-draw" pathLength="1" style="--d:1.30s" d="M355 100 L192 100" marker-end="url(#wka)"/>
+<path class="dg-line v-draw" pathLength="1" style="--d:1.40s" d="M505.0 103.5 L714.0 103.5"/>
+<path class="dg-line v-draw" pathLength="1" style="--d:1.40s" d="M505.0 96.5 L714.0 96.5"/>
+<g class="v-in" style="--d:2.00s"><text class="dg-sm dg-mono" x="20" y="250">primary key of section = (course_id, sec_id, semester, year)</text><text class="dg-xs" x="20" y="282">the owner’s key, plus the discriminator (dashed underline)</text></g>
+</svg>
+      <figcaption><strong>Figure 6.8.</strong> Section 1 of Fall 2027 only makes sense as a section <em>of a course</em>. <a class="try" href="playground.html#weak">Build it, playground section 3</a></figcaption>
+    </figure>
+    <div class="cols-2">
+      <ul>
+        <li><strong>Weak entity set:</strong> its own attributes cannot identify an entity. Double rectangle.</li>
+        <li><strong>Identifying relationship:</strong> links it to its owner. Double diamond, total participation, at most one owner.</li>
+      </ul>
+      <ul>
+        <li><strong>Discriminator:</strong> tells apart the weak entities of one owner. Dashed underline.</li>
+        <li>Key = owner's key + discriminator. Deleting the owner deletes them: <code>ON DELETE CASCADE</code>.</li>
+      </ul>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 16 ────────────────────────────────────────────── crow's foot -->
+<section class="slide" id="s16">
+  <h2>The same diagram in crow's foot notation</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:900px">
+<svg style="--dg-k:1" viewBox="0 0 1000 330" role="img" aria-labelledby="cft cfd">
+<title id="cft">The same relationship in two notations</title>
+<desc id="cfd">Top: the textbook&#x27;s notation. instructor, advisor diamond, student; an arrow from advisor to instructor and a double line from student, with limits 0..* and 1..1: each student has exactly one advisor, an instructor any number of students. Bottom: crow&#x27;s foot notation, used by most drawing tools. There is no diamond; one line joins instructor to student. At the instructor end two bars mean exactly one. At the student end a circle and a three-pronged crow&#x27;s foot mean zero or many. The relationship&#x27;s name is written on the line.</desc>
+<defs><marker id="cfa" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#1d232b"/></marker></defs>
+<text class="dg-sm-b" x="10" y="24">textbook (Silberschatz)</text>
+<rect class="dg-box" x="10" y="44" width="170" height="56"/><text class="dg-sm-b" x="95" y="78" text-anchor="middle">instructor</text>
+<rect class="dg-box" x="820" y="44" width="170" height="56"/><text class="dg-sm-b" x="905" y="78" text-anchor="middle">student</text>
+<g>
+<polygon class="dg-box-t" points="500,39.0 562.0,72 500,105.0 438.0,72"/>
+<text class="dg-sm" x="500" y="77" text-anchor="middle">advisor</text>
+</g>
+<path class="dg-line" d="M438 72 L182 72" marker-end="url(#cfa)"/>
+<path class="dg-line" d="M562.0 75.5 L820.0 75.5"/>
+<path class="dg-line" d="M562.0 68.5 L820.0 68.5"/>
+<text class="dg-sm dg-mono" x="250" y="62">0..*</text><text class="dg-sm dg-mono" x="720" y="62">1..1</text>
+<g class="v-in" style="--d:0.60s"><text class="dg-sm-b" x="10" y="180">crow’s foot (draw.io, dbdiagram, Lucidchart)</text><rect class="dg-box" x="10" y="202" width="170" height="56"/><text class="dg-sm-b" x="95" y="236" text-anchor="middle">instructor</text><rect class="dg-box" x="820" y="202" width="170" height="56"/><text class="dg-sm-b" x="905" y="236" text-anchor="middle">student</text><path class="dg-line" d="M180 230 H820"/><path class="dg-line" stroke-width="2.2" d="M196 217 v26 M206 217 v26"/><circle class="dg-box" cx="782" cy="230" r="8"/><path class="dg-line" stroke-width="2.2" d="M820 214 L796 230 L820 246 M796 230 H820"/><text class="dg-sm" x="500" y="220" text-anchor="middle">advises</text><text class="dg-xs" x="196" y="280">‖ exactly one</text><text class="dg-xs" x="700" y="280">o&lt; zero or many</text></g>
+</svg>
+      <figcaption><strong>Figure 6.9.</strong> Textbook notation (top) and crow's foot (bottom) for "each student has exactly one advisor".</figcaption>
+    </figure>
+    <div class="cols-2">
+      <ul>
+        <li>No diamonds: a relationship is a line; many-to-many is drawn as a table in the middle.</li>
+        <li>Each end has two marks: inner is the minimum (o zero, | one), outer the maximum (| one, crow's foot many).</li>
+      </ul>
+      <div class="panel" style="margin:0">
+        <h3>For your project</h3>
+        <p>Either notation is fine. Pick one, say which in your report, and use it consistently.</p>
+      </div>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 17 ────────────────────────────────────────────── section -->
+<section class="slide slide--section" id="s17">
+  <h2>Extended E-R: specialization and aggregation</h2>
+  <p>Kinds of entity inside an entity set, and relationships about relationships.</p>
+  
+</section>
+
+<!-- 18 ────────────────────────────────────────────── specialization -->
+<section class="slide" id="s18">
+  <h2>Specialization: subgroups with attributes of their own</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:900px">
+<svg style="--dg-k:1" viewBox="0 0 1000 470" role="img" aria-labelledby="spt spd">
+<title id="spt">Specialization and generalization</title>
+<desc id="spd">person, with ID, name and address, at the top. Two separate hollow arrows point up to person, from employee (with salary) and from student (with tot_cred): separate arrows mean overlapping, so one person can be both an employee and a student. Below employee, instructor (with rank) and secretary (with hours_per_week) share one hollow arrow labelled disjoint: an employee is at most one of the two. Each lower entity set inherits every attribute of the sets above it.</desc>
+<defs><marker id="spa" markerWidth="14" markerHeight="14" refX="12" refY="7" orient="auto"><path d="M0,0 L13,7 L0,14 z" fill="#fff" stroke="#1d232b" stroke-width="1.4"/></marker></defs>
+<g class="v-in" style="--d:0.10s">
+<rect class="dg-box" x="400" y="10" width="180" height="116"/>
+<rect class="dg-box-m" x="400" y="10" width="180" height="34"/>
+<text class="dg-sm-b" x="410" y="33">person</text>
+<text class="dg-sm" x="410" y="67">ID</text>
+<path class="dg-line" stroke-width="1.3" d="M410 71 h15"/>
+<text class="dg-sm" x="410" y="91">name</text>
+<text class="dg-sm" x="410" y="115">address</text>
+</g>
+<g class="v-in" style="--d:0.60s">
+<rect class="dg-box" x="200" y="200" width="170" height="68"/>
+<rect class="dg-box-m" x="200" y="200" width="170" height="34"/>
+<text class="dg-sm-b" x="210" y="223">employee</text>
+<text class="dg-sm" x="210" y="257">salary</text>
+</g>
+<g class="v-in" style="--d:0.80s">
+<rect class="dg-box" x="640" y="200" width="170" height="68"/>
+<rect class="dg-box-m" x="640" y="200" width="170" height="34"/>
+<text class="dg-sm-b" x="650" y="223">student</text>
+<text class="dg-sm" x="650" y="257">tot_cred</text>
+</g>
+<path class="dg-line v-draw" pathLength="1" style="--d:1.00s" d="M285 200 V170 L455 132" marker-end="url(#spa)"/>
+<path class="dg-line v-draw" pathLength="1" style="--d:1.10s" d="M725 200 V170 L525 132" marker-end="url(#spa)"/>
+<g class="v-in" style="--d:1.40s"><text class="dg-xs dg-teal" x="500" y="190" text-anchor="middle">overlapping: two arrows</text></g>
+<g class="v-in" style="--d:1.80s">
+<rect class="dg-box" x="60" y="370" width="160" height="68"/>
+<rect class="dg-box-m" x="60" y="370" width="160" height="34"/>
+<text class="dg-sm-b" x="70" y="393">instructor</text>
+<text class="dg-sm" x="70" y="427">rank</text>
+</g>
+<g class="v-in" style="--d:2.00s">
+<rect class="dg-box" x="340" y="370" width="180" height="68"/>
+<rect class="dg-box-m" x="340" y="370" width="180" height="34"/>
+<text class="dg-sm-b" x="350" y="393">secretary</text>
+<text class="dg-sm" x="350" y="427">hours_per_week</text>
+</g>
+<path class="dg-line v-draw" pathLength="1" style="--d:2.20s" d="M140 370 V335 H430 V370 M285 335 V272" marker-end="url(#spa)"/>
+<g class="v-in" style="--d:2.60s"><text class="dg-xs dg-teal" x="300" y="322">disjoint: one shared arrow</text></g>
+<g class="v-in" style="--d:3.00s"><text class="dg-xs" x="600" y="420">an instructor has ID, name, address,</text><text class="dg-xs" x="600" y="442">salary and rank: attributes are inherited</text></g>
+</svg>
+      <figcaption><strong>Figure 6.10.</strong> Two levels: person, then employee and student, then instructor and secretary.</figcaption>
+    </figure>
+    <div class="cols-2">
+      <ul>
+        <li><strong>Specialization</strong> is top-down; <strong>generalization</strong> is bottom-up.</li>
+        <li>Lower sets <strong>inherit</strong> the attributes and relationships of higher ones.</li>
+      </ul>
+      <ul>
+        <li><strong>Overlapping or disjoint:</strong> can an entity be in two subgroups?</li>
+        <li><strong>Total or partial:</strong> must every entity be in some subgroup?</li>
+      </ul>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 19 ────────────────────────────────────────────── aggregation -->
+<section class="slide" id="s19">
+  <h2>Aggregation: a relationship that takes part in another</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:1000px">
+<svg style="--dg-k:1" viewBox="0 0 1000 400" role="img" aria-labelledby="agt agd">
+<title id="agt">Aggregation: a relationship treated as an entity</title>
+<desc id="agd">A dashed box surrounds instructor, student, project and the proj_guide relationship joining them. A line runs from the dashed box to a diamond eval_for, and on to an entity set evaluation with evaluation_id and score. The box says: a whole proj_guide instance, one instructor guiding one student on one project, takes part in eval_for, so each guided project can be evaluated.</desc>
+<defs><marker id="aga" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#1d232b"/></marker></defs>
+<rect class="dg-line-q v-in" style="--d:0.10s" stroke-dasharray="8 6" x="10" y="10" width="600" height="380" rx="6"/>
+<g class="v-in" style="--d:0.20s">
+<rect class="dg-box" x="30" y="40" width="140" height="68"/>
+<rect class="dg-box-m" x="30" y="40" width="140" height="34"/>
+<text class="dg-sm-b" x="40" y="63">instructor</text>
+<text class="dg-sm" x="40" y="97">ID</text>
+<path class="dg-line" stroke-width="1.3" d="M40 101 h15"/>
+</g>
+<g class="v-in" style="--d:0.30s">
+<rect class="dg-box" x="440" y="40" width="140" height="68"/>
+<rect class="dg-box-m" x="440" y="40" width="140" height="34"/>
+<text class="dg-sm-b" x="450" y="63">student</text>
+<text class="dg-sm" x="450" y="97">ID</text>
+<path class="dg-line" stroke-width="1.3" d="M450 101 h15"/>
+</g>
+<g class="v-in" style="--d:0.40s">
+<rect class="dg-box" x="235" y="290" width="150" height="68"/>
+<rect class="dg-box-m" x="235" y="290" width="150" height="34"/>
+<text class="dg-sm-b" x="245" y="313">project</text>
+<text class="dg-sm" x="245" y="347">project_id</text>
+<path class="dg-line" stroke-width="1.3" d="M245 351 h74"/>
+</g>
+<g class="v-in" style="--d:0.60s">
+<polygon class="dg-box-t" points="310,125.0 385.0,160 310,195.0 235.0,160"/>
+<text class="dg-sm" x="310" y="165" text-anchor="middle">proj_guide</text>
+</g>
+<path class="dg-line v-draw" pathLength="1" style="--d:0.80s" d="M235 160 L172 100"/>
+<path class="dg-line v-draw" pathLength="1" style="--d:0.90s" d="M385 160 L440 100"/>
+<path class="dg-line v-draw" pathLength="1" style="--d:1.00s" d="M310 195 L310 290"/>
+<g class="v-in" style="--d:1.60s">
+<polygon class="dg-box-t" points="740,167.0 805.0,200 740,233.0 675.0,200"/>
+<text class="dg-sm" x="740" y="205" text-anchor="middle">eval_for</text>
+</g>
+<path class="dg-line v-draw" pathLength="1" style="--d:1.80s" d="M612 200 L675 200"/>
+<g class="v-in" style="--d:2.00s">
+<rect class="dg-box" x="840" y="150" width="150" height="92"/>
+<rect class="dg-box-m" x="840" y="150" width="150" height="34"/>
+<text class="dg-sm-b" x="850" y="173">evaluation</text>
+<text class="dg-sm" x="850" y="207">evaluation_id</text>
+<path class="dg-line" stroke-width="1.3" d="M850 211 h96"/>
+<text class="dg-sm" x="850" y="231">score</text>
+</g>
+<path class="dg-line v-draw" pathLength="1" style="--d:2.20s" d="M805 200 L840 200"/>
+<g class="v-in" style="--d:2.60s"><text class="dg-xs dg-teal" x="620" y="370">the dashed box takes part as one unit</text></g>
+</svg>
+      <figcaption><strong>Figure 6.11.</strong> Each guided project, one proj_guide instance, may get an evaluation.</figcaption>
+    </figure>
+    <p>Without aggregation we would need a four-way relationship among instructor, student, project and evaluation, which repeats every triple. Aggregation lets the triple act as a single entity. In tables, <code>eval_for</code> holds the key of <code>proj_guide</code> plus the evaluation's key.</p>
+  </div>
+  
+</section>
+
+<!-- 20 ────────────────────────────────────────────── section -->
+<section class="slide slide--section" id="s20">
+  <h2>From diagram to tables</h2>
+  <p>Each construct has a standard mapping. Apply them in order and the schema falls out.</p>
+  
+</section>
+
+<!-- 21 ────────────────────────────────────────────── mapping entities -->
+<section class="slide" id="s21">
+  <h2>Entity sets and their attributes become tables</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <pre class="code"><span class="c">-- composite name: one column per part</span>
+<span class="k">CREATE</span> <span class="k">TABLE</span> instructor (
+  id             char(5) <span class="k">PRIMARY</span> <span class="k">KEY</span>,
+  first_name     varchar(20) <span class="k">NOT</span> <span class="k">NULL</span>,
+  middle_initial char(1),
+  last_name      varchar(20) <span class="k">NOT</span> <span class="k">NULL</span>,
+  date_of_birth  date
+);
+
+<span class="c">-- multivalued phone_number: its own table</span>
+<span class="k">CREATE</span> <span class="k">TABLE</span> inst_phone (
+  id           char(5) <span class="k">REFERENCES</span> instructor
+                 <span class="k">ON</span> <span class="k">DELETE</span> <span class="k">CASCADE</span>,
+  phone_number varchar(15),
+  <span class="k">PRIMARY</span> <span class="k">KEY</span> (id, phone_number)
+);</pre>
+      <div class="fill" style="gap:14px">
+        <ul>
+          <li><strong>Strong entity set:</strong> a table with its attributes; its key is the primary key.</li>
+          <li><strong>Composite:</strong> keep the leaves (first_name, …), drop the parent name.</li>
+          <li><strong>Multivalued:</strong> a table of (owner key, value), keyed on both. One row per phone number.</li>
+          <li><strong>Derived (age):</strong> do not store it; compute it in a query or a view: <code>age(date_of_birth)</code>.</li>
+        </ul>
+        <p><a class="try" href="playground.html#entities">Run these, playground examples 1.1 and 1.2</a></p>
+      </div>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 22 ────────────────────────────────────────────── mapping relationships -->
+<section class="slide" id="s22">
+  <h2>Relationships become keys, by cardinality</h2>
+  <div class="slide-main">
+    <table class="tbl tbl--compact">
+      <caption class="visually-hidden">How a binary relationship maps to tables, by cardinality and participation</caption>
+      <thead><tr><th scope="col">In the diagram</th><th scope="col">In the tables</th><th scope="col">Example</th></tr></thead>
+      <tbody>
+        <tr><td>Many-to-many</td><td>A table with both keys; primary key = both</td><td><code>takes (id, course_id, …)</code></td></tr>
+        <tr><td>Many-to-one, partial</td><td>A table keyed on the "many" side, or a nullable foreign key column on that side</td><td><code>advisor (s_id PRIMARY KEY, i_id)</code></td></tr>
+        <tr><td>Many-to-one, total</td><td>A NOT NULL foreign key column on the "many" side</td><td><code>dept_name … NOT NULL</code> in instructor, if every instructor needed a department</td></tr>
+        <tr><td>One-to-one</td><td>A foreign key that is also UNIQUE, on either side</td><td><code>dept_head (dept_name PK, i_id UNIQUE)</code></td></tr>
+        <tr><td>Relationship attributes</td><td>Columns of whichever table holds the relationship</td><td><code>takes.grade</code></td></tr>
+      </tbody>
+    </table>
+    <div class="callout">
+      <span class="mark" aria-hidden="true">!</span>
+      <p>Total participation on the "many-to-many" side, every student takes at least one course, cannot be declared with a constraint. It needs a trigger or the application.</p>
+    </div>
+    <p><a class="try" href="playground.html#relationships">See each row enforced or refused, playground section 2</a></p>
+  </div>
+  
+</section>
+
+<!-- 23 ────────────────────────────────────────────── weak mapping -->
+<section class="slide" id="s23">
+  <h2>A weak entity set: the owner's key joins the primary key</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <pre class="code"><span class="k">CREATE</span> <span class="k">TABLE</span> section (
+  course_id  varchar(8)
+             <span class="k">REFERENCES</span> course <span class="k">ON</span> <span class="k">DELETE</span> <span class="k">CASCADE</span>,
+  sec_id     varchar(8),
+  semester   varchar(6),
+  year       integer,
+  room       varchar(20),
+  <span class="k">PRIMARY</span> <span class="k">KEY</span> (course_id, sec_id, semester, year)
+);
+
+<span class="c">-- takes then refers to a section, not a course</span>
+<span class="c">--   FOREIGN KEY (course_id, sec_id, semester, year)</span>
+<span class="c">--     REFERENCES section</span></pre>
+      <div class="fill" style="gap:14px">
+        <ul>
+          <li>The identifying relationship <code>sec_course</code> gets no table of its own: the foreign key in <code>section</code> is the relationship.</li>
+          <li>CASCADE, because a section cannot outlive its course.</li>
+          <li>A table that refers to a weak entity uses the whole key: four columns here.</li>
+        </ul>
+        <p><a class="try" href="playground.html#weak">Run it, playground example 3.1</a></p>
+      </div>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 24 ────────────────────────────────────────────── specialization mapping -->
+<section class="slide" id="s24">
+  <h2>Three ways to map a specialization</h2>
+  <div class="slide-main">
+    <table class="tbl tbl--compact">
+      <caption class="visually-hidden">Three mappings of person, student and employee, with when each fits</caption>
+      <thead><tr><th scope="col">Mapping</th><th scope="col">Tables</th><th scope="col">Fits when</th></tr></thead>
+      <tbody>
+        <tr><td>A table per set, sharing the key</td><td><code>person(ID, name, address)</code>, <code>student(ID → person, tot_cred)</code>, <code>employee(ID → person, salary)</code></td><td>Overlapping or partial; the usual choice</td></tr>
+        <tr><td>A table per lowest set only</td><td><code>student(ID, name, address, tot_cred)</code>, <code>employee(ID, name, address, salary)</code></td><td>Disjoint and total: no plain persons, no one in both</td></tr>
+        <tr><td>One table with a type column</td><td><code>person(ID, name, address, kind, tot_cred, salary)</code> with a CHECK on kind</td><td>Few subgroup attributes; NULLs in the rest are acceptable</td></tr>
+      </tbody>
+    </table>
+    <div class="cols-2">
+      <p>The first needs a join to see a student's name; the second repeats name and address when someone is both; the third has NULLs by design.</p>
+      <p><a class="try" href="playground.html#isa">Build the first and the third, playground section 4</a></p>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 25 ────────────────────────────────────────────── section -->
+<section class="slide slide--section" id="s25">
+  <h2>Design choices, and a design studio</h2>
+  <p>The rules map a diagram to tables. Choosing the diagram is the judgment part.</p>
+  
+</section>
+
+<!-- 26 ────────────────────────────────────────────── choices -->
+<section class="slide" id="s26">
+  <h2>Three questions designers ask</h2>
+  <div class="slide-main">
+    <ol class="steps">
+      <li><span class="n" aria-hidden="true">1</span><div><strong>Entity or attribute?</strong><p>If the thing has facts of its own, or several per owner, or is shared, make it an entity. A phone number stays an attribute; a department, with a building and a budget, is an entity.</p></div></li>
+      <li><span class="n" aria-hidden="true">2</span><div><strong>Entity or relationship?</strong><p>An enrollment can be the relationship takes, or an entity registration that student and section relate to. Make it an entity when other things refer to it: an invoice per registration, say.</p></div></li>
+      <li><span class="n" aria-hidden="true">3</span><div><strong>Binary or n-ary?</strong><p>Prefer binary. Use three-way only when the triple is the fact, as in proj_guide.</p></div></li>
+    </ol>
+    <div class="callout">
+      <span class="mark" aria-hidden="true">!</span>
+      <p>The most common mistake: putting a foreign key as an attribute of an entity, such as <code>dept_name</code> inside instructor. In the diagram that link is a relationship. It becomes a column only when you map it.</p>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 27 ────────────────────────────────────────────── studio: draft -->
+<section class="slide" id="s27">
+  <h2>Design studio: critique a first draft</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:1000px">
+<svg style="--dg-k:1" viewBox="0 0 1000 400" role="img" aria-labelledby="cqt cqd">
+<title id="cqt">A first draft of a library design, with mistakes to find</title>
+<desc id="cqd">A draft E-R diagram for a campus library. Entity set patron with attributes patron_id (underlined), name, phone, book_isbn, book_title and due_date. Entity set book with attributes isbn (underlined), title, authors and copies. A diamond borrows joins patron and book with plain lines, many-to-many, and has no attributes. The mistakes are discussed on the next slide.</desc>
+<defs><marker id="cqa" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#1d232b"/></marker></defs>
+<g class="v-in" style="--d:0.10s">
+<rect class="dg-box" x="20" y="30" width="200" height="188"/>
+<rect class="dg-box-m" x="20" y="30" width="200" height="34"/>
+<text class="dg-sm-b" x="30" y="53">patron</text>
+<text class="dg-sm" x="30" y="87">patron_id</text>
+<path class="dg-line" stroke-width="1.3" d="M30 91 h67"/>
+<text class="dg-sm" x="30" y="111">name</text>
+<text class="dg-sm" x="30" y="135">phone</text>
+<text class="dg-sm" x="30" y="159">book_isbn</text>
+<text class="dg-sm" x="30" y="183">book_title</text>
+<text class="dg-sm" x="30" y="207">due_date</text>
+</g>
+<g class="v-in" style="--d:0.50s">
+<polygon class="dg-box-t" points="500,85.0 570.0,120 500,155.0 430.0,120"/>
+<text class="dg-sm" x="500" y="125" text-anchor="middle">borrows</text>
+</g>
+<g class="v-in" style="--d:0.30s">
+<rect class="dg-box" x="780" y="30" width="200" height="140"/>
+<rect class="dg-box-m" x="780" y="30" width="200" height="34"/>
+<text class="dg-sm-b" x="790" y="53">book</text>
+<text class="dg-sm" x="790" y="87">isbn</text>
+<path class="dg-line" stroke-width="1.3" d="M790 91 h30"/>
+<text class="dg-sm" x="790" y="111">title</text>
+<text class="dg-sm" x="790" y="135">authors</text>
+<text class="dg-sm" x="790" y="159">copies</text>
+</g>
+<path class="dg-line v-draw" pathLength="1" style="--d:0.70s" d="M430 120 L220 120"/>
+<path class="dg-line v-draw" pathLength="1" style="--d:0.80s" d="M570 120 L780 120"/>
+<g class="v-in" style="--d:1.40s"><text class="dg-sm-b" x="500" y="300" text-anchor="middle">Find five problems before the next slide.</text><text class="dg-sm" x="500" y="330" text-anchor="middle">Hint: what does one row of patron hold? What does a library lend?</text></g>
+</svg>
+      <figcaption><strong>Figure 6.12.</strong> A campus library's first draft. In pairs, find five problems. Five minutes.</figcaption>
+    </figure>
+    <p>The library: patrons borrow copies of books; a book can have several copies and several authors; a copy is out to at most one patron at a time; each loan has a date and a due date.</p>
+  </div>
+  
+</section>
+
+<!-- 28 ────────────────────────────────────────────── studio: fixed -->
+<section class="slide" id="s28">
+  <h2>Five problems in the first draft</h2>
+  <div class="slide-main">
+    <ol>
+      <li><strong>book_isbn, book_title in patron:</strong> redundant, and only one loan fits. They belong to the relationship.</li>
+      <li><strong>due_date in patron:</strong> it describes a loan, so it is an attribute of the loan.</li>
+      <li><strong>The library lends copies, not books:</strong> copy is a weak entity of book, with copy_no.</li>
+      <li><strong>authors in book:</strong> an author has a name and writes many books: an entity, many-to-many.</li>
+      <li><strong>borrows is many-to-many:</strong> a copy is out to at most one patron, so loan is many-to-one to patron.</li>
+    </ol>
+  </div>
+  
+</section>
+
+<!-- 29 ───────────────────────────────────────────── revised design -->
+<section class="slide" id="s29">
+  <h2>The revised design</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:1060px">
+<svg style="--dg-k:1" viewBox="0 0 1000 416" role="img" aria-labelledby="cxt cxd">
+<title id="cxt">The library design, revised</title>
+<desc id="cxd">patron with patron_id (underlined), name and phone_number in braces, multivalued. book with isbn (underlined) and title. author with author_id (underlined) and name, joined to book by a many-to-many diamond writes. copy, a weak entity set (double rectangle) with discriminator copy_no, joined to book by the double diamond has_copy, with a double line from copy and an arrow to book. A diamond loan joins patron and copy, with attributes loan_date and due_date in a dashed box; an arrow points to patron because a copy is lent to at most one patron at a time.</desc>
+<defs><marker id="cxa" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#1d232b"/></marker></defs>
+<g class="v-in" style="--d:0.10s">
+<rect class="dg-box" x="10" y="30" width="190" height="116"/>
+<rect class="dg-box-m" x="10" y="30" width="190" height="34"/>
+<text class="dg-sm-b" x="20" y="53">patron</text>
+<text class="dg-sm" x="20" y="87">patron_id</text>
+<path class="dg-line" stroke-width="1.3" d="M20 91 h67"/>
+<text class="dg-sm" x="20" y="111">name</text>
+<text class="dg-sm" x="20" y="135">{ phone_number }</text>
+</g>
+<g class="v-in" style="--d:0.40s">
+<polygon class="dg-box-t" points="330,60.0 385.0,90 330,120.0 275.0,90"/>
+<text class="dg-sm" x="330" y="95" text-anchor="middle">loan</text>
+</g>
+<path class="dg-line v-draw" pathLength="1" style="--d:0.60s" d="M275 90 L202 90" marker-end="url(#cxa)"/>
+<path class="dg-line v-draw" pathLength="1" style="--d:0.70s" stroke-dasharray="6 4" d="M330 120 V170"/>
+<g class="v-in" style="--d:0.80s"><rect class="dg-box" x="270" y="170" width="130" height="58"/><text class="dg-sm" x="282" y="194">loan_date</text><text class="dg-sm" x="282" y="218">due_date</text></g>
+<g class="v-in" style="--d:1.00s">
+<rect class="dg-box" x="465" y="25" width="160" height="102"/>
+<rect class="dg-box" x="470" y="30" width="150" height="92"/>
+<rect class="dg-box-m" x="470" y="30" width="150" height="34"/>
+<text class="dg-sm-b" x="480" y="53">copy</text>
+<text class="dg-sm" x="480" y="87">copy_no</text>
+<path class="dg-line" stroke-width="1.3" stroke-dasharray="5 4" d="M480 91 h52"/>
+<text class="dg-sm" x="480" y="111">condition</text>
+</g>
+<path class="dg-line v-draw" pathLength="1" style="--d:1.10s" d="M385 90 L464 90"/>
+<g class="v-in" style="--d:1.30s">
+<polygon class="dg-box-t" points="545,198.0 610.0,230 545,262.0 480.0,230"/>
+<polygon class="dg-box-t" points="545,204.0 600.4,230 545,256.0 489.6,230"/>
+<text class="dg-sm" x="545" y="235" text-anchor="middle">has_copy</text>
+</g>
+<path class="dg-line v-draw" pathLength="1" style="--d:1.40s" d="M541.5 128.0 L541.5 198.0"/>
+<path class="dg-line v-draw" pathLength="1" style="--d:1.40s" d="M548.5 128.0 L548.5 198.0"/>
+<g class="v-in" style="--d:1.60s">
+<rect class="dg-box" x="470" y="310" width="150" height="92"/>
+<rect class="dg-box-m" x="470" y="310" width="150" height="34"/>
+<text class="dg-sm-b" x="480" y="333">book</text>
+<text class="dg-sm" x="480" y="367">isbn</text>
+<path class="dg-line" stroke-width="1.3" d="M480 371 h30"/>
+<text class="dg-sm" x="480" y="391">title</text>
+</g>
+<path class="dg-line v-draw" pathLength="1" style="--d:1.70s" d="M545 262 L545 306" marker-end="url(#cxa)"/>
+<g class="v-in" style="--d:2.00s">
+<polygon class="dg-box-t" points="760,332.0 815.0,360 760,388.0 705.0,360"/>
+<text class="dg-sm" x="760" y="365" text-anchor="middle">writes</text>
+</g>
+<path class="dg-line v-draw" pathLength="1" style="--d:2.10s" d="M705 360 L620 360"/>
+<g class="v-in" style="--d:2.20s">
+<rect class="dg-box" x="840" y="300" width="150" height="92"/>
+<rect class="dg-box-m" x="840" y="300" width="150" height="34"/>
+<text class="dg-sm-b" x="850" y="323">author</text>
+<text class="dg-sm" x="850" y="357">author_id</text>
+<path class="dg-line" stroke-width="1.3" d="M850 361 h67"/>
+<text class="dg-sm" x="850" y="381">name</text>
+</g>
+<path class="dg-line v-draw" pathLength="1" style="--d:2.30s" d="M815 360 L840 360"/>
+</svg>
+      <figcaption><strong>Figure 6.13.</strong> The revised library design: loan carries the dates, copy is a weak entity of book, and writes joins book and author. <a class="try" href="playground.html#studio">Map it to tables, playground exercises</a></figcaption>
+    </figure>
+  </div>
+  
+</section>
+
+<!-- 30 ────────────────────────────────────────────── takeaways -->
+<section class="slide" id="s30">
+  <h2>What to take away</h2>
+  <div class="slide-main">
+    <ol class="steps">
+      <li><span class="n" aria-hidden="true">1</span><div><strong>Design on paper first; tables follow.</strong><p>Entity sets become tables, relationships become keys.</p></div></li>
+      <li><span class="n" aria-hidden="true">2</span><div><strong>Cardinality and participation are business rules.</strong><p>Ask the users. Arrows mean one, double lines mean every.</p></div></li>
+      <li><span class="n" aria-hidden="true">3</span><div><strong>Put each fact where it belongs.</strong><p>On an entity, or on the relationship it describes. No foreign keys as entity attributes.</p></div></li>
+      <li><span class="n" aria-hidden="true">4</span><div><strong>Weak entities borrow their owner's key.</strong><p>Their primary key is the owner's key plus a discriminator.</p></div></li>
+      <li><span class="n" aria-hidden="true">5</span><div><strong>Some rules need more than a diagram.</strong><p>Total participation in many-to-many needs a trigger; next week's normal forms catch what the diagram missed.</p></div></li>
+    </ol>
+  </div>
+  
+</section>
+
+<!-- 31 ────────────────────────────────────────────── this week -->
+<section class="slide" id="s31">
+  <h2>This week's work</h2>
+  <div class="slide-main">
+    <div class="week-work">
+      <div>
+        <h3>Read</h3>
+        <ul>
+          <li>Silberschatz, Korth and Sudarshan, <em>Database System Concepts</em>, 7th ed., chapter 6, sections 6.1–6.10.</li>
+          <li>Chapter 7, sections 7.1–7.3, before week 7.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Do</h3>
+        <ul>
+          <li>Project milestone 1: requirements and an E-R diagram for your application.</li>
+          <li>Week 6 playground: the E-R explorer and the eight mapping exercises. Not graded, but milestone 2 maps your own diagram the same way.</li>
+          <li>No lab this week.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Due</h3>
+        <ul>
+          <li><span class="due">Sunday, February 21, 11:59 p.m. CT</span>: project milestone 1, one zip file per team in Brightspace.</li>
+          <li>Quiz 6: in class today; online section within 48 hours of the recording.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="callout" style="margin-top:auto">
+      <span class="mark" aria-hidden="true">→</span>
+      <p><strong>Next week:</strong> functional dependencies and normal forms, a test for whether a set of tables stores each fact once. Lab 5 normalizes a messy table.</p>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 32 ────────────────────────────────────────────── resources -->
+<section class="slide" id="s32">
+  <h2>Free resources</h2>
+  <div class="slide-main">
+    <ul class="resources">
+      <li><a href="playground.html">Week 6 playground</a><span class="src">this course</span><p>Each mapping as runnable SQL, an E-R explorer that tests the tables a diagram maps to, and eight mapping exercises checked by PostgreSQL.</p></li>
+      <li><a href="../../project/milestone1.html">Project milestone 1</a><span class="src">this course</span><p>What to hand in on Sunday, with the rubric.</p></li>
+      <li><a href="../../project/index.html">The term project</a><span class="src">this course</span><p>All four milestones, dates and points.</p></li>
+      <li><a href="https://www.drawio.com/">draw.io</a><span class="src">drawio.com</span><p>A free diagram editor that runs in the browser with no account. It has E-R and crow's foot shapes.</p></li>
+      <li><a href="https://www.db-book.com/">Database System Concepts</a><span class="src">db-book.com</span><p>The textbook's site: slides and the university schema the book uses.</p></li>
+    </ul>
+    <div class="callout" style="margin-top:20px">
+      <span class="mark" aria-hidden="true">→</span>
+      <p>Stuck on your diagram? Office hours are Tuesday and Wednesday 12:00–3:00 p.m., MIC room D159, or post in the week 6 discussion in Brightspace.</p>
+    </div>
+  </div>
+  
+</section>
+
+</main>
+</div>
+<script src="../../assets/deck.js"></script>
+</body>
+</html>

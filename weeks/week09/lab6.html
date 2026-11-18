@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lab 6 — A Registration Helper in Python · CS 4600/5200</title>
+<meta name="description" content="CS 4600/5200 Lab 6: write a small Python program that talks to PostgreSQL with psycopg: parameterized queries that resist SQL injection, an enrollment function that checks prerequisites inside one transaction and logs every request, a preview that rolls back, keyset pagination, one query instead of many, and a least-privilege role for the program.">
+<link rel="stylesheet" href="../../assets/course.css">
+<link rel="stylesheet" href="../../assets/db.css">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to the lab</a>
+
+<div class="doc">
+<header class="doc-masthead">
+  <p class="inst"><span>CS 4600/5200 · Database Theory and Applications</span><span>Week 9</span><span><a href="../../index.html">Course home</a></span></p>
+  <h1>Lab 6: A registration helper in Python</h1>
+  <p class="tagline">The registrar wants a small program that answers the questions the front desk asks all day, and enrolls students only when they have passed the prerequisites. You write it in Python, and every value a user types reaches the database as a parameter, never as SQL.</p>
+</header>
+
+<dl class="facts">
+  <div><dt>Due</dt><dd>Sunday, March 21, 11:59 p.m. CT</dd></div>
+  <div><dt>Time</dt><dd>About 2 to 3 hours, half of it in class</dd></div>
+  <div><dt>Submit</dt><dd>One zip file, uploaded to Brightspace</dd></div>
+  <div><dt>Worth</dt><dd>One of the labs (labs are 25% of the grade)</dd></div>
+</dl>
+
+<nav class="toc" aria-labelledby="toc-h">
+  <h2 id="toc-h">On this page</h2>
+  <ol>
+    <li><a href="#files">Files for this lab</a></li>
+    <li><a href="#setup">Set up Python and psycopg</a></li>
+    <li><a href="#a">Part A: warm up in the playground</a></li>
+    <li><a href="#b">Part B: three questions in SQL, seven functions in Python</a></li>
+    <li><a href="#c">Part C: three short answers</a></li>
+    <li><a href="#d">Part D: CS 5200 only</a></li>
+    <li><a href="#submit">What to submit and how it is graded</a></li>
+    <li><a href="#help">If something goes wrong</a></li>
+  </ol>
+</nav>
+
+<main id="main">
+
+<section id="files" aria-labelledby="files-h">
+  <h2 id="files-h">Files for this lab</h2>
+  <p>Put all four files in one folder, for example <code>Documents/cs5200/lab6</code>:</p>
+  <ul>
+    <li><a href="university.sql" download>university.sql</a>: the university database, the same as in weeks 5 to 8.</li>
+    <li><a href="lab6.sql" download>lab6.sql</a>: the starter file for your SQL.</li>
+    <li><a href="lab6.py" download>lab6.py</a>: the starter file for your Python. Each function you write is marked P1 to P8, and <code>main()</code> at the bottom calls them all and prints the results. Do not change <code>main()</code>.</li>
+    <li><a href="lab6_answers.txt" download>lab6_answers.txt</a>: the starter file for your name, your results and your written answers.</li>
+  </ul>
+  <p>The first lines of <code>lab6.sql</code> reload <code>university.sql</code> and remove the table and the role this lab creates, so a run always starts from the same data. <code>lab6.py</code> enrolls students, so <strong>run lab6.sql again before every run of lab6.py</strong>. Keep both outputs in one file; the second line uses <code>&gt;&gt;</code>, which adds to the file instead of replacing it:</p>
+<pre>psql -d university -e -f lab6.sql &gt; lab6_output.txt 2&gt;&amp;1
+python lab6.py &gt;&gt; lab6_output.txt 2&gt;&amp;1</pre>
+  <p>On Windows, add <code>-U postgres</code> after <code>psql</code>, and type <code>py</code> instead of <code>python</code>. On macOS and Linux, type <code>python3</code> if <code>python</code> is not found. In Colab, start each line with <code>!</code>.</p>
+</section>
+
+<section id="setup" aria-labelledby="setup-h">
+  <h2 id="setup-h">Set up Python and psycopg</h2>
+  <p>You need Python 3.10 or newer and <a href="https://www.psycopg.org/psycopg3/docs/basic/usage.html">psycopg 3</a>, the PostgreSQL driver for Python. Check Python with <code>python --version</code> (<code>py --version</code> on Windows). Then install psycopg once, in the lab folder:</p>
+  <ul>
+    <li><strong>Windows</strong>, in PowerShell:
+<pre>py -m pip install "psycopg[binary]"</pre></li>
+    <li><strong>macOS and Linux</strong>: make a virtual environment, so the install does not touch the system's Python, then install into it. Run the <code>source</code> line again in each new Terminal window before you run the lab.
+<pre>python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install "psycopg[binary]"</pre></li>
+    <li><strong>Colab</strong>, after the Lab 0 setup cell:
+<pre>!pip install "psycopg[binary]"</pre></li>
+  </ul>
+  <p>Check it with <code>python -c "import psycopg; print(psycopg.__version__)"</code>. The program connects with <code>dbname=university</code>, as psql does. If your database asks for a password (on Windows it does), tell the program in the terminal before you run it, never in <code>lab6.py</code>. These lines last until you close the PowerShell window:</p>
+<pre>$env:PGUSER = "postgres"
+$env:PGPASSWORD = "the password you chose in Lab 0"</pre>
+</section>
+
+<section id="a" aria-labelledby="a-h">
+  <h2 id="a-h">Part A: warm up in the playground (20 minutes)</h2>
+  <p>Open the <a href="playground.html">week 9 playground</a>. Try the injection explorer in section 1 with each of its inputs, and read what each one makes the database run. Then solve exercises 1 to 6: they are the SQL inside several of this lab's functions. They are not graded.</p>
+</section>
+
+<section id="b" aria-labelledby="b-h">
+  <h2 id="b-h">Part B: three questions in SQL, seven functions in Python</h2>
+  <h3>In lab6.sql</h3>
+  <ol class="qs">
+    <li><p><strong>Q1.</strong> Create the table <code>enroll_log</code>, where the program records every enrollment request it handles, accepted or refused:</p>
+      <ul>
+        <li><code>log_id</code>: an integer that PostgreSQL numbers by itself, <code>GENERATED ALWAYS AS IDENTITY</code>, the primary key.</li>
+        <li><code>student_id</code>, <code>course_id</code>, <code>semester</code>, <code>year</code>: the request, with the same types and CHECKs as in <code>takes</code>, all NOT NULL.</li>
+        <li><code>outcome</code>: varchar(8), NOT NULL, either <code>enrolled</code> or <code>refused</code>.</li>
+        <li><code>reason</code>: varchar(100). A CHECK that spans two columns makes it required when the outcome is <code>refused</code>.</li>
+        <li><code>logged_at</code>: a <code>timestamptz</code>, NOT NULL, with <code>DEFAULT now()</code>.</li>
+      </ul>
+      <p>Give it <strong>no</strong> foreign keys: the log must be able to record a refused request for a student id that does not exist.</p></li>
+    <li><p><strong>Q2.</strong> Find the enrollments already in <code>takes</code> that break a prerequisite: each <code>id</code>, the student's <code>name</code>, the <code>course_id</code> and the prerequisite <code>missing</code>, ordered by id, course_id and missing. A prerequisite is passed when the student has a <code>takes</code> row for it with a grade that is not NULL and not <code>'F'</code>. Use NOT EXISTS. You should get eight rows.</p></li>
+    <li><p><strong>Q3.</strong> Create a role <code>registrar_app</code> for the program, with only the privileges it needs: SELECT on <code>student</code>, <code>course</code>, <code>prereq</code>, <code>takes</code> and <code>department</code>, and INSERT on <code>takes</code> and <code>enroll_log</code>. Then <code>SET ROLE registrar_app;</code>, count the rows of <code>takes</code> as <code>enrollments</code>, run the DELETE that is in the starter file, which must be refused, and <code>RESET ROLE;</code>.</p></li>
+  </ol>
+  <h3>In lab6.py</h3>
+  <p>Each function receives an open connection, <code>conn</code>. Its docstring says exactly what to return. Use <code>conn.execute(sql, params)</code> with a <code>%s</code> for each value and a tuple of values, as the given function <code>log()</code> does, and never build SQL with <code>+</code>, f-strings, <code>format()</code> or <code>%</code>. A function you have not written yet prints "not written yet", so you can run the program at any time.</p>
+  <ol class="qs">
+    <li><p><strong>P1.</strong> <code>roster(conn, course_id, semester, year)</code>: who took one offering of a course, with their grades.</p></li>
+    <li><p><strong>P2.</strong> <code>find_students(conn, text)</code>: students whose name contains <code>text</code>, in any case. <code>main()</code> also calls it with <code>' OR 1=1 --</code>, which must return no rows.</p></li>
+    <li><p><strong>P3.</strong> <code>missing_prereqs(conn, student_id, course_id)</code>: Q2's idea for one student and one course.</p></li>
+    <li><p><strong>P4.</strong> <code>enroll(conn, student_id, course_id, semester, year)</code>: check, then insert into <code>takes</code> with a NULL grade, or refuse, and log every request. The docstring gives the four reasons and their order. When the INSERT raises <code>psycopg.errors.UniqueViolation</code>, the transaction is aborted: call <code>conn.rollback()</code> before you log, or the log INSERT fails too. Commit once, at the end.</p></li>
+    <li><p><strong>P5.</strong> <code>preview_raise(conn, dept_name, percent)</code>: run the UPDATE with RETURNING to see each old and new salary, then roll back, so the raise is shown but never kept. <code>main()</code> reads the salaries afterwards to prove nothing changed.</p></li>
+    <li><p><strong>P6.</strong> <code>students_page(conn, after_id, size)</code>: one page of a list, for a screen that shows <code>size</code> students at a time. Keyset pagination, as on slide 21: <code>WHERE id &gt; %s ORDER BY id LIMIT %s</code>.</p></li>
+    <li><p><strong>P7.</strong> <code>dept_counts(conn)</code>: every department and its number of students, 0 included, in one query.</p></li>
+  </ol>
+  <div class="callout">
+    <span class="mark" aria-hidden="true">§</span>
+    <p>Check yourself: Q2 has 8 rows, and Q3 counts 22 enrollments before the DELETE is refused. P1 lists 5 students for CS-101 in Fall 2025. P4's five calls give, in order: enrolled; already enrolled; missing MA-201; no such student; enrolled. P5 shows Avery Chen going from 98000.00 to 101920.00 and back. P6 makes three pages. If P4's log shows fewer than five rows, a refusal path returns before it logs.</p>
+  </div>
+</section>
+
+<section id="c" aria-labelledby="c-h">
+  <h2 id="c-h">Part C: three short answers</h2>
+  <p>Answer in <code>lab6_answers.txt</code>.</p>
+  <ol class="qs">
+    <li><p><strong>W1.</strong> If <code>find_students</code> built its SQL with an f-string, what exact SQL would it send for the input <code>' OR 1=1 --</code>, and what would it return? Why does your version return no rows? Slides 9 to 11.</p></li>
+    <li><p><strong>W2.</strong> A first version of <code>dept_counts</code> read the department names, then ran one <code>count(*)</code> query per department. How many queries is that here, and for 300 departments? Why does the number of queries matter more in a program than in psql? Slide 19.</p></li>
+    <li><p><strong>W3.</strong> Why must <code>enroll</code>'s check and insert share one transaction? If two copies of the program enroll the same student in the same course at the same moment, what stops a double enrollment? Slides 14 to 16; week 13 returns to this.</p></li>
+  </ol>
+</section>
+
+<section id="d" aria-labelledby="d-h">
+  <h2 id="d-h">Part D: CS 5200 only</h2>
+  <p>CS 4600 students may skip this part; P8 then prints "not written yet", which is fine.</p>
+  <ol class="qs">
+    <li><p><strong>P8.</strong> <code>gpa_report(conn, batch)</code>: each student's GPA over graded courses, weighted by credits, using the grade points in <code>POINTS</code>. Read the rows through a server-side cursor, <code>conn.cursor(name="gpa_rows")</code>, with <code>fetchmany(batch)</code> in a loop, and compute the GPAs in Python. Return the report and the number of batches that held rows, as the docstring says.</p></li>
+    <li><p><strong>D1.</strong> In the answers file, write the single SQL query that computes the same report inside the database. Which would you use for 13 students, and which for 300,000? When is a server-side cursor worth having at all? Three to five sentences after the query.</p></li>
+  </ol>
+</section>
+
+<section id="submit" aria-labelledby="sub-h">
+  <h2 id="sub-h">What to submit and how it is graded</h2>
+  <p>Upload <strong>one zip file</strong> to the Lab 6 assignment in Brightspace. Name it <code>lab6_lastname_firstname.zip</code>, for example <code>lab6_rivera_jamie.zip</code>, and put these four files in it:</p>
+  <ul>
+    <li><code>lab6_answers.txt</code>: your name, your results, and your answers to W1 to W3 (and P8 and D1, for CS 5200).</li>
+    <li><code>lab6.sql</code> and <code>lab6.py</code>: your SQL and your program.</li>
+    <li><code>lab6_output.txt</code>: what psql and then your program printed, from the two lines in <a href="#files">Files for this lab</a>.</li>
+  </ul>
+  <p>Save <code>lab6_answers.txt</code> as plain text: in TextEdit choose <strong>Format › Make Plain Text</strong> first; Notepad and VS Code save plain text already. To make the zip, put the four files in one folder and select them, then:</p>
+  <ul>
+    <li><strong>Windows:</strong> right-click and choose <strong>Compress to ZIP file</strong> (on Windows 10, <strong>Send to › Compressed (zipped) folder</strong>), then rename the zip.</li>
+    <li><strong>macOS:</strong> right-click, choose <strong>Compress 4 Items</strong>, and rename <code>Archive.zip</code>.</li>
+    <li><strong>Linux or Colab:</strong> run the line below. In Colab, start it with <code>!</code>, then right-click the zip in the file panel and choose <strong>Download</strong>.</li>
+  </ul>
+<pre>zip lab6_lastname_firstname.zip lab6_answers.txt lab6.sql lab6.py lab6_output.txt</pre>
+  <p>Before you upload, open the zip and check that all four files are inside and that <code>lab6_output.txt</code> shows psql's output followed by the program's. The one expected error is the DELETE in Q3. Upload a new zip if you need to change anything before the deadline; the latest one is graded.</p>
+  <div class="fig-scroll" tabindex="0" role="region" aria-label="Lab 6 rubric, 10 points">
+  <table class="tbl">
+    <caption>Lab 6 rubric, 10 points</caption>
+    <thead><tr><th scope="col">Item</th><th scope="col">What earns full credit</th><th scope="col" class="num">Points</th></tr></thead>
+    <tbody>
+      <tr><td>SQL, Q1–Q3</td><td>The log table with its keys and CHECKs, the eight prerequisite breaks, and a role that can read and insert but not delete.</td><td class="num">2</td></tr>
+      <tr><td>Python, P1–P6</td><td>Each function returns what its docstring asks; every value is a parameter; <code>enroll</code> logs all five requests and leaves no transaction open.</td><td class="num">4</td></tr>
+      <tr><td>Output</td><td><code>lab6_output.txt</code> shows both runs, from the reload, with only the expected error.</td><td class="num">1</td></tr>
+      <tr><td>Written (W1–W3)</td><td>The injected SQL written out and explained, the query counts, and a reasoned answer to W3.</td><td class="num">1</td></tr>
+      <tr><td>P7 and Part D</td><td>CS 4600: P7 correct, 2 points. CS 5200: P7, 1 point; P8 and D1, 1 point.</td><td class="num">2</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>A function that builds SQL from a value with <code>+</code>, an f-string, <code>format()</code> or <code>%</code> earns no credit, even when its output is right. Late work loses 10% per day for up to three days and is not accepted after that. Under the course's limited-use AI policy, you may ask an AI tool to explain an error message or a library call, but the code and answers must be your own, and you should be ready to explain any line of them. Say how you used AI at the end of the answers file.</p>
+</section>
+
+<section id="help" aria-labelledby="help-h">
+  <h2 id="help-h">If something goes wrong</h2>
+  <ul>
+    <li><strong>"No module named 'psycopg'"</strong>: psycopg is installed for a different Python. On macOS and Linux, run the <code>source .venv/bin/activate</code> line first; on Windows, install and run with the same <code>py</code>.</li>
+    <li><strong>"error: externally-managed-environment"</strong> from pip: your system protects its own Python. Use the virtual environment in <a href="#setup">Set up</a>.</li>
+    <li><strong>"connection failed" or "password authentication failed"</strong>: the server is not running, or the program does not know your user and password. Set <code>PGUSER</code> and <code>PGPASSWORD</code> as in <a href="#setup">Set up</a>, in the same window.</li>
+    <li><strong>"current transaction is aborted, commands ignored until end of transaction block"</strong>: an earlier statement failed and nothing rolled back. In <code>enroll</code>, call <code>conn.rollback()</code> in the <code>except</code> before you log.</li>
+    <li><strong>An error that the query has a different number of placeholders than parameters</strong>: the tuple has the wrong number of values. A tuple of one value needs a comma: <code>(text,)</code>.</li>
+    <li><strong>P2 finds no one for 'ri'</strong>: the <code>%</code> wildcards must be part of the value, <code>"%" + text + "%"</code>, not of the SQL text.</li>
+    <li><strong>"role "registrar_app" cannot be dropped because some objects depend on it"</strong>: you granted it privileges in another database. Run <code>DROP OWNED BY registrar_app;</code> in that database, then run <code>lab6.sql</code> again.</li>
+    <li><strong>Anything else</strong>: copy the exact message and bring it to office hours, Tuesday and Wednesday 12:00–3:00 p.m., MIC room D159, or post it in the week 9 discussion in Brightspace.</li>
+  </ul>
+</section>
+</main>
+
+<footer>
+  <p>CS 4600/5200 · Database Theory and Applications · University of Central Missouri · Dr. Gorkem Kar · Spring 2027</p>
+</footer>
+</div>
+</body>
+</html>

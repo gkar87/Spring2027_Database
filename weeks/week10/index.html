@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Week 10 — Storage, the Buffer Pool and Indexes · CS 4600/5200</title>
+<meta name="description" content="CS 4600/5200 week 10: what is under a table. The storage hierarchy, 8 kB pages and the slotted page layout, ctid, how an UPDATE writes a new row version, TOAST and column stores, the buffer pool and EXPLAIN BUFFERS, B+-trees: search, ranges, splits and height, indexes in PostgreSQL: composite, expression, hash, GIN, GiST and BRIN, and what every index costs.">
+<link rel="stylesheet" href="../../assets/course.css">
+<link rel="stylesheet" href="../../assets/db.css">
+</head>
+<body>
+<a class="skip-link" href="#s1">Skip to the first slide</a>
+
+<div class="deck-stage">
+<main class="deck" aria-label="Week 10 lecture slides: storage, the buffer pool and indexes">
+
+<!-- 1 ─────────────────────────────────────────────────────────── title -->
+<section class="slide slide--title" id="s1">
+  <p class="course-line">CS 4600/5200 · Database Theory and Applications · Week 10 of 15</p>
+  <h1>Storage, the Buffer Pool and Indexes</h1>
+  <p class="subtitle">
+    Last week's program asked for one student's enrollments and got them back at once. Under the
+    tables, PostgreSQL either read every page of the table to find them, or followed an index
+    straight to them. Today: what a page is, what stays in memory, and how a B+-tree finds one row
+    among millions in three or four reads.
+  </p>
+  <p class="byline">
+    Dr. Gorkem Kar
+    <span>University of Central Missouri</span>
+    <span>School of Computer Science and Cybersecurity</span>
+  </p>
+  <div class="title-art">
+<svg viewBox="0 0 380 330" aria-hidden="true" focusable="false" style="--dg-k:1">
+<g class="v-in" style="--d:0.10s"><rect class="dg-box" x="20" y="40" width="150" height="190" rx="6"/></g>
+<g class="v-in" style="--d:0.25s"><rect class="dg-box" x="36" y="56" width="150" height="190" rx="6"/></g>
+<g class="v-in" style="--d:0.40s"><rect class="dg-box" x="52" y="72" width="150" height="190" rx="6"/></g>
+<g class="v-in" style="--d:0.55s"><rect class="dg-box" x="68" y="88" width="150" height="190" rx="6"/></g>
+<rect class="dg-wash v-in" style="--d:0.80s" x="82" y="112" width="90" height="12" rx="3"/>
+<rect class="dg-wash v-in" style="--d:0.86s" x="82" y="134" width="76" height="12" rx="3"/>
+<rect class="dg-wash v-in" style="--d:0.92s" x="82" y="156" width="62" height="12" rx="3"/>
+<rect class="dg-wash v-in" style="--d:0.98s" x="82" y="178" width="90" height="12" rx="3"/>
+<rect class="dg-wash v-in" style="--d:1.04s" x="82" y="200" width="76" height="12" rx="3"/>
+<rect class="dg-wash v-in" style="--d:1.10s" x="82" y="222" width="62" height="12" rx="3"/>
+<g class="v-in" style="--d:1.30s"><rect class="dg-box-t" x="250" y="40" width="80" height="34" rx="4"/></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.50s" d="M290 74 L228 130"/>
+<g class="v-in" style="--d:1.80s"><rect class="dg-box-t" x="206" y="130" width="44" height="30" rx="4"/></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.60s" d="M290 74 L288 130"/>
+<g class="v-in" style="--d:1.90s"><rect class="dg-box-t" x="266" y="130" width="44" height="30" rx="4"/></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.70s" d="M290 74 L348 130"/>
+<g class="v-in" style="--d:2.00s"><rect class="dg-box-t" x="326" y="130" width="44" height="30" rx="4"/></g>
+<g class="v-in" style="--d:2.40s"><text class="dg-sm dg-teal" x="20" y="300">pages on disk, a tree to find them</text></g>
+</svg>
+  </div>
+  
+</section>
+
+<!-- 2 ─────────────────────────────────────────────── where we are -->
+<section class="slide" id="s2">
+  <h2>Where we are</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div>
+        <h3>So far</h3>
+        <ul>
+          <li>What to ask (SQL), and how to store it well (design).</li>
+          <li>Last week: a program that sends the SQL.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Weeks 10 to 12: inside the server</h3>
+        <ul>
+          <li><strong>This week:</strong> where rows live, and how to find them fast.</li>
+          <li><strong>Week 11:</strong> sorting, joining, and reading a plan.</li>
+          <li><strong>Week 12:</strong> how the planner picks the plan.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="callout">
+      <span class="mark" aria-hidden="true">→</span>
+      <p>Milestone 4 asks which indexes your project needs, and for proof from its query plans. Today is where that starts.</p>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 3 ─────────────────────────────────────────────── section -->
+<section class="slide slide--section" id="s3">
+  <h2>Where rows live</h2>
+  <p>On disk, in pages, in the order they arrived.</p>
+  
+</section>
+
+<!-- 4 ─────────────────────────────────────────────── hierarchy -->
+<section class="slide" id="s4">
+  <h2>Memory is fast and forgets; disk is slow and remembers</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:1000px">
+<svg style="--dg-k:1" viewBox="0 0 1000 330" role="img" aria-labelledby="hyt hyd">
+<title id="hyt">How long one read takes at each level of storage</title>
+<desc id="hyd">Four rows, from fastest to slowest, with a bar whose length grows with the log of the time. CPU cache: about 1 nanosecond; if a memory read took one second, this would take a hundredth of a second. Main memory, where the buffer pool lives: about 100 nanoseconds, the one second of the comparison. SSD: about 0.1 milliseconds, about 17 minutes in the comparison. Hard disk: about 10 milliseconds, about a day. Cache and memory are lost when the power fails; SSDs and disks survive a crash. The figures are rough orders of magnitude.</desc>
+<g class="v-in" style="--d:0.10s"><text class="dg-xs" x="10" y="26">one read</text><text class="dg-xs" x="560" y="26">if a memory read took 1 second</text></g>
+<g class="v-in" style="--d:0.30s"><text class="dg-sm-b" x="10" y="74">CPU cache</text><text class="dg-xs" x="10" y="96">lost when the power fails</text></g>
+<rect class="dg-bar v-grow" style="--d:0.40s" x="200" y="58" width="25" height="26" rx="3"/>
+<g class="v-in" style="--d:0.60s"><text class="dg-sm" x="234.8" y="77">about 1 ns</text><text class="dg-sm" x="560" y="77">a hundredth of a second</text></g>
+<g class="v-in" style="--d:0.70s"><text class="dg-sm-b" x="10" y="142">main memory</text><text class="dg-xs" x="10" y="164">lost when the power fails</text></g>
+<rect class="dg-bar v-grow" style="--d:0.80s" x="200" y="126" width="89" height="26" rx="3"/>
+<g class="v-in" style="--d:1.00s"><text class="dg-sm" x="299.28" y="145">about 100 ns</text><text class="dg-sm" x="560" y="145">1 second</text></g>
+<g class="v-in" style="--d:1.10s"><text class="dg-sm-b" x="10" y="210">SSD</text><text class="dg-xs" x="10" y="232">survives a crash</text></g>
+<rect class="dg-bar-a v-grow" style="--d:1.20s" x="200" y="194" width="186" height="26" rx="3"/>
+<g class="v-in" style="--d:1.40s"><text class="dg-sm" x="396.0" y="213">about 0.1 ms</text><text class="dg-sm dg-teal" x="560" y="213">about 17 minutes</text></g>
+<g class="v-in" style="--d:1.50s"><text class="dg-sm-b" x="10" y="278">hard disk</text><text class="dg-xs" x="10" y="300">survives a crash</text></g>
+<rect class="dg-bar-a v-grow" style="--d:1.60s" x="200" y="262" width="250" height="26" rx="3"/>
+<g class="v-in" style="--d:1.80s"><text class="dg-sm" x="460.48" y="281">about 10 ms</text><text class="dg-sm dg-teal" x="560" y="281">about a day</text></g>
+</svg>
+      <figcaption><strong>Figure 10.1.</strong> One read at each level, in rough orders of magnitude. Every step down is a hundred to a thousand times slower, and only the bottom two survive a crash.</figcaption>
+    </figure>
+    <ul>
+      <li>A database keeps everything on SSD or disk, and copies the parts it is using into memory.</li>
+      <li>So the cost of a query is mostly how many pages it has to bring in from storage.</li>
+    </ul>
+  </div>
+  
+</section>
+
+<!-- 5 ─────────────────────────────────────────────── pages -->
+<section class="slide" id="s5">
+  <h2>The unit is the page, not the row</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <ul>
+        <li>Storage is read and written in blocks. PostgreSQL's page is <strong>8 kB</strong> (8,192 bytes).</li>
+        <li>Each table and each index is its own file of pages, numbered from 0.</li>
+        <li>Wanting one row costs its whole page. Wanting all 136 rows on that page costs the same.</li>
+        <li>So: <strong>how many pages</strong> a query touches is how we count its cost this week.</li>
+      </ul>
+      <div class="fig-scroll" tabindex="0" role="region" aria-label="Pages in this week's tables">
+      <table class="tbl tbl--compact">
+        <caption>Pages in this week's tables</caption>
+        <thead><tr><th scope="col">Table or index</th><th scope="col" class="num">Rows</th><th scope="col" class="num">Pages</th></tr></thead>
+        <tbody>
+          <tr><td><code>student</code></td><td class="num">13</td><td class="num">1</td></tr>
+          <tr><td><code>big_student</code></td><td class="num">10,000</td><td class="num">76</td></tr>
+          <tr><td><code>big_takes</code></td><td class="num">100,000</td><td class="num">736</td></tr>
+          <tr><td><code>big_takes_pkey</code> (its index)</td><td class="num">100,000</td><td class="num">276</td></tr>
+        </tbody>
+      </table>
+      </div>
+    </div>
+    <p><a class="try" href="playground.html#pages">Playground examples 1.1 and 1.2</a></p>
+  </div>
+  
+</section>
+
+<!-- 6 ─────────────────────────────────────────────── slotted page -->
+<section class="slide" id="s6">
+  <h2>Inside a page</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:1000px">
+<svg style="--dg-k:1" viewBox="0 0 1000 330" role="img" aria-labelledby="spt spd">
+<title id="spt">Inside one 8 kB page: item pointers and rows</title>
+<desc id="spd">A wide box is one 8,192-byte page. On the left, a 24-byte page header. Next to it, an array of item pointers numbered 1, 2, 3 and 4, which grows to the right as rows are added. On the far right, the rows themselves, stored from the end of the page backward: row 1 at the very end, row 2 before it, and so on. Free space sits in the middle, between the two. A curved arrow runs from each item pointer to its row. The address (0, 3) means page 0, item pointer 3: a row can move within the page while its item number, and so its address, stays the same.</desc>
+<defs><marker id="spa" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#0e5a6b"/></marker></defs>
+<g class="v-in" style="--d:0.10s"><rect class="dg-box" x="20" y="90" width="960" height="120" rx="6"/><text class="dg-xs" x="20" y="236">one page: 8,192 bytes</text></g>
+<g class="v-in" style="--d:0.30s"><rect class="dg-wash" x="20" y="90" width="110" height="120" rx="6"/><text class="dg-sm" x="75" y="146" text-anchor="middle">header</text><text class="dg-xs" x="75" y="168" text-anchor="middle">24 bytes</text></g>
+<g class="v-in" style="--d:0.60s"><rect class="dg-box-t" x="140" y="128" width="46" height="44" rx="4"/><text class="dg-sm-b" x="163" y="156" text-anchor="middle">1</text></g>
+<g class="v-in" style="--d:0.75s"><rect class="dg-box-t" x="192" y="128" width="46" height="44" rx="4"/><text class="dg-sm-b" x="215" y="156" text-anchor="middle">2</text></g>
+<g class="v-in" style="--d:0.90s"><rect class="dg-box-t" x="244" y="128" width="46" height="44" rx="4"/><text class="dg-sm-b" x="267" y="156" text-anchor="middle">3</text></g>
+<g class="v-in" style="--d:1.05s"><rect class="dg-box-t" x="296" y="128" width="46" height="44" rx="4"/><text class="dg-sm-b" x="319" y="156" text-anchor="middle">4</text></g>
+<g class="v-in" style="--d:1.30s"><text class="dg-xs" x="140" y="118">item pointers, 4 bytes each →</text></g>
+<g class="v-in" style="--d:1.40s"><text class="dg-sm" x="500" y="156" text-anchor="middle">free space</text></g>
+<g class="v-in" style="--d:1.60s"><rect class="dg-box-a" x="834" y="104" width="142" height="92" rx="4"/><text class="dg-sm" x="905.0" y="156" text-anchor="middle">row 1</text></g>
+<g class="v-in" style="--d:1.85s"><rect class="dg-box-a" x="714" y="104" width="112" height="92" rx="4"/><text class="dg-sm" x="770.0" y="156" text-anchor="middle">row 2</text></g>
+<g class="v-in" style="--d:2.10s"><rect class="dg-box-a" x="574" y="104" width="132" height="92" rx="4"/><text class="dg-sm" x="640.0" y="156" text-anchor="middle">row 3</text></g>
+<g class="v-in" style="--d:2.35s"><rect class="dg-box-a" x="464" y="104" width="102" height="92" rx="4"/><text class="dg-sm" x="515.0" y="156" text-anchor="middle">row 4</text></g>
+<g class="v-in" style="--d:2.60s"><text class="dg-xs" x="980" y="80" text-anchor="end">← rows, stored from the end of the page</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:2.80s" d="M163 172 C163 250, 905.0 250, 905.0 198" marker-end="url(#spa)"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:3.00s" d="M215 172 C215 264, 770.0 264, 770.0 198" marker-end="url(#spa)"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:3.20s" d="M267 172 C267 278, 640.0 278, 640.0 198" marker-end="url(#spa)"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:3.40s" d="M319 172 C319 292, 515.0 292, 515.0 198" marker-end="url(#spa)"/>
+<g class="v-in" style="--d:3.80s"><text class="dg-sm" x="20" y="312">ctid (0, 3) = page 0, item pointer 3. The row can move inside the page; its item number does not.</text></g>
+</svg>
+      <figcaption><strong>Figure 10.2.</strong> The slotted page. Item pointers grow from the front and rows from the back. A row's address, its <code>ctid</code>, names the page and the item pointer, so the row can move within the page without its address changing.</figcaption>
+    </figure>
+    <ul>
+      <li>Rows vary in length (a <code>varchar</code> holds as much as it holds), so a fixed grid would not work.</li>
+      <li>Try <code>SELECT ctid, * FROM student;</code>. All 13 are on page 0, in the order they were inserted.</li>
+    </ul>
+  </div>
+  
+</section>
+
+<!-- 7 ─────────────────────────────────────────────── heap and versions -->
+<section class="slide" id="s7">
+  <h2>A table is a heap, and an UPDATE adds a row</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <ul>
+        <li>A <strong>heap file</strong> keeps rows in no particular order. A new row goes wherever there is room.</li>
+        <li>An <strong>UPDATE</strong> does not change a row in place. It writes a whole new version and marks the old one as ended, so transactions still reading the old one can (week 13).</li>
+        <li>A <strong>DELETE</strong> only marks the row as ended.</li>
+        <li><strong>VACUUM</strong> later frees the space of versions nobody can see. Autovacuum runs it for you.</li>
+      </ul>
+      <pre class="code"><span class="k">BEGIN</span>;
+<span class="k">SELECT</span> ctid, tot_cred <span class="k">FROM</span> student
+<span class="k">WHERE</span> id = <span class="s">'12345'</span>;     <span class="c">-- (0,2)</span>
+<span class="k">UPDATE</span> student <span class="k">SET</span> tot_cred = tot_cred + 3
+<span class="k">WHERE</span> id = <span class="s">'12345'</span>;
+<span class="k">SELECT</span> ctid, tot_cred <span class="k">FROM</span> student
+<span class="k">WHERE</span> id = <span class="s">'12345'</span>;     <span class="c">-- (0,14): a new version</span>
+<span class="k">ROLLBACK</span>;</pre>
+    </div>
+    <p><a class="try" href="playground.html#pages">Playground: the page viewer and example 1.3</a></p>
+  </div>
+  
+</section>
+
+<!-- 8 ─────────────────────────────────────────────── big values, column stores -->
+<section class="slide" id="s8">
+  <h2>Two other ways to lay out data</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div class="panel">
+        <h3>Large values: TOAST</h3>
+        <p>A row must fit in a page. A long text or <code>jsonb</code> value, past about 2 kB, is compressed or moved to a side table, and the row keeps a pointer to it. You never see it happen, but <code>SELECT *</code> pays to fetch it back.</p>
+      </div>
+      <div class="panel">
+        <h3>Columns instead of rows</h3>
+        <p>A row store keeps each row together: good for "everything about student 45678". A <strong>column store</strong> keeps each column together: good for "average of one column over a billion rows", reading only that column. Analytics systems use it (textbook 13.6).</p>
+      </div>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 9 ─────────────────────────────────────────────── section -->
+<section class="slide slide--section" id="s9">
+  <h2>The buffer pool</h2>
+  <p>The pages that are in memory right now.</p>
+  
+</section>
+
+<!-- 10 ────────────────────────────────────────────── buffer pool -->
+<section class="slide" id="s10">
+  <h2>Every page goes through the buffer pool</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:1000px">
+<svg style="--dg-k:1" viewBox="0 0 1000 380" role="img" aria-labelledby="bpt bpd">
+<title id="bpt">The buffer pool: a hit, and a miss that evicts a page</title>
+<desc id="bpd">Top: eight frames of the buffer pool in memory, each holding one page, labelled with the table, the page number and a usage count. One frame, big_takes page 42, is marked dirty: it was changed and not yet written. Bottom: the table&#x27;s pages on disk. First request, page 17 of big_takes: it is already in a frame, a hit, and no disk read happens; its usage count goes up. Second request, page 88: not in the pool, a miss. A clock hand sweeps the frames, lowering each usage count, and takes the first frame whose count is 0. Page 88 is read from disk into it. A dirty page would be written out first, after its log record (week 14).</desc>
+<defs><marker id="bpa" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#0e5a6b"/></marker><marker id="bpb" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#9e1b32"/></marker></defs>
+<g class="v-in" style="--d:0.10s"><text class="dg-sm-b" x="10" y="24">buffer pool, in memory (shared_buffers, 128 MB by default)</text></g>
+<g class="v-in" style="--d:0.20s"><rect class="dg-box" x="10" y="40" width="113" height="74" rx="4"/><text class="dg-xs" x="66" y="68" text-anchor="middle">takes 0</text><text class="dg-xs" x="66" y="94" text-anchor="middle">usage 2</text></g>
+<g class="v-in" style="--d:0.28s"><rect class="dg-box" x="133" y="40" width="113" height="74" rx="4"/><text class="dg-xs" x="189" y="68" text-anchor="middle">student 0</text><text class="dg-xs" x="189" y="94" text-anchor="middle">usage 5</text></g>
+<g class="v-in" style="--d:0.36s"><rect class="dg-ok" x="256" y="40" width="113" height="74" rx="4"/><text class="dg-xs" x="312" y="68" text-anchor="middle">big_takes 17</text><text class="dg-xs" x="312" y="94" text-anchor="middle">usage 1</text></g>
+<g class="v-in" style="--d:0.44s"><rect class="dg-box-a" x="379" y="40" width="113" height="74" rx="4"/><text class="dg-xs" x="435" y="68" text-anchor="middle">big_takes 42</text><text class="dg-xs" x="435" y="94" text-anchor="middle">usage 3 · dirty</text></g>
+<g class="v-in" style="--d:0.52s"><rect class="dg-box" x="502" y="40" width="113" height="74" rx="4"/><text class="dg-xs" x="558" y="68" text-anchor="middle">big_student 9</text><text class="dg-xs" x="558" y="94" text-anchor="middle">usage 1</text></g>
+<g class="v-in" style="--d:0.60s"><rect class="dg-warn" x="625" y="40" width="113" height="74" rx="4"/><text class="dg-xs" x="681" y="68" text-anchor="middle">big_takes 5</text><text class="dg-xs" x="681" y="94" text-anchor="middle">usage 0</text></g>
+<g class="v-in" style="--d:0.68s"><rect class="dg-box" x="748" y="40" width="113" height="74" rx="4"/><text class="dg-xs" x="804" y="68" text-anchor="middle">course 0</text><text class="dg-xs" x="804" y="94" text-anchor="middle">usage 4</text></g>
+<g class="v-in" style="--d:0.76s"><rect class="dg-box" x="871" y="40" width="113" height="74" rx="4"/><text class="dg-xs" x="927" y="68" text-anchor="middle">big_takes 61</text><text class="dg-xs" x="927" y="94" text-anchor="middle">usage 2</text></g>
+<g class="v-in" style="--d:1.20s"><text class="dg-sm dg-txt-ok" x="10" y="150">1. Page 17 is wanted: it is in a frame. A hit: no disk read, and its usage count goes up.</text></g>
+<g class="v-in" style="--d:2.00s"><text class="dg-sm" x="10" y="184">2. Page 88 is wanted: not here. The clock hand sweeps, lowering counts, and stops at a 0.</text></g>
+<path class="dg-line v-draw" pathLength="1" style="--d:2.30s" d="M70 124 H620" marker-end="url(#bpb)"/>
+<g class="v-in" style="--d:2.80s"><text class="dg-sm" x="10" y="218">3. Page 88 is read from disk into that frame (a dirty page would be written out first).</text></g>
+<g class="v-in" style="--d:0.60s"><text class="dg-sm-b" x="10" y="270">big_takes on disk: 736 pages</text></g>
+<g class="v-in" style="--d:0.70s"><rect class="dg-wash" x="10" y="286" width="62" height="44" rx="3"/><text class="dg-xs" x="41" y="314" text-anchor="middle">0</text></g>
+<g class="v-in" style="--d:0.74s"><rect class="dg-wash" x="80" y="286" width="62" height="44" rx="3"/><text class="dg-xs" x="111" y="314" text-anchor="middle">1</text></g>
+<g class="v-in" style="--d:0.78s"><rect class="dg-wash" x="150" y="286" width="62" height="44" rx="3"/><text class="dg-xs" x="181" y="314" text-anchor="middle">2</text></g>
+<g class="v-in" style="--d:0.82s"><rect class="dg-wash" x="220" y="286" width="62" height="44" rx="3"/><text class="dg-xs" x="251" y="314" text-anchor="middle">3</text></g>
+<g class="v-in" style="--d:0.86s"><rect class="dg-wash" x="290" y="286" width="62" height="44" rx="3"/><text class="dg-xs" x="321" y="314" text-anchor="middle">…</text></g>
+<g class="v-in" style="--d:0.90s"><rect class="dg-ok" x="360" y="286" width="62" height="44" rx="3"/><text class="dg-xs" x="391" y="314" text-anchor="middle">17</text></g>
+<g class="v-in" style="--d:0.94s"><rect class="dg-wash" x="430" y="286" width="62" height="44" rx="3"/><text class="dg-xs" x="461" y="314" text-anchor="middle">…</text></g>
+<g class="v-in" style="--d:0.98s"><rect class="dg-wash" x="500" y="286" width="62" height="44" rx="3"/><text class="dg-xs" x="531" y="314" text-anchor="middle">42</text></g>
+<g class="v-in" style="--d:1.02s"><rect class="dg-wash" x="570" y="286" width="62" height="44" rx="3"/><text class="dg-xs" x="601" y="314" text-anchor="middle">…</text></g>
+<g class="v-in" style="--d:1.06s"><rect class="dg-wash" x="640" y="286" width="62" height="44" rx="3"/><text class="dg-xs" x="671" y="314" text-anchor="middle">61</text></g>
+<g class="v-in" style="--d:1.10s"><rect class="dg-wash" x="710" y="286" width="62" height="44" rx="3"/><text class="dg-xs" x="741" y="314" text-anchor="middle">…</text></g>
+<g class="v-in" style="--d:1.14s"><rect class="dg-warn" x="780" y="286" width="62" height="44" rx="3"/><text class="dg-xs" x="811" y="314" text-anchor="middle">88</text></g>
+<g class="v-in" style="--d:1.18s"><rect class="dg-wash" x="850" y="286" width="62" height="44" rx="3"/><text class="dg-xs" x="881" y="314" text-anchor="middle">…</text></g>
+<g class="v-in" style="--d:1.22s"><rect class="dg-wash" x="920" y="286" width="62" height="44" rx="3"/><text class="dg-xs" x="951" y="314" text-anchor="middle">735</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:3.20s" d="M815 284 C815 240, 690 230, 682 120" marker-end="url(#bpa)"/>
+</svg>
+      <figcaption><strong>Figure 10.3.</strong> A hit costs no disk read. A miss picks a frame to reuse: PostgreSQL's clock sweep takes a page that has not been used lately, which approximates least recently used.</figcaption>
+    </figure>
+    <ul>
+      <li>A changed page is <strong>dirty</strong>. It is written back later, in the background, and only after its log record is safe (week 14).</li>
+    </ul>
+  </div>
+  
+</section>
+
+<!-- 11 ────────────────────────────────────────────── EXPLAIN BUFFERS -->
+<section class="slide" id="s11">
+  <h2>Counting pages with EXPLAIN</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <pre class="code">EXPLAIN (ANALYZE, BUFFERS, COSTS OFF)
+SELECT * FROM big_takes
+WHERE student_no = 4321;
+
+Seq Scan on big_takes
+    (actual rows=10 loops=1)
+  Filter: (student_no = 4321)
+  Rows Removed by Filter: 99990
+  Buffers: shared hit=736</pre>
+      <ul>
+        <li><code>ANALYZE</code> runs the query and reports what really happened, not only the estimate.</li>
+        <li><code>shared hit</code>: pages found in the buffer pool. <code>read</code>: pages brought in from storage.</li>
+        <li>Ten rows wanted, all 736 pages touched, 99,990 rows read and thrown away. That is a <strong>sequential scan</strong>.</li>
+      </ul>
+    </div>
+    <p><a class="try" href="playground.html#buffers">Playground examples 2.1 and 2.2</a></p>
+  </div>
+  
+</section>
+
+<!-- 12 ────────────────────────────────────────────── section -->
+<section class="slide slide--section" id="s12">
+  <h2>Indexes</h2>
+  <p>A small, sorted structure that says where the rows are.</p>
+  
+</section>
+
+<!-- 13 ────────────────────────────────────────────── the problem -->
+<section class="slide" id="s13">
+  <h2>Ten rows among 100,000</h2>
+  <div class="slide-main">
+    <div class="cols-3">
+      <div class="panel">
+        <h3>Read everything</h3>
+        <p>A sequential scan: 736 pages, every time. Fine for a small table or when most rows are wanted.</p>
+      </div>
+      <div class="panel">
+        <h3>Keep the table sorted</h3>
+        <p>Binary search finds a student in about 10 page reads. But only one sort order is possible, and every insert must make room in the middle.</p>
+      </div>
+      <div class="panel">
+        <h3>Keep a sorted index</h3>
+        <p>A separate structure, sorted on the search key, pointing at the rows. Many indexes per table, and an insert touches only a few pages of each.</p>
+      </div>
+    </div>
+    <p>The index has to stay sorted and shallow while rows come and go. That is what a B+-tree does.</p>
+  </div>
+  
+</section>
+
+<!-- 14 ────────────────────────────────────────────── B+-tree -->
+<section class="slide" id="s14">
+  <h2>The B+-tree</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:1000px">
+<svg style="--dg-k:1" viewBox="0 0 1000 330" role="img" aria-labelledby="btt btd">
+<title id="btt">A B+-tree of three levels, and the search for key 41</title>
+<desc id="btd">The root holds the key 50. Its left child holds 20 and 35; its right child holds 70 and 85. Six leaves hold the keys in order: 5 and 12; 20 and 27; 35, 41 and 46; 50 and 63; 70 and 77; 85 and 92. Arrows link each leaf to the next. Searching for 41 reads three pages, numbered 1 to 3: the root, where 41 is less than 50, so go left; the node 20, 35, where 41 is at least 35, so take the rightmost pointer; and the leaf 35, 41, 46, where 41 is found, with the address of its row. Every search reads one page per level.</desc>
+<defs><marker id="bta" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#0e5a6b"/></marker></defs>
+<g class="v-in" style="--d:0.10s"><rect class="dg-ok" x="467.5" y="20" width="46" height="40" rx="4"/><text class="dg-sm" x="490.5" y="46.0" text-anchor="middle">50</text><circle class="dg-box-t" cx="460.5" cy="20" r="13"/><text class="dg-sm-b" x="460.5" y="25" text-anchor="middle">1</text></g>
+<path class="dg-line v-in" style="--d:0.40s" d="M467.5 60 L257.0 120"/>
+<g class="v-in" style="--d:0.50s"><rect class="dg-ok" x="211.0" y="120" width="92" height="40" rx="4"/><text class="dg-sm" x="234.0" y="146.0" text-anchor="middle">20</text><path class="dg-line" d="M257.0 120 V160"/><text class="dg-sm" x="280.0" y="146.0" text-anchor="middle">35</text><circle class="dg-box-t" cx="204.0" cy="120" r="13"/><text class="dg-sm-b" x="204.0" y="125" text-anchor="middle">2</text></g>
+<path class="dg-line v-in" style="--d:0.90s" d="M211.0 160 L86.0 220"/>
+<path class="dg-line v-in" style="--d:0.90s" d="M257.0 160 L234.0 220"/>
+<path class="dg-line v-in" style="--d:0.90s" d="M303.0 160 L405.0 220"/>
+<path class="dg-line v-in" style="--d:0.40s" d="M513.5 60 L724.0 120"/>
+<g class="v-in" style="--d:0.60s"><rect class="dg-box" x="678.0" y="120" width="92" height="40" rx="4"/><text class="dg-sm" x="701.0" y="146.0" text-anchor="middle">70</text><path class="dg-line" d="M724.0 120 V160"/><text class="dg-sm" x="747.0" y="146.0" text-anchor="middle">85</text></g>
+<path class="dg-line v-in" style="--d:0.90s" d="M678.0 160 L576.0 220"/>
+<path class="dg-line v-in" style="--d:0.90s" d="M724.0 160 L724.0 220"/>
+<path class="dg-line v-in" style="--d:0.90s" d="M770.0 160 L872.0 220"/>
+<g class="v-in" style="--d:1.00s"><rect class="dg-box" x="40" y="220" width="92" height="40" rx="4"/><text class="dg-sm" x="63.0" y="246.0" text-anchor="middle">5</text><path class="dg-line" d="M86 220 V260"/><text class="dg-sm" x="109.0" y="246.0" text-anchor="middle">12</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.60s" d="M135 240 H183" marker-end="url(#bta)"/>
+<g class="v-in" style="--d:1.08s"><rect class="dg-box" x="188" y="220" width="92" height="40" rx="4"/><text class="dg-sm" x="211.0" y="246.0" text-anchor="middle">20</text><path class="dg-line" d="M234 220 V260"/><text class="dg-sm" x="257.0" y="246.0" text-anchor="middle">27</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.68s" d="M283 240 H331" marker-end="url(#bta)"/>
+<g class="v-in" style="--d:1.16s"><rect class="dg-ok" x="336" y="220" width="138" height="40" rx="4"/><text class="dg-sm" x="359.0" y="246.0" text-anchor="middle">35</text><path class="dg-line" d="M382 220 V260"/><text class="dg-sm-b dg-teal" x="405.0" y="246.0" text-anchor="middle">41</text><path class="dg-line-t" d="M392 253 H418"/><path class="dg-line" d="M428 220 V260"/><text class="dg-sm" x="451.0" y="246.0" text-anchor="middle">46</text><circle class="dg-box-t" cx="329" cy="220" r="13"/><text class="dg-sm-b" x="329" y="225" text-anchor="middle">3</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.76s" d="M477 240 H525" marker-end="url(#bta)"/>
+<g class="v-in" style="--d:1.24s"><rect class="dg-box" x="530" y="220" width="92" height="40" rx="4"/><text class="dg-sm" x="553.0" y="246.0" text-anchor="middle">50</text><path class="dg-line" d="M576 220 V260"/><text class="dg-sm" x="599.0" y="246.0" text-anchor="middle">63</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.84s" d="M625 240 H673" marker-end="url(#bta)"/>
+<g class="v-in" style="--d:1.32s"><rect class="dg-box" x="678" y="220" width="92" height="40" rx="4"/><text class="dg-sm" x="701.0" y="246.0" text-anchor="middle">70</text><path class="dg-line" d="M724 220 V260"/><text class="dg-sm" x="747.0" y="246.0" text-anchor="middle">77</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.92s" d="M773 240 H821" marker-end="url(#bta)"/>
+<g class="v-in" style="--d:1.40s"><rect class="dg-box" x="826" y="220" width="92" height="40" rx="4"/><text class="dg-sm" x="849.0" y="246.0" text-anchor="middle">85</text><path class="dg-line" d="M872 220 V260"/><text class="dg-sm" x="895.0" y="246.0" text-anchor="middle">92</text></g>
+<g class="v-in" style="--d:2.40s"><text class="dg-sm" x="12" y="296">search for 41: 41 &lt; 50, go left (1); 41 ≥ 35, take the right pointer (2); found in the leaf (3)</text><text class="dg-xs" x="12" y="322">leaves are linked in key order, so a range search follows the arrows</text></g>
+</svg>
+      <figcaption><strong>Figure 10.4.</strong> Each node is one page. Inner nodes hold dividing keys; the leaves hold every key, in order, with the address of its row, and are linked left to right. Every leaf is at the same depth.</figcaption>
+    </figure>
+    <ul>
+      <li>A search reads one page per level, from the root down. <a class="try" href="playground.html#btree">The B+-tree explorer</a></li>
+    </ul>
+  </div>
+  
+</section>
+
+<!-- 15 ────────────────────────────────────────────── height -->
+<section class="slide" id="s15">
+  <h2>Why three or four reads are enough</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div class="fig-scroll" tabindex="0" role="region" aria-label="Keys reachable at each height, about 300 entries per page">
+      <table class="tbl tbl--compact">
+        <caption>Keys reachable at each height, about 300 entries per page</caption>
+        <thead><tr><th scope="col">Levels</th><th scope="col" class="num">Keys</th><th scope="col">Like</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td class="num">300</td><td>a course roster</td></tr>
+          <tr><td>2</td><td class="num">90,000</td><td>our <code>big_takes</code></td></tr>
+          <tr><td>3</td><td class="num">27 million</td><td>a national registry</td></tr>
+          <tr><td>4</td><td class="num">8.1 billion</td><td>one row per person on Earth</td></tr>
+        </tbody>
+      </table>
+      </div>
+      <ul>
+        <li>An 8 kB page holds hundreds of short keys with their pointers. That <strong>fanout</strong> is why the tree is so shallow.</li>
+        <li><code>big_takes_pkey</code> has 2 levels. Finding <code>reg_id = 4321</code> touches 3 pages: 2 in the index, 1 in the table.</li>
+        <li>The top levels are used by every search, so they stay in the buffer pool. Usually only the leaf and the row cost a read.</li>
+      </ul>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 16 ────────────────────────────────────────────── ranges -->
+<section class="slide" id="s16">
+  <h2>Ranges and order come free</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <pre class="code"><span class="c">-- down to reg_id 500, then along the leaves</span>
+<span class="k">SELECT</span> reg_id, course_id <span class="k">FROM</span> big_takes
+<span class="k">WHERE</span> reg_id <span class="k">BETWEEN</span> 500 <span class="k">AND</span> 520
+<span class="k">ORDER</span> <span class="k">BY</span> reg_id;
+
+<span class="c">-- start at the last leaf, walk backward</span>
+<span class="k">SELECT</span> reg_id, course_id <span class="k">FROM</span> big_takes
+<span class="k">ORDER</span> <span class="k">BY</span> reg_id <span class="k">DESC</span> <span class="k">LIMIT</span> 5;  <span class="c">-- 3 pages</span></pre>
+      <ul>
+        <li>For <code>BETWEEN</code>, <code>&lt;</code> or <code>&gt;</code>: search for the low end, then follow the leaf links until past the high end.</li>
+        <li>The leaves are already in order, so <code>ORDER BY</code> on the indexed column needs no sort, and <code>LIMIT</code> stops early.</li>
+        <li>"Latest 5" or "page 3 of results" (week 9's keyset pagination) is cheap for this reason.</li>
+      </ul>
+    </div>
+    <p><a class="try" href="playground.html#btree">Playground example 3.1</a></p>
+  </div>
+  
+</section>
+
+<!-- 17 ────────────────────────────────────────────── splits -->
+<section class="slide" id="s17">
+  <h2>Inserting: splits keep the tree balanced</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:1000px">
+<svg style="--dg-k:1" viewBox="0 0 1000 330" role="img" aria-labelledby="slt sld">
+<title id="slt">Inserting 38 into a full leaf: the leaf splits and 41 is copied up</title>
+<desc id="sld">Before, on the left: a parent node holding 20 and 35, and below it the leaf 35, 41, 46, which is full at three keys. Key 38 belongs in that leaf. After, on the right: the leaf has split into two half-full leaves, 35 and 38, and 41 and 46, linked to each other. The first key of the new leaf, 41, is copied up into the parent, which now holds 20, 35 and 41. If the parent had been full it would split the same way, and a split of the root adds a new level at the top, so every leaf stays at the same depth.</desc>
+<defs><marker id="sla" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#0e5a6b"/></marker></defs>
+<g class="v-in" style="--d:0.10s"><text class="dg-sm-b" x="10" y="24">before: insert 38</text></g>
+<g class="v-in" style="--d:0.20s"><rect class="dg-box" x="110" y="50" width="92" height="40" rx="4"/><text class="dg-sm" x="133.0" y="76.0" text-anchor="middle">20</text><path class="dg-line" d="M156 50 V90"/><text class="dg-sm" x="179.0" y="76.0" text-anchor="middle">35</text></g>
+<path class="dg-line v-in" style="--d:0.30s" d="M202 90 L215 150"/>
+<g class="v-in" style="--d:0.40s"><rect class="dg-warn" x="150" y="150" width="138" height="40" rx="4"/><text class="dg-sm" x="173.0" y="176.0" text-anchor="middle">35</text><path class="dg-line" d="M196 150 V190"/><text class="dg-sm" x="219.0" y="176.0" text-anchor="middle">41</text><path class="dg-line" d="M242 150 V190"/><text class="dg-sm" x="265.0" y="176.0" text-anchor="middle">46</text><text class="dg-xs" x="219" y="220" text-anchor="middle">full: 3 keys</text></g>
+<g class="v-in" style="--d:0.70s"><rect class="dg-box-t" x="40" y="150" width="56" height="40" rx="4"/><text class="dg-sm-b" x="68" y="176" text-anchor="middle">38</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:0.90s" d="M98 170 H144" marker-end="url(#sla)"/>
+<path class="dg-line v-draw" pathLength="1" style="--d:1.40s" d="M400 170 H470" marker-end="url(#sla)"/>
+<g class="v-in" style="--d:1.60s"><text class="dg-sm-b" x="520" y="24">after: split, and copy 41 up</text></g>
+<g class="v-in" style="--d:1.80s"><rect class="dg-box" x="620" y="50" width="138" height="40" rx="4"/><text class="dg-sm" x="643.0" y="76.0" text-anchor="middle">20</text><path class="dg-line" d="M666 50 V90"/><text class="dg-sm" x="689.0" y="76.0" text-anchor="middle">35</text><path class="dg-line" d="M712 50 V90"/><text class="dg-sm-b dg-teal" x="735.0" y="76.0" text-anchor="middle">41</text><path class="dg-line-t" d="M722 83 H748"/></g>
+<path class="dg-line v-in" style="--d:2.00s" d="M712 90 L600 150"/><path class="dg-line v-in" style="--d:2.00s" d="M758 90 L840 150"/>
+<g class="v-in" style="--d:2.20s"><rect class="dg-ok" x="554" y="150" width="92" height="40" rx="4"/><text class="dg-sm" x="577.0" y="176.0" text-anchor="middle">35</text><path class="dg-line" d="M600 150 V190"/><text class="dg-sm-b dg-teal" x="623.0" y="176.0" text-anchor="middle">38</text><path class="dg-line-t" d="M610 183 H636"/></g>
+<g class="v-in" style="--d:2.40s"><rect class="dg-ok" x="794" y="150" width="92" height="40" rx="4"/><text class="dg-sm" x="817.0" y="176.0" text-anchor="middle">41</text><path class="dg-line" d="M840 150 V190"/><text class="dg-sm" x="863.0" y="176.0" text-anchor="middle">46</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:2.60s" d="M648 170 H788" marker-end="url(#sla)"/>
+<g class="v-in" style="--d:3.00s"><text class="dg-sm" x="10" y="270">A full leaf splits into two half-full leaves, and the first key of the new one goes up as a divider.</text><text class="dg-sm" x="10" y="298">A full parent splits the same way. When the root splits, the tree grows one level, at the top.</text></g>
+</svg>
+      <figcaption><strong>Figure 10.5.</strong> A leaf that overflows splits in two, and a divider goes up to the parent. The tree only grows at the root, so every leaf stays at the same depth.</figcaption>
+    </figure>
+    <ul>
+      <li>Most inserts change one leaf. A split changes a few pages; a root split, rarely, adds a level.</li>
+    </ul>
+  </div>
+  
+</section>
+
+<!-- 18 ────────────────────────────────────────────── indexes in PostgreSQL -->
+<section class="slide" id="s18">
+  <h2>Indexes in PostgreSQL</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <pre class="code"><span class="k">CREATE</span> <span class="k">INDEX</span> big_takes_student_idx
+  <span class="k">ON</span> big_takes (student_no);
+
+<span class="k">DROP</span> <span class="k">INDEX</span> big_takes_student_idx;</pre>
+      <ul>
+        <li>A B-tree unless you say otherwise.</li>
+        <li><code>PRIMARY KEY</code> and <code>UNIQUE</code> create one for you.</li>
+        <li><strong>A foreign key does not.</strong> Index the referencing column when you join on it, or delete parent rows.</li>
+        <li>In a plan: <strong>Index Scan</strong> (index, then each row), <strong>Bitmap Index Scan</strong> plus <strong>Bitmap Heap Scan</strong> (collect addresses, then read each page once, in order), <strong>Index Only Scan</strong> (the index has every column needed).</li>
+      </ul>
+    </div>
+    <p><a class="try" href="playground.html#indexes">Playground example 4.1</a></p>
+  </div>
+  
+</section>
+
+<!-- 19 ────────────────────────────────────────────── composite, expression -->
+<section class="slide" id="s19">
+  <h2>Indexes on several columns, and on expressions</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <pre class="code"><span class="k">CREATE</span> <span class="k">INDEX</span> big_takes_cy_idx
+  <span class="k">ON</span> big_takes (course_id, year);
+<span class="c">-- helps: course_id = 'CS-347'</span>
+<span class="c">-- helps: course_id = 'CS-347' AND year = 2020</span>
+<span class="c">-- not much: year = 2020 alone</span>
+
+<span class="k">CREATE</span> <span class="k">INDEX</span> big_student_lower_idx
+  <span class="k">ON</span> big_student (lower(name));
+<span class="c">-- helps: WHERE lower(name) = 'sage chen'</span></pre>
+      <ul>
+        <li>A two-column index is sorted like a phone book: by the first column, then by the second within it.</li>
+        <li>So it serves the first column alone, or both. For the second alone, the matches are scattered through it, and PostgreSQL can at best read the whole index.</li>
+        <li>An index stores values as they are. A condition on <code>lower(name)</code> needs an index on <code>lower(name)</code>.</li>
+      </ul>
+    </div>
+    <p><a class="try" href="playground.html#indexes">Playground examples 4.2 and 4.3</a></p>
+  </div>
+  
+</section>
+
+<!-- 20 ────────────────────────────────────────────── other kinds -->
+<section class="slide" id="s20">
+  <h2>Other kinds of index</h2>
+  <div class="slide-main">
+    <div class="fig-scroll" tabindex="0" role="region" aria-label="Index types in PostgreSQL">
+    <table class="tbl tbl--compact">
+      <caption>Index types in PostgreSQL</caption>
+      <thead><tr><th scope="col">Type</th><th scope="col">Answers</th><th scope="col">Typical use</th></tr></thead>
+      <tbody>
+        <tr><td>B-tree (default)</td><td><code>=</code>, <code>&lt;</code>, <code>BETWEEN</code>, <code>ORDER BY</code></td><td>almost everything</td></tr>
+        <tr><td>Hash</td><td><code>=</code> only</td><td>long keys looked up exactly</td></tr>
+        <tr><td>GIN</td><td>"contains"</td><td><code>jsonb</code>, arrays, full-text search</td></tr>
+        <tr><td>GiST</td><td>overlaps, nearest</td><td>maps and shapes, time ranges</td></tr>
+        <tr><td>BRIN</td><td>ranges, roughly</td><td>huge tables stored in time order, such as logs</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p>A hash index scatters neighbouring keys, so it cannot answer a range. A BRIN index keeps only the smallest and largest value per block of pages: tiny, but useful only when the table's order follows the column.</p>
+  </div>
+  
+</section>
+
+<!-- 21 ────────────────────────────────────────────── cost -->
+<section class="slide" id="s21">
+  <h2>Every index has a price</h2>
+  <div class="slide-main">
+    <div class="cols-3">
+      <div class="panel">
+        <h3>Writes</h3>
+        <p>Every INSERT, UPDATE of an indexed column, and DELETE's later cleanup changes each index too. Five indexes, five more trees to keep sorted.</p>
+      </div>
+      <div class="panel">
+        <h3>Space</h3>
+        <p>An index on <code>big_takes.student_no</code> takes 117 pages, 16% of the table. It also competes for the buffer pool.</p>
+      </div>
+      <div class="panel">
+        <h3>It may go unused</h3>
+        <p>With an index on <code>year</code>, <code>year &gt; 2020</code> uses it; <code>year &gt; 2010</code> keeps 63% of the rows, and the planner reads the whole table instead.</p>
+      </div>
+    </div>
+    <p>Index what your queries search, join and sort by. Then check the plan, not your hopes. <a class="try" href="playground.html#indexes">Playground examples 4.4 and 4.5</a></p>
+  </div>
+  
+</section>
+
+<!-- 22 ────────────────────────────────────────────── worked example -->
+<section class="slide" id="s22">
+  <h2>Worked example: one student's enrollments</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <pre class="code"><span class="k">SELECT</span> * <span class="k">FROM</span> big_takes
+<span class="k">WHERE</span> student_no = 4321;
+
+<span class="c">-- before: Seq Scan</span>
+<span class="c">--   736 pages, 99,990 rows thrown away</span>
+<span class="k">CREATE</span> <span class="k">INDEX</span> big_takes_student_idx
+  <span class="k">ON</span> big_takes (student_no);
+<span class="c">-- after: Bitmap Index Scan, Bitmap Heap Scan</span>
+<span class="c">--   2 index pages + 10 table pages = 12</span></pre>
+      <ul>
+        <li>From 736 pages to 12, for a 117-page index.</li>
+        <li>Why 10 table pages for 10 rows? This student's enrollments were inserted about 10,000 rows apart, so each sits on a different page.</li>
+        <li>If the table were stored in <code>student_no</code> order (a clustering index, textbook 14.2), all ten would share one page. PostgreSQL's <code>CLUSTER</code> sorts a table once; new rows do not keep the order.</li>
+      </ul>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 23 ────────────────────────────────────────────── takeaways -->
+<section class="slide" id="s23">
+  <h2>Takeaways</h2>
+  <div class="slide-main">
+    <ol class="steps">
+      <li><span class="n" aria-hidden="true">1</span><div><strong>Count pages, not rows.</strong><p>A query costs the pages it touches; EXPLAIN (ANALYZE, BUFFERS) counts them.</p></div></li>
+      <li><span class="n" aria-hidden="true">2</span><div><strong>An UPDATE writes a new row.</strong><p>Old versions stay until VACUUM.</p></div></li>
+      <li><span class="n" aria-hidden="true">3</span><div><strong>A B+-tree is shallow and sorted.</strong><p>One read per level; ranges and order follow the leaves.</p></div></li>
+      <li><span class="n" aria-hidden="true">4</span><div><strong>Index what you search, join and sort by.</strong><p>Foreign keys included; the first column of a composite index matters most.</p></div></li>
+      <li><span class="n" aria-hidden="true">5</span><div><strong>Every index costs writes and space.</strong><p>Check the plan to see it used.</p></div></li>
+    </ol>
+  </div>
+  
+</section>
+
+<!-- 24 ────────────────────────────────────────────── this week -->
+<section class="slide" id="s24">
+  <h2>This week's work</h2>
+  <div class="slide-main">
+    <div class="week-work">
+      <div>
+        <h3>Read</h3>
+        <ul>
+          <li>Chapter 13 (data storage structures), sections 13.1 to 13.5.</li>
+          <li>Chapter 14 (indexing), sections 14.1 to 14.3, 14.6 and 14.7.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Do</h3>
+        <ul>
+          <li>The <a href="playground.html">week 10 playground</a>: the page viewer, the B+-tree explorer and 8 exercises.</li>
+          <li>Quiz 10 in Brightspace.</li>
+          <li>No lab this week: work on milestone 3.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Due</h3>
+        <ul>
+          <li><span class="due">Sunday, April 4, 11:59 p.m. CT</span>: <a href="../../project/index.html">project milestone 3</a>. CS 5200: name your paper in its notes.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="callout" style="margin-top:auto">
+      <span class="mark" aria-hidden="true">→</span>
+      <p><strong>Next week:</strong> what happens to the pages once they are read. Sorting data bigger than memory, three ways to join two tables, and reading a whole query plan. Lab 7.</p>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 25 ────────────────────────────────────────────── resources -->
+<section class="slide" id="s25">
+  <h2>Free resources</h2>
+  <div class="slide-main">
+    <ul class="resources">
+      <li><a href="https://www.postgresql.org/docs/current/indexes.html">Indexes</a><span class="src">PostgreSQL documentation</span><p>Index types, multicolumn and expression indexes, and index-only scans.</p></li>
+      <li><a href="https://www.postgresql.org/docs/current/storage-page-layout.html">Database page layout</a><span class="src">PostgreSQL documentation</span><p>The page header, item pointers and row headers, byte by byte.</p></li>
+      <li><a href="https://use-the-index-luke.com/">Use The Index, Luke!</a><span class="src">Markus Winand</span><p>A free book on indexing for developers, with PostgreSQL examples.</p></li>
+      <li><a href="playground.html">Week 10 playground</a><span class="src">this course</span><p>The page viewer, the B+-tree explorer, and indexes on a 100,000-row table, in your browser.</p></li>
+    </ul>
+  </div>
+  
+</section>
+
+</main>
+</div>
+<script src="../../assets/deck.js"></script>
+</body>
+</html>

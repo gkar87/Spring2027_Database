@@ -1,0 +1,1021 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Week 4 — SQL II: Aggregates, Subqueries and Windows · CS 4600/5200</title>
+<meta name="description" content="CS 4600/5200 week 4: aggregate functions, GROUP BY and HAVING, NULLs in aggregates, subqueries with IN, ALL, EXISTS and correlation, division with NOT EXISTS, WITH, CASE, and window functions for rankings and running totals.">
+<link rel="stylesheet" href="../../assets/course.css">
+<link rel="stylesheet" href="../../assets/db.css">
+</head>
+<body>
+<a class="skip-link" href="#s1">Skip to the first slide</a>
+
+<div class="deck-stage">
+<main class="deck" aria-label="Week 4 lecture slides: aggregates, subqueries and window functions">
+
+<!-- 1 ─────────────────────────────────────────────────────────── title -->
+<section class="slide slide--title" id="s1">
+  <p class="course-line">CS 4600/5200 · Database Theory and Applications · Week 4 of 15</p>
+  <h1>SQL II: Aggregates, Subqueries and Windows</h1>
+  <p class="subtitle">
+    Last week every answer was a list of rows. This week we ask how many, how much and compared
+    with what: we summarize groups, put queries inside queries, and rank rows without losing them.
+  </p>
+  <p class="byline">
+    Dr. Gorkem Kar
+    <span>University of Central Missouri</span>
+    <span>School of Computer Science and Cybersecurity</span>
+  </p>
+  <div class="title-art">
+<svg viewBox="0 0 380 330" aria-hidden="true" focusable="false" style="--dg-k:1">
+<g class="v-in" style="--d:0.20s"><rect class="dg-box" x="0" y="20" width="127" height="34" rx="4"/><text class="dg-sm dg-mono" x="10" y="43">98,000</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:0.90s" d="M133 37 C 210 37, 210 150, 262 150"/>
+<g class="v-in" style="--d:0.32s"><rect class="dg-box" x="0" y="72" width="120" height="34" rx="4"/><text class="dg-sm dg-mono" x="10" y="95">92,000</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.02s" d="M126 89 C 210 89, 210 150, 262 150"/>
+<g class="v-in" style="--d:0.44s"><rect class="dg-box" x="0" y="124" width="98" height="34" rx="4"/><text class="dg-sm dg-mono" x="10" y="147">75,000</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.14s" d="M104 141 C 210 141, 210 150, 262 150"/>
+<g class="v-in" style="--d:0.56s"><rect class="dg-box" x="0" y="176" width="79" height="34" rx="4"/><text class="dg-sm dg-mono" x="10" y="199">61,000</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.26s" d="M85 193 C 210 193, 210 150, 262 150"/>
+<g class="v-in" style="--d:0.68s"><rect class="dg-box" x="0" y="228" width="113" height="34" rx="4"/><text class="dg-sm dg-mono" x="10" y="251">87,000</text></g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.38s" d="M119 245 C 210 245, 210 150, 262 150"/>
+<g class="v-in" style="--d:1.80s"><rect class="dg-box-a" x="262" y="110" width="118" height="80" rx="6"/><text class="dg-sm-b" x="321" y="145" text-anchor="middle">avg</text><text class="dg-sm dg-mono" x="321" y="170" text-anchor="middle">82,600</text></g>
+</svg>
+  </div>
+  
+</section>
+
+<!-- 2 ─────────────────────────────────────────────── last week -->
+<section class="slide" id="s2">
+  <h2>Last week, in four lines</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <ol class="steps">
+        <li><span class="n" aria-hidden="true">1</span><div><strong>FROM, WHERE, SELECT, ORDER BY, LIMIT is the run order.</strong><p>An alias made in SELECT does not exist in WHERE.</p></div></li>
+        <li><span class="n" aria-hidden="true">2</span><div><strong>Join on the whole key.</strong><p>A section is course, semester and year together.</p></div></li>
+        <li><span class="n" aria-hidden="true">3</span><div><strong>Outer joins keep unmatched rows, padded with NULL.</strong><p>LEFT JOIN … WHERE key IS NULL finds what is missing.</p></div></li>
+        <li><span class="n" aria-hidden="true">4</span><div><strong>NULL makes a comparison unknown.</strong><p>WHERE keeps only true, so unknown rows vanish.</p></div></li>
+      </ol>
+      <div class="fill" style="gap:16px">
+        <div class="panel panel--key">
+          <h3>Today: questions about many rows at once</h3>
+          <p>How many students per department? Who earns more than their own department's average? Who tops each department? Has anyone taken every 4-credit CS course?</p>
+        </div>
+        <div class="panel">
+          <h3>Same database as week 3</h3>
+          <p>Seven tables, with the same gaps: Economics is empty, Noor Haddad has no salary, Emery Walsh has no department. Every one of them changes an answer today.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 3 ─────────────────────────────────────────────── section -->
+<section class="slide slide--section" id="s3">
+  <h2>Aggregates and groups</h2>
+  <p>Functions that turn many values into one, GROUP BY to apply them per group, and HAVING to filter the groups.</p>
+  
+</section>
+
+<!-- 4 ─────────────────────────────────────────────── aggregates -->
+<section class="slide" id="s4">
+  <h2>Five functions turn a column into one value</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div>
+        <pre class="code"><span class="k">SELECT</span> count(*)      <span class="k">AS</span> n_rows,
+       count(salary) <span class="k">AS</span> n_salaries,
+       sum(salary)   <span class="k">AS</span> total,
+       avg(salary)   <span class="k">AS</span> average,
+       min(salary)   <span class="k">AS</span> lowest,
+       max(salary)   <span class="k">AS</span> highest
+<span class="k">FROM</span> instructor;</pre>
+        <table class="tbl tbl--result" style="margin-top:16px">
+          <caption>Result: 1 row</caption>
+          <thead><tr><th scope="col" class="num">n_rows</th><th scope="col" class="num">n_salaries</th><th scope="col" class="num">total</th><th scope="col" class="num">average</th><th scope="col" class="num">lowest</th><th scope="col" class="num">highest</th></tr></thead>
+          <tbody>
+            <tr><td class="num">11</td><td class="num">10</td><td class="num">809000</td><td class="num">80900</td><td class="num">61000</td><td class="num">98000</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="fill" style="gap:14px">
+        <ul>
+          <li><strong>count(*)</strong> counts rows, whatever they hold.</li>
+          <li><strong>count(column)</strong> counts the values that are not NULL. 11 instructors, 10 known salaries.</li>
+          <li><strong>sum, avg, min, max</strong> skip NULLs too. The average is 809,000 ÷ 10, not ÷ 11.</li>
+          <li><strong>count(DISTINCT dept_name)</strong> counts different values: 6 departments have instructors.</li>
+        </ul>
+        <div class="panel panel--definition">
+          <span class="term">Aggregate</span>
+          <p>A function that takes a whole set of values and returns one value. In the algebra it is written 𝒢, the grouping operator.</p>
+        </div>
+      </div>
+    </div>
+    <p><a class="try" href="playground.html#agg">Run it, playground example 1.1</a></p>
+  </div>
+  
+</section>
+
+<!-- 5 ─────────────────────────────────────────────── nulls in aggregates -->
+<section class="slide" id="s5">
+  <h2>NULLs, and empty groups, in aggregates</h2>
+  <div class="slide-main">
+    <table class="tbl tbl--compact">
+      <caption class="visually-hidden">How aggregates treat NULL values and empty input, with results on the course database</caption>
+      <thead><tr><th scope="col">Query</th><th scope="col">Result</th><th scope="col">Why</th></tr></thead>
+      <tbody>
+        <tr><td><code>avg(salary)</code></td><td>80,900</td><td>Noor Haddad's NULL is skipped: 10 salaries.</td></tr>
+        <tr><td><code>avg(COALESCE(salary, 0))</code></td><td>73,545.45</td><td>The NULL becomes 0 and is counted: 11 values.</td></tr>
+        <tr><td><code>count(*)</code> vs <code>count(dept_name)</code> on student</td><td>13 vs 12</td><td>Emery Walsh's department is NULL.</td></tr>
+        <tr><td><code>count(*) … WHERE dept_name = 'Economics'</code> on instructor</td><td>0</td><td>count of nothing is 0.</td></tr>
+        <tr><td><code>sum(salary) … WHERE dept_name = 'Economics'</code></td><td>NULL</td><td>sum, avg, min and max of nothing are NULL, not 0.</td></tr>
+      </tbody>
+    </table>
+    <div class="callout">
+      <span class="mark" aria-hidden="true">!</span>
+      <p>Write <code>COALESCE(sum(salary), 0)</code> when a report must show 0 for an empty group. Write <code>avg(COALESCE(salary, 0))</code> only when a missing value really means zero.</p>
+    </div>
+    <p><a class="try" href="playground.html#agg">Try all five, playground example 1.2</a></p>
+  </div>
+  
+</section>
+
+<!-- 6 ─────────────────────────────────────────────── group by -->
+<section class="slide" id="s6">
+  <h2>GROUP BY applies the aggregate once per group</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:900px">
+<svg style="--dg-k:1" viewBox="0 0 960 432" role="img" aria-labelledby="gbt gbd">
+<title id="gbt">GROUP BY dept_name turns 11 instructor rows into 6 groups, one output row each</title>
+<desc id="gbd">Left, the 11 instructor rows sorted by department, with a bracket around each group: Biology 1 row, Comp. Sci. 3 rows, History 2, Mathematics 2, Music 1, Physics 2. Right, the result of SELECT dept_name, count(*), avg(salary) ... GROUP BY dept_name: one row per group. Biology 1 instructor, average 80,000. Comp. Sci. 3, average 88,333. History 2, average 61,500. Mathematics 2, average 87,000, because Noor Haddad&#x27;s NULL salary is left out of the average but still counted by count(*). Music 1, 72,000. Physics 2, 91,000.</desc>
+<defs><marker id="gba" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#0e5a6b"/></marker></defs>
+<text class="dg-sm-b" x="20" y="34">instructor, sorted into groups</text>
+<rect class="dg-box" x="20" y="44" width="352" height="312"/>
+<rect class="dg-box-m" x="20" y="44" width="352" height="26"/>
+<text class="dg-xs" font-weight="700" x="28" y="62">dept_name</text>
+<text class="dg-xs" font-weight="700" x="158" y="62">name</text>
+<text class="dg-xs" font-weight="700" x="288" y="62">salary</text>
+<g>
+<text class="dg-xs" x="28" y="88">Biology</text>
+<text class="dg-xs" x="158" y="88">Hana Sato</text>
+<text class="dg-xs" x="288" y="88">80,000</text>
+</g>
+<rect class="dg-hl v-in" style="--d:0.30s" x="21" y="97" width="350" height="24"/>
+<path class="dg-line-q" d="M20 96 H372"/>
+<g>
+<text class="dg-xs" x="28" y="114">Comp. Sci.</text>
+<text class="dg-xs" x="158" y="114">Avery Chen</text>
+<text class="dg-xs" x="288" y="114">98,000</text>
+</g>
+<rect class="dg-hl v-in" style="--d:0.30s" x="21" y="123" width="350" height="24"/>
+<path class="dg-line-q" d="M20 122 H372"/>
+<g>
+<text class="dg-xs" x="28" y="140">Comp. Sci.</text>
+<text class="dg-xs" x="158" y="140">Jordan Patel</text>
+<text class="dg-xs" x="288" y="140">92,000</text>
+</g>
+<rect class="dg-hl v-in" style="--d:0.30s" x="21" y="149" width="350" height="24"/>
+<path class="dg-line-q" d="M20 148 H372"/>
+<g>
+<text class="dg-xs" x="28" y="166">Comp. Sci.</text>
+<text class="dg-xs" x="158" y="166">Priya Raman</text>
+<text class="dg-xs" x="288" y="166">75,000</text>
+</g>
+<path class="dg-line-q" d="M20 174 H372"/>
+<g>
+<text class="dg-xs" x="28" y="192">History</text>
+<text class="dg-xs" x="158" y="192">Lena Fischer</text>
+<text class="dg-xs" x="288" y="192">61,000</text>
+</g>
+<path class="dg-line-q" d="M20 200 H372"/>
+<g>
+<text class="dg-xs" x="28" y="218">History</text>
+<text class="dg-xs" x="158" y="218">Tomas Novak</text>
+<text class="dg-xs" x="288" y="218">62,000</text>
+</g>
+<rect class="dg-hl v-in" style="--d:0.30s" x="21" y="227" width="350" height="24"/>
+<path class="dg-line-q" d="M20 226 H372"/>
+<g>
+<text class="dg-xs" x="28" y="244">Mathematics</text>
+<text class="dg-xs" x="158" y="244">Maria Lopez</text>
+<text class="dg-xs" x="288" y="244">87,000</text>
+</g>
+<rect class="dg-hl v-in" style="--d:0.30s" x="21" y="253" width="350" height="24"/>
+<path class="dg-line-q" d="M20 252 H372"/>
+<g>
+<text class="dg-xs" x="28" y="270">Mathematics</text>
+<text class="dg-xs" x="158" y="270">Noor Haddad</text>
+<text class="dg-xs dg-txt-warn" x="288" y="270" font-style="italic">NULL</text>
+</g>
+<path class="dg-line-q" d="M20 278 H372"/>
+<g>
+<text class="dg-xs" x="28" y="296">Music</text>
+<text class="dg-xs" x="158" y="296">Diego Torres</text>
+<text class="dg-xs" x="288" y="296">72,000</text>
+</g>
+<rect class="dg-hl v-in" style="--d:0.30s" x="21" y="305" width="350" height="24"/>
+<path class="dg-line-q" d="M20 304 H372"/>
+<g>
+<text class="dg-xs" x="28" y="322">Physics</text>
+<text class="dg-xs" x="158" y="322">Kofi Mensah</text>
+<text class="dg-xs" x="288" y="322">87,000</text>
+</g>
+<rect class="dg-hl v-in" style="--d:0.30s" x="21" y="331" width="350" height="24"/>
+<path class="dg-line-q" d="M20 330 H372"/>
+<g>
+<text class="dg-xs" x="28" y="348">Physics</text>
+<text class="dg-xs" x="158" y="348">Sam Okafor</text>
+<text class="dg-xs" x="288" y="348">95,000</text>
+</g>
+<text class="dg-sm-b" x="600" y="34">result: 6 rows</text>
+<g class="v-in" style="--d:1.00s"><rect class="dg-box-m" x="600" y="44" width="340" height="26"/><text class="dg-xs" x="608" y="62" font-weight="700">dept_name</text><text class="dg-xs" x="738" y="62" font-weight="700">count(*)</text><text class="dg-xs" x="828" y="62" font-weight="700">avg(salary)</text></g>
+<path class="dg-line v-draw" pathLength="1" style="--d:1.00s" d="M386 73 h8 V93 h-8"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.15s" d="M396 83.0 H594" marker-end="url(#gba)"/>
+<g class="v-in" style="--d:1.30s"><rect class="dg-box" x="600" y="70.0" width="340" height="26"/><text class="dg-xs" x="608" y="88.0">Biology</text><text class="dg-xs dg-mono" x="738" y="88.0">1</text><text class="dg-xs dg-mono" x="828" y="88.0">80,000</text></g>
+<path class="dg-line v-draw" pathLength="1" style="--d:1.40s" d="M386 99 h8 V171 h-8"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.55s" d="M396 135.0 H594" marker-end="url(#gba)"/>
+<g class="v-in" style="--d:1.70s"><rect class="dg-box" x="600" y="122.0" width="340" height="26"/><text class="dg-xs" x="608" y="140.0">Comp. Sci.</text><text class="dg-xs dg-mono" x="738" y="140.0">3</text><text class="dg-xs dg-mono" x="828" y="140.0">88,333</text></g>
+<path class="dg-line v-draw" pathLength="1" style="--d:1.80s" d="M386 177 h8 V223 h-8"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.95s" d="M396 200.0 H594" marker-end="url(#gba)"/>
+<g class="v-in" style="--d:2.10s"><rect class="dg-box" x="600" y="187.0" width="340" height="26"/><text class="dg-xs" x="608" y="205.0">History</text><text class="dg-xs dg-mono" x="738" y="205.0">2</text><text class="dg-xs dg-mono" x="828" y="205.0">61,500</text></g>
+<path class="dg-line v-draw" pathLength="1" style="--d:2.20s" d="M386 229 h8 V275 h-8"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:2.35s" d="M396 252.0 H594" marker-end="url(#gba)"/>
+<g class="v-in" style="--d:2.50s"><rect class="dg-box" x="600" y="239.0" width="340" height="26"/><text class="dg-xs" x="608" y="257.0">Mathematics</text><text class="dg-xs dg-mono" x="738" y="257.0">2</text><text class="dg-xs dg-mono" x="828" y="257.0">87,000</text></g>
+<path class="dg-line v-draw" pathLength="1" style="--d:2.60s" d="M386 281 h8 V301 h-8"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:2.75s" d="M396 291.0 H594" marker-end="url(#gba)"/>
+<g class="v-in" style="--d:2.90s"><rect class="dg-box" x="600" y="278.0" width="340" height="26"/><text class="dg-xs" x="608" y="296.0">Music</text><text class="dg-xs dg-mono" x="738" y="296.0">1</text><text class="dg-xs dg-mono" x="828" y="296.0">72,000</text></g>
+<path class="dg-line v-draw" pathLength="1" style="--d:3.00s" d="M386 307 h8 V353 h-8"/>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:3.15s" d="M396 330.0 H594" marker-end="url(#gba)"/>
+<g class="v-in" style="--d:3.30s"><rect class="dg-box" x="600" y="317.0" width="340" height="26"/><text class="dg-xs" x="608" y="335.0">Physics</text><text class="dg-xs dg-mono" x="738" y="335.0">2</text><text class="dg-xs dg-mono" x="828" y="335.0">91,000</text></g>
+<text class="dg-xs dg-txt-warn v-in" style="--d:3.60s" x="600" y="382">Mathematics: avg skips the NULL, count(*) still counts it</text>
+<text class="dg-txt-s v-in" style="--d:3.90s" x="20" y="420">One output row per group. Every SELECT column is either grouped (dept_name) or aggregated (count, avg).</text>
+</svg>
+      <figcaption><strong>Figure 4.1.</strong> <code>SELECT dept_name, count(*), avg(salary) FROM instructor GROUP BY dept_name;</code> Rows with the same dept_name form one group, and each group becomes one output row. <a class="try" href="playground.html#agg">Run it, playground example 1.3</a></figcaption>
+    </figure>
+  </div>
+  
+</section>
+
+<!-- 7 ─────────────────────────────────────────────── the grouping rule -->
+<section class="slide" id="s7">
+  <h2>The rule: every SELECT column is grouped or aggregated</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div>
+        <pre class="code"><span class="c">-- error: column "instructor.name" must</span>
+<span class="c">-- appear in the GROUP BY clause or be</span>
+<span class="c">-- used in an aggregate function</span>
+<span class="k">SELECT</span> dept_name, name, avg(salary)
+<span class="k">FROM</span> instructor
+<span class="k">GROUP</span> <span class="k">BY</span> dept_name;</pre>
+        <p>A group of three Comp. Sci. instructors has one average but three names. PostgreSQL will not pick one for you.</p>
+      </div>
+      <div class="fill" style="gap:14px">
+        <pre class="code"><span class="c">-- fix 1: aggregate the name too</span>
+<span class="k">SELECT</span> dept_name, min(name), avg(salary)
+<span class="k">FROM</span> instructor <span class="k">GROUP</span> <span class="k">BY</span> dept_name;
+
+<span class="c">-- fix 2: group by both (one row per person)</span>
+<span class="k">SELECT</span> dept_name, name, avg(salary)
+<span class="k">FROM</span> instructor <span class="k">GROUP</span> <span class="k">BY</span> dept_name, name;</pre>
+        <div class="panel panel--key">
+          <h3>Grouping by a key</h3>
+          <p>If you group by a table's primary key, PostgreSQL lets you select that table's other columns: <code>GROUP BY s.id</code> lets you show <code>s.name</code>.</p>
+        </div>
+      </div>
+    </div>
+    <p><a class="try" href="playground.html#agg">See the error, playground example 1.4</a></p>
+  </div>
+  
+</section>
+
+<!-- 8 ─────────────────────────────────────────────── having -->
+<section class="slide" id="s8">
+  <h2>WHERE filters rows; HAVING filters groups</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:1040px">
+<svg style="--dg-k:1" viewBox="0 0 1100 240" role="img" aria-labelledby="co4t co4d">
+<title id="co4t">The run order of a query with GROUP BY and HAVING</title>
+<desc id="co4d">Eight steps from left to right: 1 FROM and JOIN build the rows; 2 WHERE keeps the rows whose condition is true; 3 GROUP BY sorts the rows into groups with equal values; 4 HAVING keeps the groups whose condition is true; 5 SELECT computes one output row per group; 6 DISTINCT drops duplicates; 7 ORDER BY sorts; 8 LIMIT keeps the first rows. GROUP BY and HAVING are the two new steps this week. WHERE works on single rows, before any group exists; HAVING works on whole groups, so it can test an aggregate such as count or avg.</desc>
+<defs><marker id="co4a" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#0e5a6b"/></marker></defs>
+<g class="v-in" style="--d:0.20s"><rect class="dg-box-t" x="22" y="40" width="118" height="80" rx="5"/><text class="dg-xs" x="81.0" y="58" text-anchor="middle">step 1</text><text class="dg-sm-b dg-mono" x="81.0" y="82" text-anchor="middle">FROM … JOIN</text><text class="dg-xs" x="81.0" y="106" text-anchor="middle">build rows</text></g>
+<g class="v-in" style="--d:0.50s"><rect class="dg-box-t" x="156" y="40" width="118" height="80" rx="5"/><text class="dg-xs" x="215.0" y="58" text-anchor="middle">step 2</text><text class="dg-sm-b dg-mono" x="215.0" y="82" text-anchor="middle">WHERE</text><text class="dg-xs" x="215.0" y="106" text-anchor="middle">filter rows</text></g>
+<path class="dg-line-q v-draw" pathLength="1" style="--d:0.40s" d="M141 80 h12" marker-end="url(#co4a)"/>
+<g class="v-in" style="--d:0.80s"><rect class="dg-box-a" x="290" y="40" width="118" height="80" rx="5"/><text class="dg-xs" x="349.0" y="58" text-anchor="middle">step 3</text><text class="dg-sm-b dg-mono" x="349.0" y="82" text-anchor="middle">GROUP BY</text><text class="dg-xs" x="349.0" y="106" text-anchor="middle">form groups</text></g>
+<text class="dg-xs dg-txt-b v-in" style="--d:0.80s" x="349.0" y="30" text-anchor="middle">new today</text>
+<path class="dg-line-q v-draw" pathLength="1" style="--d:0.70s" d="M275 80 h12" marker-end="url(#co4a)"/>
+<g class="v-in" style="--d:1.10s"><rect class="dg-box-a" x="424" y="40" width="118" height="80" rx="5"/><text class="dg-xs" x="483.0" y="58" text-anchor="middle">step 4</text><text class="dg-sm-b dg-mono" x="483.0" y="82" text-anchor="middle">HAVING</text><text class="dg-xs" x="483.0" y="106" text-anchor="middle">filter groups</text></g>
+<text class="dg-xs dg-txt-b v-in" style="--d:1.10s" x="483.0" y="30" text-anchor="middle">new today</text>
+<path class="dg-line-q v-draw" pathLength="1" style="--d:1.00s" d="M409 80 h12" marker-end="url(#co4a)"/>
+<g class="v-in" style="--d:1.40s"><rect class="dg-box-t" x="558" y="40" width="118" height="80" rx="5"/><text class="dg-xs" x="617.0" y="58" text-anchor="middle">step 5</text><text class="dg-sm-b dg-mono" x="617.0" y="82" text-anchor="middle">SELECT</text><text class="dg-xs" x="617.0" y="106" text-anchor="middle">output rows</text></g>
+<path class="dg-line-q v-draw" pathLength="1" style="--d:1.30s" d="M543 80 h12" marker-end="url(#co4a)"/>
+<g class="v-in" style="--d:1.70s"><rect class="dg-box-t" x="692" y="40" width="118" height="80" rx="5"/><text class="dg-xs" x="751.0" y="58" text-anchor="middle">step 6</text><text class="dg-sm-b dg-mono" x="751.0" y="82" text-anchor="middle">DISTINCT</text><text class="dg-xs" x="751.0" y="106" text-anchor="middle">drop duplicates</text></g>
+<path class="dg-line-q v-draw" pathLength="1" style="--d:1.60s" d="M677 80 h12" marker-end="url(#co4a)"/>
+<g class="v-in" style="--d:2.00s"><rect class="dg-box-t" x="826" y="40" width="118" height="80" rx="5"/><text class="dg-xs" x="885.0" y="58" text-anchor="middle">step 7</text><text class="dg-sm-b dg-mono" x="885.0" y="82" text-anchor="middle">ORDER BY</text><text class="dg-xs" x="885.0" y="106" text-anchor="middle">sort</text></g>
+<path class="dg-line-q v-draw" pathLength="1" style="--d:1.90s" d="M811 80 h12" marker-end="url(#co4a)"/>
+<g class="v-in" style="--d:2.30s"><rect class="dg-box-t" x="960" y="40" width="118" height="80" rx="5"/><text class="dg-xs" x="1019.0" y="58" text-anchor="middle">step 8</text><text class="dg-sm-b dg-mono" x="1019.0" y="82" text-anchor="middle">LIMIT</text><text class="dg-xs" x="1019.0" y="106" text-anchor="middle">keep first n</text></g>
+<path class="dg-line-q v-draw" pathLength="1" style="--d:2.20s" d="M945 80 h12" marker-end="url(#co4a)"/>
+<g class="v-in" style="--d:2.80s"><path class="dg-line" d="M215.0 124 v18"/><text class="dg-xs" x="155.0" y="162">WHERE tests one row:</text><text class="dg-xs" x="155.0" y="180">no aggregates allowed</text></g>
+<g class="v-in" style="--d:3.20s"><path class="dg-line" d="M483.0 124 v18"/><text class="dg-xs" x="423.0" y="162">HAVING tests a group:</text><text class="dg-xs dg-mono" x="423.0" y="180">count(*) &gt; 1, avg(…) &gt; n</text></g>
+<text class="dg-txt-s v-in" style="--d:3.80s" x="22" y="226">An alias from SELECT (step 5) exists only in ORDER BY and LIMIT; HAVING must repeat the aggregate.</text>
+</svg>
+      <figcaption><strong>Figure 4.2.</strong> The run order with the two new clauses. GROUP BY and HAVING sit between WHERE and SELECT.</figcaption>
+    </figure>
+    <div class="cols-2">
+      <pre class="code"><span class="k">SELECT</span> dept_name, count(*) <span class="k">AS</span> n
+<span class="k">FROM</span> instructor
+<span class="k">WHERE</span> salary &gt; 80000        <span class="c">-- rows first</span>
+<span class="k">GROUP</span> <span class="k">BY</span> dept_name
+<span class="k">HAVING</span> count(*) &gt;= 2        <span class="c">-- then groups</span>
+<span class="k">ORDER</span> <span class="k">BY</span> dept_name;</pre>
+      <table class="tbl tbl--result">
+        <caption>Result: 2 rows. Departments with at least two instructors earning over 80,000.</caption>
+        <thead><tr><th scope="col">dept_name</th><th scope="col" class="num">n</th></tr></thead>
+        <tbody><tr><td>Comp. Sci.</td><td class="num">2</td></tr><tr><td>Physics</td><td class="num">2</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 9 ─────────────────────────────────────────────── count after outer join -->
+<section class="slide" id="s9">
+  <h2>Counting after an outer join: count(*) lies</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div>
+        <pre class="code"><span class="k">SELECT</span> d.dept_name,
+       count(*)    <span class="k">AS</span> star,
+       count(i.id) <span class="k">AS</span> instructors
+<span class="k">FROM</span> department d
+<span class="k">LEFT</span> <span class="k">JOIN</span> instructor i
+       <span class="k">ON</span> i.dept_name = d.dept_name
+<span class="k">GROUP</span> <span class="k">BY</span> d.dept_name
+<span class="k">ORDER</span> <span class="k">BY</span> d.dept_name;</pre>
+      </div>
+      <table class="tbl tbl--result">
+        <caption>Result: 7 rows</caption>
+        <thead><tr><th scope="col">dept_name</th><th scope="col" class="num">star</th><th scope="col" class="num">instructors</th></tr></thead>
+        <tbody>
+          <tr><td>Biology</td><td class="num">1</td><td class="num">1</td></tr>
+          <tr><td>Comp. Sci.</td><td class="num">3</td><td class="num">3</td></tr>
+          <tr class="is-hl"><td><strong>Economics</strong></td><td class="num"><strong>1</strong></td><td class="num"><strong>0</strong></td></tr>
+          <tr><td>History</td><td class="num">2</td><td class="num">2</td></tr>
+          <tr><td>Mathematics</td><td class="num">2</td><td class="num">2</td></tr>
+          <tr><td>Music</td><td class="num">1</td><td class="num">1</td></tr>
+          <tr><td>Physics</td><td class="num">2</td><td class="num">2</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="callout">
+      <span class="mark" aria-hidden="true">!</span>
+      <p>The LEFT JOIN keeps Economics as one row padded with NULL, and <code>count(*)</code> counts that row. Count a column from the right-hand table, ideally its key, to get 0.</p>
+    </div>
+    <p><a class="try" href="playground.html#agg">Run it, playground example 1.5</a></p>
+  </div>
+  
+</section>
+
+<!-- 10 ────────────────────────────────────────────── section -->
+<section class="slide slide--section" id="s10">
+  <h2>Queries inside queries</h2>
+  <p>A subquery can stand for one value, a list, a yes-or-no test, or a whole table.</p>
+  
+</section>
+
+<!-- 11 ────────────────────────────────────────────── scalar subquery -->
+<section class="slide" id="s11">
+  <h2>A subquery that returns one value</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div>
+        <pre class="code"><span class="k">SELECT</span> name, salary
+<span class="k">FROM</span> instructor
+<span class="k">WHERE</span> salary &gt; (<span class="k">SELECT</span> avg(salary)
+                <span class="k">FROM</span> instructor)
+<span class="k">ORDER</span> <span class="k">BY</span> salary <span class="k">DESC</span>;</pre>
+        <table class="tbl tbl--result" style="margin-top:16px">
+          <caption>Result: 5 rows, all above 80,900</caption>
+          <thead><tr><th scope="col">name</th><th scope="col" class="num">salary</th></tr></thead>
+          <tbody>
+            <tr><td>Avery Chen</td><td class="num">98000</td></tr>
+            <tr><td>Sam Okafor</td><td class="num">95000</td></tr>
+            <tr><td>Jordan Patel</td><td class="num">92000</td></tr>
+            <tr><td>Maria Lopez</td><td class="num">87000</td></tr>
+            <tr><td>Kofi Mensah</td><td class="num">87000</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="fill" style="gap:14px">
+        <p>The inner query runs first and returns one number, 80,900. The outer query then uses it like a constant. You cannot write <code>WHERE salary &gt; avg(salary)</code>: WHERE sees one row at a time, and an average needs them all.</p>
+        <pre class="code"><span class="c">-- error: more than one row returned by</span>
+<span class="c">-- a subquery used as an expression</span>
+<span class="k">WHERE</span> salary &gt; (<span class="k">SELECT</span> salary <span class="k">FROM</span> instructor
+                <span class="k">WHERE</span> dept_name = <span class="s">'Physics'</span>)</pre>
+        <p class="note-line">A subquery used as a value must return exactly one row and one column. If it returns none, its value is NULL.</p>
+      </div>
+    </div>
+    <p><a class="try" href="playground.html#sub">Run both, playground example 2.1</a></p>
+  </div>
+  
+</section>
+
+<!-- 12 ────────────────────────────────────────────── IN SOME ALL -->
+<section class="slide" id="s12">
+  <h2>Comparing with a list: IN, SOME and ALL</h2>
+  <div class="slide-main">
+    <table class="tbl tbl--compact">
+      <caption class="visually-hidden">Set comparisons with subqueries, and their results on the course database</caption>
+      <thead><tr><th scope="col">Test</th><th scope="col">True when</th><th scope="col">Example</th><th scope="col">Keeps</th></tr></thead>
+      <tbody>
+        <tr><td><code>x IN (subquery)</code></td><td>x equals some value</td><td>id IN (SELECT id FROM teaches)</td><td>the 8 instructors who teach</td></tr>
+        <tr><td><code>x &gt; SOME (subquery)</code></td><td>x beats at least one value</td><td>salary &gt; SOME (Physics salaries)</td><td>Avery Chen, Jordan Patel, Sam Okafor</td></tr>
+        <tr><td><code>x &gt; ALL (subquery)</code></td><td>x beats every value</td><td>salary &gt; ALL (Physics salaries)</td><td>Avery Chen</td></tr>
+        <tr class="is-hl"><td><code>x &gt; ALL (subquery)</code></td><td>…and no value is NULL</td><td>salary &gt; ALL (Mathematics salaries)</td><td><strong>nobody</strong></td></tr>
+      </tbody>
+    </table>
+    <div class="cols-2">
+      <div class="panel panel--key">
+        <h3>Why nobody beats Mathematics</h3>
+        <p>Mathematics salaries are 87,000 and NULL. For Avery Chen, 98,000 &gt; 87,000 is true but 98,000 &gt; NULL is unknown, and ALL needs every test true. It is the NOT IN trap from week 3 again.</p>
+      </div>
+      <div class="panel">
+        <h3>Same meaning, other spellings</h3>
+        <p><code>= SOME</code> is <code>IN</code>. <code>&lt;&gt; ALL</code> is <code>NOT IN</code>. <code>ANY</code> is another name for <code>SOME</code>. <code>&gt; ALL</code> without NULLs is <code>&gt; (SELECT max(…))</code>.</p>
+      </div>
+    </div>
+    <p><a class="try" href="playground.html#sub">Run all four, playground example 2.2</a></p>
+  </div>
+  
+</section>
+
+<!-- 13 ────────────────────────────────────────────── correlated -->
+<section class="slide" id="s13">
+  <h2>Correlated subqueries: the inner query sees the outer row</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:860px">
+<svg style="--dg-k:1" viewBox="0 0 960 352" role="img" aria-labelledby="cqt cqd">
+<title id="cqt">A correlated subquery runs again for every outer row</title>
+<desc id="cqd">The query keeps instructors who earn more than the average of their own department. Five outer rows are shown. For each one, the inner query computes the average salary of that row&#x27;s department, then WHERE compares. Avery Chen, Comp. Sci., 98,000 against 88,333: true, kept. Priya Raman, Comp. Sci., 75,000 against 88,333: false, dropped. Noor Haddad, Mathematics, NULL against 87,000: unknown, dropped. Tomas Novak, History, 62,000 against 61,500: true, kept. Hana Sato, Biology, 80,000 against 80,000: false, dropped, because Hana Sato is the whole department.</desc>
+<defs><marker id="cqa" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#0e5a6b"/></marker></defs>
+<text class="dg-lbl" x="20" y="30">outer query: one row at a time</text>
+<text class="dg-lbl" x="440" y="30">inner query, rerun for that row</text>
+<text class="dg-lbl" x="726" y="30">WHERE salary &gt; result</text>
+<rect class="dg-box" x="20" y="44" width="342" height="276"/>
+<rect class="dg-box-m" x="20" y="44" width="342" height="46"/>
+<text class="dg-xs" font-weight="700" x="28" y="75">name</text>
+<text class="dg-xs" font-weight="700" x="158" y="75">dept_name</text>
+<text class="dg-xs" font-weight="700" x="278" y="75">salary</text>
+<g>
+<text class="dg-xs" x="28" y="121">Avery Chen</text>
+<text class="dg-xs" x="158" y="121">Comp. Sci.</text>
+<text class="dg-xs" x="278" y="121">98,000</text>
+</g>
+<path class="dg-line-q" d="M20 136 H362"/>
+<g>
+<text class="dg-xs" x="28" y="167">Priya Raman</text>
+<text class="dg-xs" x="158" y="167">Comp. Sci.</text>
+<text class="dg-xs" x="278" y="167">75,000</text>
+</g>
+<path class="dg-line-q" d="M20 182 H362"/>
+<g>
+<text class="dg-xs" x="28" y="213">Noor Haddad</text>
+<text class="dg-xs" x="158" y="213">Mathematics</text>
+<text class="dg-xs dg-txt-warn" x="278" y="213" font-style="italic">NULL</text>
+</g>
+<path class="dg-line-q" d="M20 228 H362"/>
+<g>
+<text class="dg-xs" x="28" y="259">Tomas Novak</text>
+<text class="dg-xs" x="158" y="259">History</text>
+<text class="dg-xs" x="278" y="259">62,000</text>
+</g>
+<path class="dg-line-q" d="M20 274 H362"/>
+<g>
+<text class="dg-xs" x="28" y="305">Hana Sato</text>
+<text class="dg-xs" x="158" y="305">Biology</text>
+<text class="dg-xs" x="278" y="305">80,000</text>
+</g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:0.80s" d="M368 113.0 H434" marker-end="url(#cqa)"/>
+<g class="v-in" style="--d:0.95s"><rect class="dg-box-t" x="440" y="96.0" width="260" height="34" rx="4"/><text class="dg-xs dg-mono" x="452" y="118.0">avg in Comp. Sci. = 88,333</text></g>
+<text class="dg-xs dg-txt-ok v-in" style="--d:1.10s" x="726" y="118.0" font-weight="700">✓ true: kept</text>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:1.40s" d="M368 159.0 H434" marker-end="url(#cqa)"/>
+<g class="v-in" style="--d:1.55s"><rect class="dg-box-t" x="440" y="142.0" width="260" height="34" rx="4"/><text class="dg-xs dg-mono" x="452" y="164.0">avg in Comp. Sci. = 88,333</text></g>
+<text class="dg-xs dg-txt-bad v-in" style="--d:1.70s" x="726" y="164.0" font-weight="700">✗ false: dropped</text>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:2.00s" d="M368 205.0 H434" marker-end="url(#cqa)"/>
+<g class="v-in" style="--d:2.15s"><rect class="dg-box-t" x="440" y="188.0" width="260" height="34" rx="4"/><text class="dg-xs dg-mono" x="452" y="210.0">avg in Mathematics = 87,000</text></g>
+<text class="dg-xs dg-txt-warn v-in" style="--d:2.30s" x="726" y="210.0" font-weight="700">? unknown: dropped</text>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:2.60s" d="M368 251.0 H434" marker-end="url(#cqa)"/>
+<g class="v-in" style="--d:2.75s"><rect class="dg-box-t" x="440" y="234.0" width="260" height="34" rx="4"/><text class="dg-xs dg-mono" x="452" y="256.0">avg in History = 61,500</text></g>
+<text class="dg-xs dg-txt-ok v-in" style="--d:2.90s" x="726" y="256.0" font-weight="700">✓ true: kept</text>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:3.20s" d="M368 297.0 H434" marker-end="url(#cqa)"/>
+<g class="v-in" style="--d:3.35s"><rect class="dg-box-t" x="440" y="280.0" width="260" height="34" rx="4"/><text class="dg-xs dg-mono" x="452" y="302.0">avg in Biology = 80,000</text></g>
+<text class="dg-xs dg-txt-bad v-in" style="--d:3.50s" x="726" y="302.0" font-weight="700">✗ false: dropped</text>
+<text class="dg-txt-s v-in" style="--d:4.00s" x="20" y="340">i.dept_name inside the subquery refers to the outer row, so the inner result changes from row to row.</text>
+</svg>
+      <figcaption><strong>Figure 4.3.</strong> Five of the eleven outer rows. The full query keeps 4 instructors: Avery Chen, Jordan Patel, Sam Okafor and Tomas Novak.</figcaption>
+    </figure>
+    <pre class="code"><span class="k">SELECT</span> i.name, i.salary <span class="k">FROM</span> instructor i
+<span class="k">WHERE</span> i.salary &gt; (<span class="k">SELECT</span> avg(j.salary) <span class="k">FROM</span> instructor j <span class="k">WHERE</span> j.dept_name = i.dept_name);</pre>
+    <p><a class="try" href="playground.html#sub">Run it, playground example 2.3</a></p>
+  </div>
+  
+</section>
+
+<!-- 14 ────────────────────────────────────────────── exists -->
+<section class="slide" id="s14">
+  <h2>EXISTS asks only whether a row comes back</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div class="fill" style="gap:12px">
+        <pre class="code"><span class="c">-- students enrolled in 2027: 3 rows</span>
+<span class="k">SELECT</span> s.name <span class="k">FROM</span> student s
+<span class="k">WHERE</span> <span class="k">EXISTS</span> (<span class="k">SELECT</span> 1 <span class="k">FROM</span> takes t
+              <span class="k">WHERE</span> t.id = s.id
+                <span class="k">AND</span> t.year = 2027);</pre>
+        <pre class="code"><span class="c">-- courses nobody has taken: CS-319</span>
+<span class="k">SELECT</span> c.course_id <span class="k">FROM</span> course c
+<span class="k">WHERE</span> <span class="k">NOT</span> <span class="k">EXISTS</span> (<span class="k">SELECT</span> 1 <span class="k">FROM</span> takes t
+                  <span class="k">WHERE</span> t.course_id = c.course_id);</pre>
+      </div>
+      <div class="fill" style="gap:14px">
+        <ul>
+          <li><strong>EXISTS</strong> is true when the subquery returns at least one row. What the rows hold does not matter, so <code>SELECT 1</code> is the usual spelling.</li>
+          <li>It is nearly always <strong>correlated</strong>: the inner WHERE mentions the outer row.</li>
+          <li>EXISTS is only ever true or false, never unknown. That makes <strong>NOT EXISTS</strong> the safe way to write "no matching row", where NOT IN can fail on a NULL.</li>
+        </ul>
+        <div class="panel panel--definition">
+          <span class="term">Three ways to say "has none"</span>
+          <p>LEFT JOIN … IS NULL, NOT EXISTS, and EXCEPT. All three return CS-319 here. NOT IN would too, but only because takes.course_id cannot be NULL.</p>
+        </div>
+      </div>
+    </div>
+    <p><a class="try" href="playground.html#sub">Run both, playground example 2.4</a></p>
+  </div>
+  
+</section>
+
+<!-- 15 ────────────────────────────────────────────── division -->
+<section class="slide" id="s15">
+  <h2>"Every" in SQL: division with NOT EXISTS</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:900px">
+<svg style="--dg-k:1" viewBox="0 0 960 264" role="img" aria-labelledby="dvt dvd">
+<title id="dvt">Division in SQL: keep a student when nothing required is left over</title>
+<desc id="dvd">The required set is the 4-credit Comp. Sci. courses, CS-101 and CS-190. For each student, the inner query takes the required set EXCEPT the courses that student took, and NOT EXISTS keeps the student when that leftover set is empty. Morgan Lee took CS-101, CS-190, CS-315 and CS-347: nothing left over, kept. Alex Johnson took CS-101, CS-190 and MA-201: nothing left over, kept. Riley Adams took CS-101 and CS-347: CS-190 is left over, dropped. Drew Kim took CS-101 and CS-315: CS-190 left over, dropped. Avery Clark took BIO-101 and CS-347: CS-101 and CS-190 left over, dropped.</desc>
+<g class="v-in" style="--d:0.10s"><rect class="dg-box-a" x="20" y="6" width="560" height="38" rx="5"/><text class="dg-sm dg-mono" x="34" y="31">required = 4-credit Comp. Sci. courses = { CS-101, CS-190 }</text></g>
+<rect class="dg-box" x="20" y="64" width="900" height="192"/>
+<rect class="dg-box-m" x="20" y="64" width="900" height="32"/>
+<text class="dg-xs" font-weight="700" x="28" y="86">student</text>
+<text class="dg-xs" font-weight="700" x="178" y="86">courses taken</text>
+<text class="dg-xs" font-weight="700" x="498" y="86">required EXCEPT taken</text>
+<text class="dg-xs" font-weight="700" x="728" y="86">NOT EXISTS</text>
+<rect class="dg-hl-t v-in" style="--d:0.60s" x="21" y="97" width="898" height="30"/>
+<g>
+<text class="dg-xs" x="28" y="118">Morgan Lee</text>
+<text class="dg-xs dg-mono" x="178" y="118">CS-101, CS-190, CS-315, CS-347</text>
+<text class="dg-xs dg-mono" x="498" y="118">{ }</text>
+<text class="dg-xs dg-txt-ok" x="728" y="118">✓ kept</text>
+</g>
+<rect class="dg-hl-t v-in" style="--d:1.10s" x="21" y="129" width="898" height="30"/>
+<path class="dg-line-q" d="M20 128 H920"/>
+<g>
+<text class="dg-xs" x="28" y="150">Alex Johnson</text>
+<text class="dg-xs dg-mono" x="178" y="150">CS-101, CS-190, MA-201</text>
+<text class="dg-xs dg-mono" x="498" y="150">{ }</text>
+<text class="dg-xs dg-txt-ok" x="728" y="150">✓ kept</text>
+</g>
+<path class="dg-line-q" d="M20 160 H920"/>
+<g>
+<text class="dg-xs" x="28" y="182">Riley Adams</text>
+<text class="dg-xs dg-mono" x="178" y="182">CS-101, CS-347</text>
+<text class="dg-xs dg-mono" x="498" y="182">{ CS-190 }</text>
+<text class="dg-xs dg-txt-bad" x="728" y="182">✗ dropped</text>
+</g>
+<path class="dg-line-q" d="M20 192 H920"/>
+<g>
+<text class="dg-xs" x="28" y="214">Drew Kim</text>
+<text class="dg-xs dg-mono" x="178" y="214">CS-101, CS-315</text>
+<text class="dg-xs dg-mono" x="498" y="214">{ CS-190 }</text>
+<text class="dg-xs dg-txt-bad" x="728" y="214">✗ dropped</text>
+</g>
+<path class="dg-line-q" d="M20 224 H920"/>
+<g>
+<text class="dg-xs" x="28" y="246">Avery Clark</text>
+<text class="dg-xs dg-mono" x="178" y="246">BIO-101, CS-347</text>
+<text class="dg-xs dg-mono" x="498" y="246">{ CS-101, CS-190 }</text>
+<text class="dg-xs dg-txt-bad" x="728" y="246">✗ dropped</text>
+</g>
+</svg>
+      <figcaption><strong>Figure 4.4.</strong> Who took every 4-credit Comp. Sci. course? An empty leftover means the student took them all: week 2's R ÷ S, written in SQL. <a class="try" href="playground.html#sub">Run it, playground example 2.5</a></figcaption>
+    </figure>
+    <pre class="code"><span class="k">SELECT</span> s.name <span class="k">FROM</span> student s
+<span class="k">WHERE</span> <span class="k">NOT</span> <span class="k">EXISTS</span> (<span class="k">SELECT</span> course_id <span class="k">FROM</span> course <span class="k">WHERE</span> dept_name = <span class="s">'Comp. Sci.'</span> <span class="k">AND</span> credits = 4
+                  <span class="k">EXCEPT</span>
+                  <span class="k">SELECT</span> course_id <span class="k">FROM</span> takes t <span class="k">WHERE</span> t.id = s.id);</pre>
+  </div>
+  
+</section>
+
+<!-- 16 ────────────────────────────────────────────── from and select subqueries -->
+<section class="slide" id="s16">
+  <h2>A subquery can also be a table, or a column</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div class="fill" style="gap:12px">
+        <h3>In FROM: a derived table</h3>
+        <pre class="code"><span class="k">SELECT</span> dept_name, round(avg_sal) <span class="k">AS</span> avg_sal
+<span class="k">FROM</span> (<span class="k">SELECT</span> dept_name, avg(salary) <span class="k">AS</span> avg_sal
+      <span class="k">FROM</span> instructor
+      <span class="k">GROUP</span> <span class="k">BY</span> dept_name) <span class="k">AS</span> d
+<span class="k">WHERE</span> avg_sal &gt; 85000;</pre>
+        <p>The inner query's result is a table named <code>d</code>, so its alias <code>avg_sal</code> works in the outer WHERE. Same 3 rows as <code>HAVING avg(salary) &gt; 85000</code>: Comp. Sci., Mathematics, Physics.</p>
+      </div>
+      <div class="fill" style="gap:12px">
+        <h3>In SELECT: one value per row</h3>
+        <pre class="code"><span class="k">SELECT</span> d.dept_name,
+       (<span class="k">SELECT</span> count(*) <span class="k">FROM</span> instructor i
+        <span class="k">WHERE</span> i.dept_name = d.dept_name) <span class="k">AS</span> n
+<span class="k">FROM</span> department d
+<span class="k">ORDER</span> <span class="k">BY</span> d.dept_name;</pre>
+        <p>A correlated scalar subquery. Economics gets 0 here, because count of no rows is 0. It is the same answer as slide 9's <code>count(i.id)</code>.</p>
+      </div>
+    </div>
+    <p><a class="try" href="playground.html#sub">Run both, playground example 2.6</a></p>
+  </div>
+  
+</section>
+
+<!-- 17 ────────────────────────────────────────────── section -->
+<section class="slide slide--section" id="s17">
+  <h2>WITH and CASE</h2>
+  <p>Name the steps of a long query, and turn values into categories.</p>
+  
+</section>
+
+<!-- 18 ────────────────────────────────────────────── with -->
+<section class="slide" id="s18">
+  <h2>WITH names a step, so a query reads top to bottom</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div>
+        <pre class="code"><span class="k">WITH</span> dept_avg <span class="k">AS</span> (
+  <span class="k">SELECT</span> dept_name, avg(salary) <span class="k">AS</span> a
+  <span class="k">FROM</span> instructor
+  <span class="k">GROUP</span> <span class="k">BY</span> dept_name
+)
+<span class="k">SELECT</span> i.name, i.salary, round(d.a) <span class="k">AS</span> dept_avg
+<span class="k">FROM</span> instructor i
+<span class="k">JOIN</span> dept_avg d <span class="k">USING</span> (dept_name)
+<span class="k">WHERE</span> i.salary &gt; d.a
+<span class="k">ORDER</span> <span class="k">BY</span> i.name;</pre>
+        <ul style="margin-top:14px">
+          <li>A <strong>common table expression</strong> (CTE) is a named query that lives only for this statement.</li>
+          <li>Several can follow one WITH, separated by commas; each can use the ones before it.</li>
+        </ul>
+      </div>
+      <div class="fill" style="gap:14px">
+        <table class="tbl tbl--result">
+          <caption>Result: 4 rows, the same as slide 13</caption>
+          <thead><tr><th scope="col">name</th><th scope="col" class="num">salary</th><th scope="col" class="num">dept_avg</th></tr></thead>
+          <tbody>
+            <tr><td>Avery Chen</td><td class="num">98000</td><td class="num">88333</td></tr>
+            <tr><td>Jordan Patel</td><td class="num">92000</td><td class="num">88333</td></tr>
+            <tr><td>Sam Okafor</td><td class="num">95000</td><td class="num">91000</td></tr>
+            <tr><td>Tomas Novak</td><td class="num">62000</td><td class="num">61500</td></tr>
+          </tbody>
+        </table>
+        <div class="panel">
+          <h3>WITH RECURSIVE</h3>
+          <p>A CTE that refers to itself walks a hierarchy, such as course prerequisites. Section 5.4 of the textbook; we use it in week 5, once we create a <code>prereq</code> table.</p>
+        </div>
+      </div>
+    </div>
+    <p><a class="try" href="playground.html#with">Run it, playground example 3.1</a></p>
+  </div>
+  
+</section>
+
+<!-- 19 ────────────────────────────────────────────── case -->
+<section class="slide" id="s19">
+  <h2>CASE turns values into categories</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div>
+        <pre class="code"><span class="k">SELECT</span> <span class="k">CASE</span>
+         <span class="k">WHEN</span> tot_cred &gt;= 90 <span class="k">THEN</span> <span class="s">'Senior'</span>
+         <span class="k">WHEN</span> tot_cred &gt;= 60 <span class="k">THEN</span> <span class="s">'Junior'</span>
+         <span class="k">WHEN</span> tot_cred &gt;= 30 <span class="k">THEN</span> <span class="s">'Sophomore'</span>
+         <span class="k">ELSE</span> <span class="s">'Freshman'</span>
+       <span class="k">END</span> <span class="k">AS</span> standing,
+       count(*) <span class="k">AS</span> students
+<span class="k">FROM</span> student
+<span class="k">GROUP</span> <span class="k">BY</span> standing
+<span class="k">ORDER</span> <span class="k">BY</span> students <span class="k">DESC</span>;</pre>
+      </div>
+      <div class="fill" style="gap:14px">
+        <table class="tbl tbl--result">
+          <caption>Result: 4 rows</caption>
+          <thead><tr><th scope="col">standing</th><th scope="col" class="num">students</th></tr></thead>
+          <tbody>
+            <tr><td>Sophomore</td><td class="num">6</td></tr>
+            <tr><td>Senior</td><td class="num">4</td></tr>
+            <tr><td>Freshman</td><td class="num">2</td></tr>
+            <tr><td>Junior</td><td class="num">1</td></tr>
+          </tbody>
+        </table>
+        <ul>
+          <li>The first <code>WHEN</code> that is true wins, so the order of the tests matters.</li>
+          <li>With no <code>ELSE</code>, a row that matches nothing gets NULL.</li>
+          <li>PostgreSQL lets GROUP BY use the SELECT alias <code>standing</code>; the standard says to repeat the CASE.</li>
+        </ul>
+      </div>
+    </div>
+    <p><a class="try" href="playground.html#with">Run it and see the chart, playground example 3.2</a></p>
+  </div>
+  
+</section>
+
+<!-- 20 ────────────────────────────────────────────── section -->
+<section class="slide slide--section" id="s20">
+  <h2>Window functions</h2>
+  <p>Aggregates that keep every row: rankings, comparisons with a group, and running totals.</p>
+  
+</section>
+
+<!-- 21 ────────────────────────────────────────────── window vs group -->
+<section class="slide" id="s21">
+  <h2>A window function keeps the rows GROUP BY would collapse</h2>
+  <div class="slide-main">
+    <figure class="fig" style="max-width:880px">
+<svg style="--dg-k:1" viewBox="0 0 960 300" role="img" aria-labelledby="wgt wgd">
+<title id="wgt">GROUP BY collapses a group to one row; a window function keeps every row</title>
+<desc id="wgd">Both sides start from the three Comp. Sci. instructors: Avery Chen 98,000, Jordan Patel 92,000 and Priya Raman 75,000. Left, GROUP BY dept_name with avg(salary) returns one row: Comp. Sci., 88,333; the names are gone. Right, avg(salary) OVER (PARTITION BY dept_name) returns all three rows, and each gains a column holding its department&#x27;s average, 88,333, so each salary can be compared with it.</desc>
+<defs><marker id="wga" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#0e5a6b"/></marker></defs>
+<text class="dg-lbl" x="20" y="30">GROUP BY: three rows become one</text>
+<text class="dg-lbl" x="500" y="30">window: three rows stay three</text>
+<rect class="dg-box" x="20" y="60" width="220" height="136"/>
+<rect class="dg-box-m" x="20" y="60" width="220" height="34"/>
+<text class="dg-xs" font-weight="700" x="28" y="83">name</text>
+<text class="dg-xs" font-weight="700" x="158" y="83">salary</text>
+<g>
+<text class="dg-xs" x="28" y="117">Avery Chen</text>
+<text class="dg-xs" x="158" y="117">98,000</text>
+</g>
+<path class="dg-line-q" d="M20 128 H240"/>
+<g>
+<text class="dg-xs" x="28" y="151">Jordan Patel</text>
+<text class="dg-xs" x="158" y="151">92,000</text>
+</g>
+<path class="dg-line-q" d="M20 162 H240"/>
+<g>
+<text class="dg-xs" x="28" y="185">Priya Raman</text>
+<text class="dg-xs" x="158" y="185">75,000</text>
+</g>
+<path class="dg-line-t v-draw" pathLength="1" style="--d:0.80s" d="M250 145.0 H296" marker-end="url(#wga)"/>
+<g class="v-in" style="--d:1.10s"><rect class="dg-box" x="302" y="111.0" width="176" height="68"/>
+<rect class="dg-box-m" x="302" y="111.0" width="176" height="34"/>
+<text class="dg-xs" font-weight="700" x="310" y="134">dept_name</text>
+<text class="dg-xs" font-weight="700" x="410" y="134">avg</text>
+<rect class="dg-hl-t v-in" style="--d:1.10s" x="303" y="146.0" width="174" height="32"/>
+<g>
+<text class="dg-xs" x="310" y="168">Comp. Sci.</text>
+<text class="dg-xs" x="410" y="168">88,333</text>
+</g></g>
+<text class="dg-xs dg-txt-bad v-in" style="--d:1.50s" x="302" y="199.0">names are gone</text>
+<path class="dg-line-q" d="M480 44 V250"/>
+<rect class="dg-box" x="500" y="60" width="456" height="136"/>
+<rect class="dg-box-m" x="500" y="60" width="456" height="34"/>
+<text class="dg-xs" font-weight="700" x="508" y="83">name</text>
+<text class="dg-xs" font-weight="700" x="638" y="83">salary</text>
+<text class="dg-xs" font-weight="700" x="728" y="83">dept_avg</text>
+<text class="dg-xs" font-weight="700" x="824" y="83">salary − dept_avg</text>
+<g>
+<text class="dg-xs" x="508" y="117">Avery Chen</text>
+<text class="dg-xs" x="638" y="117">98,000</text>
+<text class="dg-xs dg-teal" x="728" y="117">88,333</text>
+<text class="dg-xs dg-txt-ok" x="824" y="117">+9,667</text>
+</g>
+<path class="dg-line-q" d="M500 128 H956"/>
+<g>
+<text class="dg-xs" x="508" y="151">Jordan Patel</text>
+<text class="dg-xs" x="638" y="151">92,000</text>
+<text class="dg-xs dg-teal" x="728" y="151">88,333</text>
+<text class="dg-xs dg-txt-ok" x="824" y="151">+3,667</text>
+</g>
+<path class="dg-line-q" d="M500 162 H956"/>
+<g>
+<text class="dg-xs" x="508" y="185">Priya Raman</text>
+<text class="dg-xs" x="638" y="185">75,000</text>
+<text class="dg-xs dg-teal" x="728" y="185">88,333</text>
+<text class="dg-xs dg-txt-bad" x="824" y="185">−13,333</text>
+</g>
+<text class="dg-txt-s v-in" style="--d:3.40s" x="20" y="284">A window function computes over a set of rows but returns one value per row. The rows stay.</text>
+</svg>
+      <figcaption><strong>Figure 4.5.</strong> The same three instructors, grouped on the left and windowed on the right.</figcaption>
+    </figure>
+    <pre class="code"><span class="k">SELECT</span> name, salary,
+       round(avg(salary) <span class="k">OVER</span> (<span class="k">PARTITION</span> <span class="k">BY</span> dept_name)) <span class="k">AS</span> dept_avg
+<span class="k">FROM</span> instructor <span class="k">ORDER</span> <span class="k">BY</span> dept_name, name;</pre>
+    <p><a class="try" href="playground.html#window">Run it for all 11 instructors, playground example 4.1</a></p>
+  </div>
+  
+</section>
+
+<!-- 22 ────────────────────────────────────────────── ranking -->
+<section class="slide" id="s22">
+  <h2>Three ways to number rows, and what ties do</h2>
+  <div class="slide-main">
+    <div class="cols-2-1">
+      <div>
+        <pre class="code"><span class="k">SELECT</span> name, salary,
+       rank()       <span class="k">OVER</span> w <span class="k">AS</span> rnk,
+       dense_rank() <span class="k">OVER</span> w <span class="k">AS</span> dense,
+       row_number() <span class="k">OVER</span> w <span class="k">AS</span> rownum
+<span class="k">FROM</span> instructor
+<span class="k">WINDOW</span> w <span class="k">AS</span> (<span class="k">ORDER</span> <span class="k">BY</span> salary <span class="k">DESC</span> <span class="k">NULLS</span> <span class="k">LAST</span>);</pre>
+        <table class="tbl tbl--result" style="margin-top:14px">
+          <caption>Rows 3 to 7 of 11</caption>
+          <thead><tr><th scope="col">name</th><th scope="col" class="num">salary</th><th scope="col" class="num">rnk</th><th scope="col" class="num">dense</th><th scope="col" class="num">rownum</th></tr></thead>
+          <tbody>
+            <tr><td>Jordan Patel</td><td class="num">92000</td><td class="num">3</td><td class="num">3</td><td class="num">3</td></tr>
+            <tr class="is-hl"><td>Kofi Mensah</td><td class="num">87000</td><td class="num">4</td><td class="num">4</td><td class="num">4</td></tr>
+            <tr class="is-hl"><td>Maria Lopez</td><td class="num">87000</td><td class="num">4</td><td class="num">4</td><td class="num">5</td></tr>
+            <tr><td>Hana Sato</td><td class="num">80000</td><td class="num">6</td><td class="num">5</td><td class="num">6</td></tr>
+            <tr><td>Priya Raman</td><td class="num">75000</td><td class="num">7</td><td class="num">6</td><td class="num">7</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="fill" style="gap:14px">
+        <ul>
+          <li><strong>rank</strong>: ties share a number and leave a gap (4, 4, 6).</li>
+          <li><strong>dense_rank</strong>: ties share, no gap (4, 4, 5).</li>
+          <li><strong>row_number</strong>: always 1, 2, 3; ties are broken arbitrarily.</li>
+          <li><code>WINDOW w AS (…)</code> names a window to reuse.</li>
+        </ul>
+      </div>
+    </div>
+    <p><a class="try" href="playground.html#window">Run it, playground example 4.2</a></p>
+  </div>
+  
+</section>
+
+<!-- 23 ────────────────────────────────────────────── top per group -->
+<section class="slide" id="s23">
+  <h2>The top earner in each department</h2>
+  <div class="slide-main">
+    <div class="cols-2">
+      <div class="fill" style="gap:12px">
+        <pre class="code"><span class="k">WITH</span> ranked <span class="k">AS</span> (
+  <span class="k">SELECT</span> name, dept_name, salary,
+    rank() <span class="k">OVER</span> (
+      <span class="k">PARTITION</span> <span class="k">BY</span> dept_name
+      <span class="k">ORDER</span> <span class="k">BY</span> salary <span class="k">DESC</span> <span class="k">NULLS</span> <span class="k">LAST</span>
+    ) <span class="k">AS</span> rk
+  <span class="k">FROM</span> instructor
+)
+<span class="k">SELECT</span> dept_name, name, salary
+<span class="k">FROM</span> ranked
+<span class="k">WHERE</span> rk = 1
+<span class="k">ORDER</span> <span class="k">BY</span> dept_name;</pre>
+        <p>Six rows, one per department: Hana Sato, Avery Chen, Tomas Novak, Maria Lopez, Diego Torres and Sam Okafor.</p>
+      </div>
+      <div class="fill" style="gap:14px">
+        <div class="panel panel--key">
+          <h3>Why the WITH?</h3>
+          <p>Window functions run in step 5, with SELECT, after WHERE. So <code>WHERE rank() OVER (…) = 1</code> is an error: "window functions are not allowed in WHERE". Compute the rank in a CTE, then filter it.</p>
+        </div>
+        <div class="callout">
+          <span class="mark" aria-hidden="true">!</span>
+          <p>Delete <code>NULLS LAST</code> and Mathematics's top earner becomes Noor Haddad, whose salary is unknown: descending order puts NULL first.</p>
+        </div>
+      </div>
+    </div>
+    <p><a class="try" href="playground.html#window">Run it, then delete NULLS LAST, playground example 4.3</a></p>
+  </div>
+  
+</section>
+
+<!-- 24 ────────────────────────────────────────────── running total -->
+<section class="slide" id="s24">
+  <h2>ORDER BY inside OVER gives running totals</h2>
+  <div class="slide-main">
+    <div class="cols-2-1">
+      <figure class="fig">
+<svg style="--dg-k:1" viewBox="0 0 960 340" role="img" aria-labelledby="rtt rtd">
+<title id="rtt">Enrollments per term, with a running total</title>
+<desc id="rtd">Bars show the enrollments in each term: Fall 2025, 10; Spring 2026, 9; Spring 2027, 3. A line with labelled points shows the running total from sum(count(*)) OVER (ORDER BY year, semester): 10, then 19, then 22. Each point adds that term&#x27;s bar to everything before it.</desc>
+<path class="dg-line" d="M100 280 H900"/>
+<text class="dg-xs" x="90" y="285" text-anchor="end">0</text>
+<text class="dg-xs" x="90" y="185" text-anchor="end">10</text>
+<path class="dg-line-q" d="M100 180 H900"/>
+<text class="dg-xs" x="90" y="85" text-anchor="end">20</text>
+<path class="dg-line-q" d="M100 80 H900"/>
+<rect class="dg-bar v-in" style="--d:0.30s" x="180" y="180" width="100" height="100"/>
+<text class="dg-xs v-in" style="--d:0.60s" x="230" y="322" text-anchor="middle" font-weight="700">10 enrolled</text>
+<text class="dg-xs" x="230" y="302" text-anchor="middle">Fall 2025</text>
+<rect class="dg-bar v-in" style="--d:0.70s" x="430" y="190" width="100" height="90"/>
+<text class="dg-xs v-in" style="--d:1.00s" x="480" y="322" text-anchor="middle" font-weight="700">9 enrolled</text>
+<text class="dg-xs" x="480" y="302" text-anchor="middle">Spring 2026</text>
+<rect class="dg-bar v-in" style="--d:1.10s" x="680" y="250" width="100" height="30"/>
+<text class="dg-xs v-in" style="--d:1.40s" x="730" y="322" text-anchor="middle" font-weight="700">3 enrolled</text>
+<text class="dg-xs" x="730" y="302" text-anchor="middle">Spring 2027</text>
+<path class="dg-line-a v-draw" pathLength="1" style="--d:1.80s" d="M230 180 L480 90 L730 60" fill="none" stroke-width="3"/>
+<g class="v-in" style="--d:2.00s"><circle class="dg-box-a" cx="230" cy="180" r="7"/><text class="dg-xs dg-txt-b" x="244" y="172">running 10</text></g>
+<g class="v-in" style="--d:2.40s"><circle class="dg-box-a" cx="480" cy="90" r="7"/><text class="dg-xs dg-txt-b" x="494" y="82">running 19</text></g>
+<g class="v-in" style="--d:2.80s"><circle class="dg-box-a" cx="730" cy="60" r="7"/><text class="dg-xs dg-txt-b" x="744" y="52">running 22</text></g>
+<text class="dg-lbl" x="100" y="22">enrollments (bars) and running total (line)</text>
+</svg>
+        <figcaption><strong>Figure 4.6.</strong> Enrollments per term, and the running total that adds each term to the ones before it.</figcaption>
+      </figure>
+      <div class="fill" style="gap:14px">
+        <pre class="code"><span class="k">SELECT</span> year, semester,
+  count(*) <span class="k">AS</span> enrolled,
+  sum(count(*)) <span class="k">OVER</span>
+    (<span class="k">ORDER</span> <span class="k">BY</span> year, semester)
+    <span class="k">AS</span> running
+<span class="k">FROM</span> takes
+<span class="k">GROUP</span> <span class="k">BY</span> year, semester;</pre>
+        <p>With ORDER BY, the window for each row is every row up to and including it. The aggregate <code>count(*)</code> runs first, per group; the window <code>sum(…)</code> then runs over the grouped rows.</p>
+      </div>
+    </div>
+    <p><a class="try" href="playground.html#window">Run it and see the chart, playground example 4.4</a></p>
+  </div>
+  
+</section>
+
+<!-- 25 ────────────────────────────────────────────── takeaways -->
+<section class="slide" id="s25">
+  <h2>What to take away</h2>
+  <div class="slide-main">
+    <ol class="steps">
+      <li><span class="n" aria-hidden="true">1</span><div><strong>Aggregates skip NULLs; count(*) does not.</strong><p>Over no rows, count is 0 and the others are NULL.</p></div></li>
+      <li><span class="n" aria-hidden="true">2</span><div><strong>Every SELECT column is grouped or aggregated.</strong><p>WHERE filters rows before grouping; HAVING filters groups after.</p></div></li>
+      <li><span class="n" aria-hidden="true">3</span><div><strong>After a LEFT JOIN, count a right-hand column.</strong><p>count(*) counts the padded row.</p></div></li>
+      <li><span class="n" aria-hidden="true">4</span><div><strong>Prefer NOT EXISTS for "has none" and "every".</strong><p>It is never unknown; NOT IN and ALL can be.</p></div></li>
+      <li><span class="n" aria-hidden="true">5</span><div><strong>Name steps with WITH; rank with window functions.</strong><p>Windows keep every row; filter their result in an outer query.</p></div></li>
+    </ol>
+  </div>
+  
+</section>
+
+<!-- 26 ────────────────────────────────────────────── this week -->
+<section class="slide" id="s26">
+  <h2>This week's work</h2>
+  <div class="slide-main">
+    <div class="week-work">
+      <div>
+        <h3>Read</h3>
+        <ul>
+          <li>Silberschatz, Korth and Sudarshan, <em>Database System Concepts</em>, 7th ed., sections 3.7–3.9 (aggregates and subqueries) and 5.5 (ranking and windowing).</li>
+          <li>Section 5.4, recursive queries, before week 5.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Do</h3>
+        <ul>
+          <li>Lab 3: ten questions on aggregates, subqueries and window functions, with two short written answers.</li>
+          <li>Week 4 playground: the eight exercises. Not graded, but quiz 5 assumes them.</li>
+          <li>Project: start thinking about the domain for your database; milestone 1 is due in week 6.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Due</h3>
+        <ul>
+          <li><span class="due">Sunday, February 7, 11:59 p.m. CT</span>: Lab 3, one zip file in Brightspace.</li>
+          <li>Quiz 4: in class today; online section within 48 hours of the recording.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="callout" style="margin-top:auto">
+      <span class="mark" aria-hidden="true">→</span>
+      <p><strong>Next week:</strong> SQL III. Creating tables and constraints, changing data with INSERT, UPDATE and DELETE, views, and a first recursive query over course prerequisites.</p>
+    </div>
+  </div>
+  
+</section>
+
+<!-- 27 ────────────────────────────────────────────── resources -->
+<section class="slide" id="s27">
+  <h2>Free resources</h2>
+  <div class="slide-main">
+    <ul class="resources">
+      <li><a href="playground.html">Week 4 playground</a><span class="src">this course</span><p>Every query from today's slides, a GROUP BY explorer, charts for the grouped results, and eight checked exercises.</p></li>
+      <li><a href="https://www.postgresql.org/docs/current/tutorial-agg.html">Aggregate functions, tutorial</a><span class="src">postgresql.org</span><p>A short introduction to aggregates, GROUP BY and HAVING.</p></li>
+      <li><a href="https://www.postgresql.org/docs/current/functions-subquery.html">Subquery expressions</a><span class="src">postgresql.org</span><p>EXISTS, IN, NOT IN, ANY, SOME and ALL, including how each treats NULL.</p></li>
+      <li><a href="https://www.postgresql.org/docs/current/queries-with.html">WITH queries</a><span class="src">postgresql.org</span><p>Common table expressions, and WITH RECURSIVE for next week.</p></li>
+      <li><a href="https://www.postgresql.org/docs/current/tutorial-window.html">Window functions, tutorial</a><span class="src">postgresql.org</span><p>PARTITION BY, ORDER BY in a window, and rank, with small examples.</p></li>
+    </ul>
+    <div class="callout" style="margin-top:20px">
+      <span class="mark" aria-hidden="true">→</span>
+      <p>Stuck on Lab 3? Office hours are Tuesday and Wednesday 12:00–3:00 p.m., MIC room D159, or post in the week 4 discussion in Brightspace.</p>
+    </div>
+  </div>
+  
+</section>
+
+</main>
+</div>
+<script src="../../assets/deck.js"></script>
+</body>
+</html>

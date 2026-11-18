@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Practice Midterm · CS 4600/5200</title>
+<meta name="description" content="CS 4600/5200 practice midterm: relational algebra, SQL queries, constraints and transactions, E-R design and normalization, in the format of the week 8 midterm, with answers to check yourself.">
+<link rel="stylesheet" href="../../assets/course.css">
+<link rel="stylesheet" href="../../assets/db.css">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to the questions</a>
+
+<div class="doc">
+<header class="doc-masthead">
+  <p class="inst"><span>CS 4600/5200 · Database Theory and Applications</span><span>Week 8</span><span><a href="../../index.html">Course home</a></span></p>
+  <h1>Practice midterm</h1>
+  <p class="tagline">The same five parts, the same kinds of question and about the same length as the real midterm. Do it on paper, in 90 minutes, with your one page of notes, before you open any answer. Then mark it yourself.</p>
+</header>
+
+<dl class="facts">
+  <div><dt>Midterm</dt><dd>Tuesday, March 2, in class, after the review</dd></div>
+  <div><dt>Length</dt><dd>90 minutes, 100 points</dd></div>
+  <div><dt>Allowed</dt><dd>One page of your own handwritten notes, both sides</dd></div>
+  <div><dt>Covers</dt><dd>Weeks 1 to 7, chapters 1 to 7</dd></div>
+</dl>
+
+<nav class="toc" aria-labelledby="toc-h">
+  <h2 id="toc-h">On this page</h2>
+  <ol>
+    <li><a href="#about">About the midterm</a></li>
+    <li><a href="#p1">Part 1: relational algebra (15 points)</a></li>
+    <li><a href="#p2">Part 2: SQL queries (35 points)</a></li>
+    <li><a href="#p3">Part 3: changing data and constraints (10 points)</a></li>
+    <li><a href="#p4">Part 4: E-R design (20 points)</a></li>
+    <li><a href="#p5">Part 5: dependencies and normal forms (20 points)</a></li>
+    <li><a href="#grad">CS 5200: the extra question</a></li>
+  </ol>
+</nav>
+
+<main id="main">
+
+<section id="about" aria-labelledby="about-h">
+  <h2 id="about-h">About the midterm</h2>
+  <ul>
+    <li>The exam uses the university database, with the eight tables in the <a href="playground.html#schema">schema at the top of the review playground</a>. A copy of the schema is printed on the exam, so you don't need it in your notes.</li>
+    <li>Write SQL the way you would type it. Small slips, like a missing semicolon, cost nothing; a wrong join or a missing GROUP BY column does.</li>
+    <li>Where a question asks why, one or two sentences is enough. Show the steps of a closure or a decomposition: most of the points are for the steps.</li>
+    <li>Online section: the same exam in Brightspace, with the same time limit, in the window announced there.</li>
+  </ul>
+  <p>The answers below are one correct way. For SQL, any query that returns the same rows on every possible database, not just this one, earns full credit.</p>
+</section>
+
+<section id="p1" aria-labelledby="p1-h">
+  <h2 id="p1-h">Part 1: relational algebra (15 points)</h2>
+  <p>Write each query in relational algebra, using σ, π, ×, ⋈, ∪, − and ρ as on the week 2 slides.</p>
+  <ol class="qs">
+    <li><p><strong>1a (3 points).</strong> The names of instructors in the Physics department.</p>
+      <details><summary>Answer</summary><p>π<sub>name</sub>(σ<sub>dept_name = 'Physics'</sub>(instructor)). On today's data: Sam Okafor and Kofi Mensah.</p></details></li>
+    <li><p><strong>1b (4 points).</strong> The names of students who have taken CS-347.</p>
+      <details><summary>Answer</summary><p>π<sub>name</sub>(student ⋈ σ<sub>course_id = 'CS-347'</sub>(takes)). Select before joining: it gives the same result with a smaller join. Four students.</p></details></li>
+    <li><p><strong>1c (4 points).</strong> The ids of students who have never taken a course.</p>
+      <details><summary>Answer</summary><p>π<sub>id</sub>(student) − π<sub>id</sub>(takes). Both sides must have the same attributes before the difference, which is why both are projected to id first. One student: 61234, Emery Walsh.</p></details></li>
+    <li><p><strong>1d (4 points).</strong> The highest salary of any instructor, without aggregation: use a product and a difference, as on the week 2 slides.</p>
+      <details><summary>Answer</summary><p>π<sub>salary</sub>(instructor) − π<sub>i.salary</sub>(σ<sub>i.salary &lt; j.salary</sub>(ρ<sub>i</sub>(instructor) × ρ<sub>j</sub>(instructor))). The right side holds every salary that some other salary beats; what is left is the maximum, 98000. Noor Haddad's NULL salary is never beaten, because a comparison with NULL is never true, so on this data the result also holds NULL. Adding σ<sub>salary is not null</sub> on the left removes it.</p></details></li>
+  </ol>
+</section>
+
+<section id="p2" aria-labelledby="p2-h">
+  <h2 id="p2-h">Part 2: SQL queries (35 points)</h2>
+  <ol class="qs">
+    <li><p><strong>2a (5 points).</strong> For each course that has been taken at least once, show its course_id and the number of different students who took it.</p>
+      <details><summary>Answer</summary><pre><code>SELECT course_id, count(DISTINCT id) AS students
+FROM takes
+GROUP BY course_id;</code></pre><p>DISTINCT matters: Drew Kim took CS-101 twice. CS-101 has 5 different students.</p></details></li>
+    <li><p><strong>2b (6 points).</strong> Show the name and tot_cred of every student whose tot_cred is above the average of all students.</p>
+      <details><summary>Answer</summary><pre><code>SELECT name, tot_cred
+FROM student
+WHERE tot_cred &gt; (SELECT avg(tot_cred) FROM student);</code></pre><p>An aggregate cannot go in WHERE directly; the subquery computes it once. The average is 62, and five students are above it.</p></details></li>
+    <li><p><strong>2c (8 points).</strong> Show every instructor's name and the number of students they advise, including instructors who advise nobody, most advisees first.</p>
+      <details><summary>Answer</summary><pre><code>SELECT i.name, count(a.s_id) AS advisees
+FROM instructor i
+LEFT JOIN advisor a ON a.i_id = i.id
+GROUP BY i.id, i.name
+ORDER BY advisees DESC;</code></pre><p>Two points each: the LEFT JOIN, counting <code>a.s_id</code> rather than <code>*</code> (which would give 1 to instructors with no advisees), grouping by the key, and the order. Four instructors show 0.</p></details></li>
+    <li><p><strong>2d (8 points).</strong> Show the name, dept_name and salary of the highest-paid instructor in each department. If two tie, show both.</p>
+      <details><summary>Answer</summary><pre><code>SELECT name, dept_name, salary
+FROM (SELECT name, dept_name, salary,
+             rank() OVER (PARTITION BY dept_name
+                          ORDER BY salary DESC NULLS LAST) AS r
+      FROM instructor) ranked
+WHERE r = 1;</code></pre><p>A window function cannot go in WHERE, so it goes in a subquery. rank, not row_number, keeps ties. A correlated subquery with <code>salary = (SELECT max(salary) …)</code> also earns full credit.</p></details></li>
+    <li><p><strong>2e (4 points).</strong> What does this return on the university database, and why is it not 11, the number of instructors?</p>
+<pre>SELECT count(*) FROM instructor
+WHERE salary &gt; 80000 OR salary &lt;= 80000;</pre>
+      <details><summary>Answer</summary><p>10. Noor Haddad's salary is NULL, so both comparisons are unknown, and unknown OR unknown is unknown. WHERE keeps only rows where the condition is true.</p></details></li>
+    <li><p><strong>2f (4 points).</strong> This query fails. Say why, and fix it so it shows each department's average salary.</p>
+<pre>SELECT dept_name, name, avg(salary)
+FROM instructor
+GROUP BY dept_name;</pre>
+      <details><summary>Answer</summary><p>name is neither grouped nor aggregated: a department has several names, and the group has one row. Remove name from the SELECT list (or group by it too, which gives one row per instructor and is not what was asked).</p></details></li>
+  </ol>
+</section>
+
+<section id="p3" aria-labelledby="p3-h">
+  <h2 id="p3-h">Part 3: changing data and constraints (10 points)</h2>
+  <ol class="qs">
+    <li><p><strong>3a (4 points).</strong> What happens when you run <code>DELETE FROM department WHERE dept_name = 'Music';</code> on the university database, and why? What would change if <code>instructor.dept_name</code> were declared <code>ON DELETE SET NULL</code>?</p>
+      <details><summary>Answer</summary><p>It is refused: instructor, student and course rows refer to Music, and those foreign keys use the default action, NO ACTION. With SET NULL on instructor, Diego Torres would stay with a NULL department, but the delete would still be refused by student and course unless they changed too.</p></details></li>
+    <li><p><strong>3b (3 points).</strong> Write one statement that gives every instructor in Comp. Sci. a 3% raise.</p>
+      <details><summary>Answer</summary><pre><code>UPDATE instructor
+SET salary = salary * 1.03
+WHERE dept_name = 'Comp. Sci.';</code></pre></details></li>
+    <li><p><strong>3c (3 points).</strong> After these statements, how many rows does <code>department</code> have, and why?</p>
+<pre>BEGIN;
+DELETE FROM department WHERE dept_name = 'Economics';
+ROLLBACK;</pre>
+      <details><summary>Answer</summary><p>Still 7. ROLLBACK undoes everything since BEGIN. (Without the ROLLBACK, the delete would succeed, since nothing refers to Economics, leaving 6.)</p></details></li>
+  </ol>
+</section>
+
+<section id="p4" aria-labelledby="p4-h">
+  <h2 id="p4-h">Part 4: E-R design (20 points)</h2>
+  <p>A small clinic wants a database. Patients have an id, a name and any number of phone numbers. Doctors have an id, a name and one specialty. A patient books appointments; each appointment is with one doctor, at a date and time, and has a reason. At an appointment the doctor may write prescriptions, numbered 1, 2, 3 within that appointment, each for a drug and a dose. The clinic keeps a list of drugs, each with a code and a name.</p>
+  <ol class="qs">
+    <li><p><strong>4a (12 points).</strong> Draw an E-R diagram, in the textbook's notation, with keys underlined and cardinality and participation on every relationship.</p>
+      <details><summary>Answer</summary>
+        <ul>
+          <li>Entity sets: <strong>patient</strong> (<u>patient_id</u>, name, {phone}), <strong>doctor</strong> (<u>doctor_id</u>, name, specialty), <strong>drug</strong> (<u>code</u>, name), and <strong>appointment</strong> (<u>appt_id</u>, date_time, reason).</li>
+          <li><strong>books</strong>: appointment to patient, many-to-one (arrow to patient), total on appointment (double line): every appointment has a patient.</li>
+          <li><strong>with</strong>: appointment to doctor, many-to-one, total on appointment.</li>
+          <li><strong>prescription</strong>: a weak entity set (double rectangle) with discriminator rx_no (dashed underline) and attribute dose, identified by appointment through a double diamond, total on prescription.</li>
+          <li><strong>for</strong>: prescription to drug, many-to-one, total on prescription.</li>
+        </ul>
+        <p>Also full credit: appointment as a relationship among patient and doctor with date_time in its key, if the answer explains how prescriptions then attach (aggregation). Marks: 3 for entity sets and keys, 3 for the multivalued phone, 3 for the weak entity, 3 for cardinality and participation.</p></details></li>
+    <li><p><strong>4b (8 points).</strong> Map your diagram to tables. Give each table's columns, primary key and foreign keys.</p>
+      <details><summary>Answer</summary>
+        <ul>
+          <li>patient(<u>patient_id</u>, name)</li>
+          <li>patient_phone(<u>patient_id, phone</u>), patient_id references patient</li>
+          <li>doctor(<u>doctor_id</u>, name, specialty)</li>
+          <li>drug(<u>code</u>, name)</li>
+          <li>appointment(<u>appt_id</u>, patient_id NOT NULL, doctor_id NOT NULL, date_time, reason), with foreign keys to patient and doctor. The two many-to-one relationships become columns, and total participation becomes NOT NULL.</li>
+          <li>prescription(<u>appt_id, rx_no</u>, code NOT NULL, dose), appt_id references appointment ON DELETE CASCADE, code references drug.</li>
+        </ul></details></li>
+  </ol>
+</section>
+
+<section id="p5" aria-labelledby="p5-h">
+  <h2 id="p5-h">Part 5: dependencies and normal forms (20 points)</h2>
+  <p>R(A, B, C, D, E) has the dependencies F = { A → B, B → C, C D → E }.</p>
+  <ol class="qs">
+    <li><p><strong>5a (4 points).</strong> Compute {A, D}<sup>+</sup>, showing each step. Is {A, D} a superkey?</p>
+      <details><summary>Answer</summary><p>Start {A, D}. A → B adds B. B → C adds C. C D → E adds E. {A, D}<sup>+</sup> = {A, B, C, D, E}: every attribute, so yes.</p></details></li>
+    <li><p><strong>5b (4 points).</strong> Give every candidate key of R, and say how you know there are no others.</p>
+      <details><summary>Answer</summary><p>{A, D} is the only one. A and D appear on no right side, so every key must contain both; {A, D} is already a superkey, so any other superkey contains it and is not minimal. A<sup>+</sup> = {A, B, C} and D<sup>+</sup> = {D}, so neither alone is a key.</p></details></li>
+    <li><p><strong>5c (4 points).</strong> Is R in BCNF? Is it in 3NF? Name a dependency that decides each.</p>
+      <details><summary>Answer</summary><p>Neither. A → B breaks BCNF, because A is not a superkey. It also breaks 3NF, because B is not part of any candidate key.</p></details></li>
+    <li><p><strong>5d (8 points).</strong> Decompose R into BCNF, showing each split. Is every dependency preserved?</p>
+      <details><summary>Answer</summary><p>Split on B → C: (B, C) and (A, B, D, E). In (A, B, D, E), A → B still breaks BCNF: split into (A, B) and (A, D, E). Result: (B, C), (A, B), (A, D, E), with keys B, A and (A, D).</p>
+      <p>C D → E is lost: C and D are never in the same table, so it can only be checked with a join. A 3NF synthesis would keep it: (A, B), (B, C), (C, D, E), plus (A, D) for the key. Splitting first on A → B also earns full credit if each step is right.</p></details></li>
+  </ol>
+</section>
+
+<section id="grad" aria-labelledby="grad-h">
+  <h2 id="grad-h">CS 5200: the extra question</h2>
+  <p>On the midterm, CS 5200 students answer one more question, worth 10 points; CS 4600 students do not see it. Their score is out of 110 and scaled to 100.</p>
+  <ol class="qs">
+    <li><p><strong>G1 (10 points).</strong> Using only Armstrong's three axioms, prove the union rule: if α → β and α → γ, then α → βγ. Name the axiom used at each step.</p>
+      <details><summary>Answer</summary><ol>
+        <li>α → γ, augmented with α, gives α → αγ (augmentation; αα = α).</li>
+        <li>α → β, augmented with γ, gives αγ → βγ (augmentation).</li>
+        <li>α → αγ and αγ → βγ give α → βγ (transitivity).</li>
+      </ol></details></li>
+  </ol>
+</section>
+</main>
+
+<footer>
+  <p>CS 4600/5200 · Database Theory and Applications · University of Central Missouri · Dr. Gorkem Kar · Spring 2027</p>
+</footer>
+</div>
+</body>
+</html>

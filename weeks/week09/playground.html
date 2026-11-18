@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Week 9 SQL Playground · CS 4600/5200</title>
+<meta name="description" content="CS 4600/5200 week 9 playground: the SQL a Python program sends, running on PostgreSQL in your browser. An explorer that runs one search with the text pasted in and with a parameter, prepared statements, transactions that check and then act, RETURNING and ON CONFLICT, keyset pagination, one query instead of many, and eight checked exercises.">
+<link rel="stylesheet" href="../../assets/course.css">
+<link rel="stylesheet" href="../../assets/db.css">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to the playground</a>
+
+<div class="doc">
+<header class="doc-masthead">
+  <p class="inst"><span>CS 4600/5200 · Database Theory and Applications</span><span>Week 9 · Tuesday, March 16, 2027</span><span><a href="../../index.html">Course home</a></span></p>
+  <h1>Week 9 playground: what your program sends</h1>
+  <p class="tagline">A Python program sees the database through the SQL it sends. Here you watch one search go wrong when a user's text is pasted into the SQL, and stay right when it is sent as a parameter. Then you try the statements an application lives on: check-then-act transactions, RETURNING, pages of results, and one query where a loop would send many.</p>
+</header>
+
+<div class="pg-bar">
+  <p class="pg-status" id="pg-status" data-state="loading"><span class="dot" aria-hidden="true"></span><span class="txt">Loading PostgreSQL in your browser…</span></p>
+  <p class="pg-progress" id="pg-progress">Exercises solved: <strong>0 of 8</strong></p>
+  <button type="button" class="btn" id="pg-reset-db">Reset database</button>
+</div>
+
+<main id="main">
+
+<section id="how" aria-labelledby="how-h">
+  <h2 id="how-h">How to use this page</h2>
+  <ul>
+    <li>Each grey box is an editor. Press <strong>Run</strong>, or <kbd>Ctrl</kbd>+<kbd>Enter</kbd> (<kbd>Cmd</kbd>+<kbd>Enter</kbd> on a Mac). A box may hold several statements; each result is shown.</li>
+    <li>Examples that change data start with <code>BEGIN;</code> and end with <code>ROLLBACK;</code>, so the change is undone afterwards. A box runs as one unit: if any statement in it fails, none of its changes are kept.</li>
+    <li><strong>Reset database</strong>, at the top, puts the starting data back, whatever you changed.</li>
+    <li>Exercises have a <strong>Check answer</strong> button. It runs your statements inside a transaction and rolls them back, so checking never changes the data. Your solved exercises are remembered in this browser only.</li>
+    <li>This page runs SQL, not Python. Where <a href="lab6.html">Lab 6</a>'s Python writes <code>%s</code>, write the value here, as in the examples.</li>
+  </ul>
+</section>
+
+<section id="schema" aria-labelledby="schema-h">
+  <h2 id="schema-h">The sample database</h2>
+  <p>From week 5 the university has eight tables: week 3's seven, plus <code>prereq</code>, which says which course must be taken before which. Both of its attributes are course ids, so both are foreign keys to <code>course</code>. Week 3's gaps are still here: the Economics department has nobody in it, Noor Haddad has no salary yet, Emery Walsh has no department, and nobody teaches CS-319. <span class="pk">Underlined</span> attributes form the primary key; attributes marked <span class="fk">→</span> are foreign keys.</p>
+  <figure class="fig-anim schema-fig" data-schema-map data-peek="#peek">
+<svg style="--dg-k:1" viewBox="0 0 724 590" role="group" aria-label="Map of the eight tables. Each table is a button that shows its rows in the box below; its foreign keys light up when it has focus.">
+<defs><marker id="pm3" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#0e5a6b"/></marker></defs>
+<path class="fk-link" data-from="instructor" data-to="department" d="M268 99 H236 V213 H205" fill="none" stroke="#0e5a6b" stroke-width="1.8" marker-end="url(#pm3)"><title>instructor.dept_name references department</title></path>
+<path class="fk-link" data-from="student" data-to="department" d="M268 253 H236 V213 H205" fill="none" stroke="#0e5a6b" stroke-width="1.8" marker-end="url(#pm3)"><title>student.dept_name references department</title></path>
+<path class="fk-link" data-from="course" data-to="department" d="M268 407 H236 V213 H205" fill="none" stroke="#0e5a6b" stroke-width="1.8" marker-end="url(#pm3)"><title>course.dept_name references department</title></path>
+<path class="fk-link" data-from="advisor" data-to="student" d="M538 53 H506 V206 H464" fill="none" stroke="#0e5a6b" stroke-width="1.8" marker-end="url(#pm3)"><title>advisor.s_id references student</title></path>
+<path class="fk-link" data-from="advisor" data-to="instructor" d="M538 76 H492 V52 H464" fill="none" stroke="#0e5a6b" stroke-width="1.8" marker-end="url(#pm3)"><title>advisor.i_id references instructor</title></path>
+<path class="fk-link" data-from="takes" data-to="student" d="M538 161 H520 V222 H464" fill="none" stroke="#0e5a6b" stroke-width="1.8" marker-end="url(#pm3)"><title>takes.id references student</title></path>
+<path class="fk-link" data-from="takes" data-to="course" d="M538 184 H506 V366 H464" fill="none" stroke="#0e5a6b" stroke-width="1.8" marker-end="url(#pm3)"><title>takes.course_id references course</title></path>
+<path class="fk-link" data-from="teaches" data-to="instructor" d="M538 347 H478 V68 H464" fill="none" stroke="#0e5a6b" stroke-width="1.8" marker-end="url(#pm3)"><title>teaches.id references instructor</title></path>
+<path class="fk-link" data-from="teaches" data-to="course" d="M538 370 H492 V366 H464" fill="none" stroke="#0e5a6b" stroke-width="1.8" marker-end="url(#pm3)"><title>teaches.course_id references course</title></path>
+<path class="fk-link" data-from="prereq" data-to="course" d="M340 484 V452" fill="none" stroke="#0e5a6b" stroke-width="1.8" marker-end="url(#pm3)"><title>prereq.course_id references course</title></path>
+<path class="fk-link" data-from="prereq" data-to="course" d="M410 484 V452" fill="none" stroke="#0e5a6b" stroke-width="1.8" marker-end="url(#pm3)"><title>prereq.prereq_id references course</title></path>
+<g class="tbl-node" data-table="department" tabindex="0" role="button" aria-label="department: show its rows">
+<rect class="dg-box node-frame" x="10" y="160" width="190" height="111" rx="4"/>
+<rect class="dg-box-a" x="10" y="160" width="190" height="30" rx="4"/>
+<text class="dg-txt-b" x="22" y="181">department</text>
+<text class="dg-txt" x="22" y="214" text-decoration="underline">dept_name</text>
+<text class="dg-txt" x="22" y="237">building</text>
+<text class="dg-txt" x="22" y="260">budget</text>
+</g>
+<g class="tbl-node" data-table="instructor" tabindex="0" role="button" aria-label="instructor: show its rows">
+<rect class="dg-box node-frame" x="270" y="4" width="190" height="134" rx="4"/>
+<rect class="dg-box-a" x="270" y="4" width="190" height="30" rx="4"/>
+<text class="dg-txt-b" x="282" y="25">instructor</text>
+<text class="dg-txt" x="282" y="58" text-decoration="underline">id</text>
+<text class="dg-txt" x="282" y="81">name</text>
+<text class="dg-txt dg-teal" x="282" y="104">dept_name</text>
+<text class="dg-txt" x="282" y="127">salary</text>
+</g>
+<g class="tbl-node" data-table="student" tabindex="0" role="button" aria-label="student: show its rows">
+<rect class="dg-box node-frame" x="270" y="158" width="190" height="134" rx="4"/>
+<rect class="dg-box-a" x="270" y="158" width="190" height="30" rx="4"/>
+<text class="dg-txt-b" x="282" y="179">student</text>
+<text class="dg-txt" x="282" y="212" text-decoration="underline">id</text>
+<text class="dg-txt" x="282" y="235">name</text>
+<text class="dg-txt dg-teal" x="282" y="258">dept_name</text>
+<text class="dg-txt" x="282" y="281">tot_cred</text>
+</g>
+<g class="tbl-node" data-table="course" tabindex="0" role="button" aria-label="course: show its rows">
+<rect class="dg-box node-frame" x="270" y="312" width="190" height="134" rx="4"/>
+<rect class="dg-box-a" x="270" y="312" width="190" height="30" rx="4"/>
+<text class="dg-txt-b" x="282" y="333">course</text>
+<text class="dg-txt" x="282" y="366" text-decoration="underline">course_id</text>
+<text class="dg-txt" x="282" y="389">title</text>
+<text class="dg-txt dg-teal" x="282" y="412">dept_name</text>
+<text class="dg-txt" x="282" y="435">credits</text>
+</g>
+<g class="tbl-node" data-table="advisor" tabindex="0" role="button" aria-label="advisor: show its rows">
+<rect class="dg-box node-frame" x="540" y="4" width="176" height="88" rx="4"/>
+<rect class="dg-box-a" x="540" y="4" width="176" height="30" rx="4"/>
+<text class="dg-txt-b" x="552" y="25">advisor</text>
+<text class="dg-txt dg-teal" x="552" y="58" text-decoration="underline">s_id</text>
+<text class="dg-txt dg-teal" x="552" y="81">i_id</text>
+</g>
+<g class="tbl-node" data-table="takes" tabindex="0" role="button" aria-label="takes: show its rows">
+<rect class="dg-box node-frame" x="540" y="112" width="176" height="157" rx="4"/>
+<rect class="dg-box-a" x="540" y="112" width="176" height="30" rx="4"/>
+<text class="dg-txt-b" x="552" y="133">takes</text>
+<text class="dg-txt dg-teal" x="552" y="166" text-decoration="underline">id</text>
+<text class="dg-txt dg-teal" x="552" y="189" text-decoration="underline">course_id</text>
+<text class="dg-txt" x="552" y="212" text-decoration="underline">semester</text>
+<text class="dg-txt" x="552" y="235" text-decoration="underline">year</text>
+<text class="dg-txt" x="552" y="258">grade</text>
+</g>
+<g class="tbl-node" data-table="teaches" tabindex="0" role="button" aria-label="teaches: show its rows">
+<rect class="dg-box node-frame" x="540" y="298" width="176" height="134" rx="4"/>
+<rect class="dg-box-a" x="540" y="298" width="176" height="30" rx="4"/>
+<text class="dg-txt-b" x="552" y="319">teaches</text>
+<text class="dg-txt dg-teal" x="552" y="352" text-decoration="underline">id</text>
+<text class="dg-txt dg-teal" x="552" y="375" text-decoration="underline">course_id</text>
+<text class="dg-txt" x="552" y="398" text-decoration="underline">semester</text>
+<text class="dg-txt" x="552" y="421" text-decoration="underline">year</text>
+</g>
+<g class="tbl-node" data-table="prereq" tabindex="0" role="button" aria-label="prereq: show its rows">
+<rect class="dg-box node-frame" x="270" y="486" width="190" height="88" rx="4"/>
+<rect class="dg-box-a" x="270" y="486" width="190" height="30" rx="4"/>
+<text class="dg-txt-b" x="282" y="507">prereq</text>
+<text class="dg-txt dg-teal" x="282" y="540" text-decoration="underline">course_id</text>
+<text class="dg-txt dg-teal" x="282" y="563" text-decoration="underline">prereq_id</text>
+</g>
+</svg>
+    <figcaption>Select a table, with a click or with <kbd>Tab</kbd> and <kbd>Enter</kbd>, to see its rows in the box below. Its foreign keys light up while it has focus.</figcaption>
+  </figure>
+  <div class="cell" id="peek" data-cell data-label="Peek">
+    <div class="cell-head"><label for="c00">Peek at a table</label></div>
+    <textarea id="c00">SELECT * FROM prereq;</textarea>
+  </div>
+  <p>The same eight tables, with each attribute's type:</p>
+  <div class="schema">
+    <div class="schema-card"><h3>department</h3><ul>
+      <li><span class="pk">dept_name</span> <span class="ty">varchar(20)</span></li>
+      <li>building <span class="ty">varchar(15)</span></li>
+      <li>budget <span class="ty">numeric(12,2)</span></li></ul></div>
+    <div class="schema-card"><h3>instructor</h3><ul>
+      <li><span class="pk">id</span> <span class="ty">char(5)</span></li>
+      <li>name <span class="ty">varchar(30)</span></li>
+      <li><span class="fk">dept_name → department</span></li>
+      <li>salary <span class="ty">numeric(8,2), may be NULL</span></li></ul></div>
+    <div class="schema-card"><h3>student</h3><ul>
+      <li><span class="pk">id</span> <span class="ty">char(5)</span></li>
+      <li>name <span class="ty">varchar(30)</span></li>
+      <li><span class="fk">dept_name → department</span> <span class="ty">may be NULL</span></li>
+      <li>tot_cred <span class="ty">integer</span></li></ul></div>
+    <div class="schema-card"><h3>course</h3><ul>
+      <li><span class="pk">course_id</span> <span class="ty">varchar(8)</span></li>
+      <li>title <span class="ty">varchar(40)</span></li>
+      <li><span class="fk">dept_name → department</span></li>
+      <li>credits <span class="ty">integer</span></li></ul></div>
+    <div class="schema-card"><h3>takes</h3><ul>
+      <li><span class="pk"><span class="fk">id → student</span></span></li>
+      <li><span class="pk"><span class="fk">course_id → course</span></span></li>
+      <li><span class="pk">semester</span> <span class="ty">varchar(6)</span></li>
+      <li><span class="pk">year</span> <span class="ty">integer</span></li>
+      <li>grade <span class="ty">varchar(2), may be NULL</span></li></ul></div>
+    <div class="schema-card"><h3>teaches</h3><ul>
+      <li><span class="pk"><span class="fk">id → instructor</span></span></li>
+      <li><span class="pk"><span class="fk">course_id → course</span></span></li>
+      <li><span class="pk">semester</span> <span class="ty">varchar(6)</span></li>
+      <li><span class="pk">year</span> <span class="ty">integer</span></li></ul></div>
+    <div class="schema-card"><h3>advisor</h3><ul>
+      <li><span class="pk"><span class="fk">s_id → student</span></span></li>
+      <li><span class="fk">i_id → instructor</span></li></ul></div>
+    <div class="schema-card"><h3>prereq</h3><ul>
+      <li><span class="pk"><span class="fk">course_id → course</span></span></li>
+      <li><span class="pk"><span class="fk">prereq_id → course</span></span> <span class="ty">must be taken first</span></li></ul></div>
+  </div>
+  <p>To load this database in your own PostgreSQL, download <a href="university.sql">university.sql</a> from this week and run <code>psql -d university -f university.sql</code>. It replaces the earlier tables, so run it again whenever you want the starting data back.</p>
+</section>
+
+<section id="injection" aria-labelledby="inj-h">
+  <h2 id="inj-h">1. Parameters, and what happens without them</h2>
+  <p>Slides 9 to 11. A program that pastes a user's text into its SQL lets the user write part of the query. One apostrophe is enough to change what the database runs.</p>
+  <div class="injviz" data-injviz></div>
+  <p>A driver like psycopg sends the SQL and the values separately, and the database fills the values in after it has parsed the query, so a value can never become SQL. PREPARE and EXECUTE do the same by hand: the query is parsed once, with <code>$1</code> as a hole, and each EXECUTE only supplies a value.</p>
+  <div class="cell" data-cell data-label="Example 1.1">
+    <div class="cell-head"><label for="c11">Example 1.1 · a prepared statement, run twice</label></div>
+    <textarea id="c11">DEALLOCATE ALL;
+PREPARE find_students(text) AS
+  SELECT id, name FROM student
+  WHERE name ILIKE $1
+  ORDER BY name;
+
+EXECUTE find_students('%ri%');
+EXECUTE find_students('%'' OR 1=1 --%');</textarea>
+  </div>
+  <p>Parameters hold values only, never table or column names. When a name has to be chosen at run time, quote it as a name: in SQL, <code>format()</code> with <code>%I</code> for a name and <code>%L</code> for a value; in psycopg, the <code>psycopg.sql</code> module (slide 11).</p>
+  <div class="cell" data-cell data-label="Example 1.2">
+    <div class="cell-head"><label for="c12">Example 1.2 · quoting names and values safely</label></div>
+    <textarea id="c12">SELECT format('SELECT * FROM %I WHERE name = %L', 'student', 'O''Brien') AS safe_sql,
+       format('SELECT * FROM %I WHERE name = %L', 'my table', 'x'' OR 1=1 --') AS still_safe;</textarea>
+  </div>
+</section>
+
+<section id="transactions" aria-labelledby="tx-h">
+  <h2 id="tx-h">2. Check, then act, in one transaction</h2>
+  <p>Slides 14 to 17. Lab 6's <code>enroll</code> asks three questions before it inserts. psycopg starts a transaction with the first statement, so all of them see the same database. Here is the same conversation in SQL, for student 54321 and CS-347: one prerequisite is missing, so the program inserts nothing.</p>
+  <div class="cell" data-cell data-label="Example 2.1">
+    <div class="cell-head"><label for="c21">Example 2.1 · what enroll sends</label></div>
+    <textarea id="c21">BEGIN;
+SELECT 1 FROM student WHERE id = '54321';
+SELECT 1 FROM course WHERE course_id = 'CS-347';
+
+SELECT p.prereq_id AS missing
+FROM prereq p
+WHERE p.course_id = 'CS-347'
+  AND NOT EXISTS (
+    SELECT 1 FROM takes t
+    WHERE t.id = '54321' AND t.course_id = p.prereq_id
+      AND t.grade IS NOT NULL AND t.grade <> 'F');
+ROLLBACK;</textarea>
+  </div>
+  <p>A constraint is the last line of defense. Enrolling the same student twice breaks the primary key of <code>takes</code>, and the statement is refused. In a program, that refusal arrives as <code>psycopg.errors.UniqueViolation</code>, and the transaction is then aborted until the program rolls back.</p>
+  <div class="cell" data-cell data-label="Example 2.2">
+    <div class="cell-head"><label for="c22">Example 2.2 · a second enrollment, refused</label></div>
+    <textarea id="c22">INSERT INTO takes VALUES ('00128', 'CS-101', 'Fall', 2025, NULL);</textarea>
+  </div>
+  <p>RETURNING sends back the rows a change touched, so a program needs no second query to learn what happened. Joining the table to itself in an UPDATE lets RETURNING show the value before the change as well as after it.</p>
+  <div class="cell" data-cell data-label="Example 2.3">
+    <div class="cell-head"><label for="c23">Example 2.3 · a raise, read back and undone</label></div>
+    <textarea id="c23">BEGIN;
+UPDATE instructor i
+SET salary = round(o.salary * 1.04, 2)
+FROM instructor o
+WHERE o.id = i.id AND i.dept_name = 'Comp. Sci.'
+RETURNING i.name, o.salary AS old_salary, i.salary AS new_salary;
+ROLLBACK;</textarea>
+  </div>
+  <p><code>ON CONFLICT DO NOTHING</code> turns "insert unless it is already there" into one statement. RETURNING then shows one row when the insert happened and none when it did not.</p>
+  <div class="cell" data-cell data-label="Example 2.4">
+    <div class="cell-head"><label for="c24">Example 2.4 · insert if absent</label></div>
+    <textarea id="c24">BEGIN;
+INSERT INTO takes VALUES ('00128', 'CS-190', 'Fall', 2027, NULL)
+ON CONFLICT DO NOTHING
+RETURNING id, course_id;
+
+INSERT INTO takes VALUES ('00128', 'CS-190', 'Fall', 2027, NULL)
+ON CONFLICT DO NOTHING
+RETURNING id, course_id;
+ROLLBACK;</textarea>
+  </div>
+</section>
+
+<section id="trips" aria-labelledby="trips-h">
+  <h2 id="trips-h">3. Fewer, smaller round trips</h2>
+  <p>Slides 19 to 21. Every statement a program sends waits for the network both ways. A loop that sends one query per department (the "N+1" pattern) pays that wait 1 + N times:</p>
+  <div class="cell" data-cell data-label="Example 3.1">
+    <div class="cell-head"><label for="c31">Example 3.1 · one query, then one per department</label></div>
+    <textarea id="c31">SELECT dept_name FROM department ORDER BY dept_name;
+SELECT count(*) FROM student WHERE dept_name = 'Biology';
+SELECT count(*) FROM student WHERE dept_name = 'Comp. Sci.';
+SELECT count(*) FROM student WHERE dept_name = 'Economics';
+SELECT count(*) FROM student WHERE dept_name = 'History';
+SELECT count(*) FROM student WHERE dept_name = 'Mathematics';
+SELECT count(*) FROM student WHERE dept_name = 'Music';
+SELECT count(*) FROM student WHERE dept_name = 'Physics';</textarea>
+  </div>
+  <p>The same answer in one round trip. The LEFT JOIN keeps Economics, which has no students.</p>
+  <div class="cell" data-cell data-label="Example 3.2">
+    <div class="cell-head"><label for="c32">Example 3.2 · the same counts, one query</label></div>
+    <textarea id="c32">SELECT d.dept_name, count(s.id) AS students
+FROM department d
+LEFT JOIN student s ON s.dept_name = d.dept_name
+GROUP BY d.dept_name
+ORDER BY d.dept_name;</textarea>
+  </div>
+  <p>A screen shows a page at a time. OFFSET is the easy way, but the database still reads every row it skips, and a row inserted meanwhile shifts every later page by one.</p>
+  <div class="cell" data-cell data-label="Example 3.3">
+    <div class="cell-head"><label for="c33">Example 3.3 · page 3, five to a page, with OFFSET</label></div>
+    <textarea id="c33">SELECT id, name FROM student
+ORDER BY id
+LIMIT 5 OFFSET 10;</textarea>
+  </div>
+  <p>Keyset pagination remembers the last key shown and starts after it. With an index on the key, which a primary key has, the database jumps straight there, however deep the page.</p>
+  <div class="cell" data-cell data-label="Example 3.4">
+    <div class="cell-head"><label for="c34">Example 3.4 · the same page, after the last id of page 2</label></div>
+    <textarea id="c34">SELECT id, name FROM student
+WHERE id > '70557'
+ORDER BY id
+LIMIT 5;</textarea>
+  </div>
+</section>
+
+<section id="exercises" aria-labelledby="ex-h">
+  <h2 id="ex-h">Exercises</h2>
+  <p>Write the SQL a program would send, with the values written in. Check each answer; checking never changes the data.</p>
+
+  <div class="cell cell--ex" data-cell data-ex="w9e1" data-ordered="true" data-label="Exercise 1">
+    <div class="cell-head"><label for="e1">Exercise 1</label><span class="solved-badge"></span></div>
+    <div class="cell-prompt"><p>The roster of CS-315 in Spring 2026: each student's <strong>id</strong>, <strong>name</strong> and <strong>grade</strong>, ordered by name.</p></div>
+    <textarea id="e1"></textarea>
+    <script type="text/plain" class="solution">SELECT s.id, s.name, t.grade FROM takes t JOIN student s ON s.id = t.id WHERE t.course_id = 'CS-315' AND t.semester = 'Spring' AND t.year = 2026 ORDER BY s.name;</script>
+    <details><summary>Hint</summary><p>Join <code>takes</code> to <code>student</code> on the id, and put the course, semester and year in the WHERE.</p></details>
+    <details><summary>Show a solution</summary><pre><code>SELECT s.id, s.name, t.grade
+FROM takes t
+JOIN student s ON s.id = t.id
+WHERE t.course_id = 'CS-315'
+  AND t.semester = 'Spring' AND t.year = 2026
+ORDER BY s.name;</code></pre></details>
+  </div>
+
+  <div class="cell cell--ex" data-cell data-ex="w9e2" data-ordered="true" data-label="Exercise 2">
+    <div class="cell-head"><label for="e2">Exercise 2</label><span class="solved-badge"></span></div>
+    <div class="cell-prompt"><p>A search box received <code>AR</code>. Show the <strong>id</strong> and <strong>name</strong> of every student whose name contains it, in any case, ordered by name.</p></div>
+    <textarea id="e2"></textarea>
+    <script type="text/plain" class="solution">SELECT id, name FROM student WHERE name ILIKE '%AR%' ORDER BY name;</script>
+    <details><summary>Hint</summary><p>ILIKE ignores case. The value a program would send as the parameter is <code>'%AR%'</code>.</p></details>
+    <details><summary>Show a solution</summary><pre><code>SELECT id, name
+FROM student
+WHERE name ILIKE '%AR%'
+ORDER BY name;</code></pre></details>
+  </div>
+
+  <div class="cell cell--ex" data-cell data-ex="w9e3" data-label="Exercise 3">
+    <div class="cell-head"><label for="e3">Exercise 3</label><span class="solved-badge"></span></div>
+    <div class="cell-prompt"><p>Student 12345 wants to take CS-319. Show the <strong>prereq_id</strong> of each prerequisite of CS-319 that 12345 has not passed, with a grade that is not NULL and not F.</p></div>
+    <textarea id="e3"></textarea>
+    <script type="text/plain" class="solution">SELECT p.prereq_id FROM prereq p WHERE p.course_id = 'CS-319' AND NOT EXISTS (SELECT 1 FROM takes t WHERE t.id = '12345' AND t.course_id = p.prereq_id AND t.grade IS NOT NULL AND t.grade <> 'F');</script>
+    <details><summary>Hint</summary><p>Example 2.1's last query, with the other student and course.</p></details>
+    <details><summary>Show a solution</summary><pre><code>SELECT p.prereq_id
+FROM prereq p
+WHERE p.course_id = 'CS-319'
+  AND NOT EXISTS (
+    SELECT 1 FROM takes t
+    WHERE t.id = '12345' AND t.course_id = p.prereq_id
+      AND t.grade IS NOT NULL AND t.grade &lt;&gt; 'F');</code></pre></details>
+  </div>
+
+  <div class="cell cell--ex" data-cell data-ex="w9e4" data-label="Exercise 4">
+    <div class="cell-head"><label for="e4">Exercise 4</label><span class="solved-badge"></span></div>
+    <div class="cell-prompt"><p>Enroll student 54321 in CS-315 for Fall 2027, with no grade yet, in one statement that also sends back the new row's <strong>id</strong>, <strong>course_id</strong>, <strong>semester</strong> and <strong>year</strong>.</p></div>
+    <textarea id="e4"></textarea>
+    <script type="text/plain" class="solution">INSERT INTO takes VALUES ('54321', 'CS-315', 'Fall', 2027, NULL) RETURNING id, course_id, semester, year;</script>
+    <details><summary>Hint</summary><p>An INSERT with RETURNING, as in example 2.4. The grade is NULL.</p></details>
+    <details><summary>Show a solution</summary><pre><code>INSERT INTO takes VALUES ('54321', 'CS-315', 'Fall', 2027, NULL)
+RETURNING id, course_id, semester, year;</code></pre></details>
+  </div>
+
+  <div class="cell cell--ex" data-cell data-ex="w9e5" data-ordered="true" data-label="Exercise 5">
+    <div class="cell-head"><label for="e5">Exercise 5</label><span class="solved-badge"></span></div>
+    <div class="cell-prompt"><p>A screen lists students four at a time, by id. Page 1 ended with id <code>23121</code>. Show page 2's <strong>id</strong> and <strong>name</strong> with keyset pagination, not OFFSET.</p></div>
+    <textarea id="e5"></textarea>
+    <script type="text/plain" class="solution">SELECT id, name FROM student WHERE id > '23121' ORDER BY id LIMIT 4;</script>
+    <details><summary>Hint</summary><p>Example 3.4, with the last id of page 1 and a page of four.</p></details>
+    <details><summary>Show a solution</summary><pre><code>SELECT id, name
+FROM student
+WHERE id &gt; '23121'
+ORDER BY id
+LIMIT 4;</code></pre></details>
+  </div>
+
+  <div class="cell cell--ex" data-cell data-ex="w9e6" data-label="Exercise 6">
+    <div class="cell-head"><label for="e6">Exercise 6</label><span class="solved-badge"></span></div>
+    <div class="cell-prompt"><p>Replace this loop with one query. A program reads every course, then for each one sends <code>SELECT count(*) FROM takes WHERE course_id = …</code>. Show each <strong>course_id</strong> with its <strong>number of enrollments</strong>, 0 included.</p></div>
+    <textarea id="e6"></textarea>
+    <script type="text/plain" class="solution">SELECT c.course_id, count(t.id) FROM course c LEFT JOIN takes t ON t.course_id = c.course_id GROUP BY c.course_id;</script>
+    <details><summary>Hint</summary><p>Example 3.2's shape: start from <code>course</code>, LEFT JOIN <code>takes</code>, and count a column of <code>takes</code>.</p></details>
+    <details><summary>Show a solution</summary><pre><code>SELECT c.course_id, count(t.id) AS enrollments
+FROM course c
+LEFT JOIN takes t ON t.course_id = c.course_id
+GROUP BY c.course_id;</code></pre></details>
+  </div>
+
+  <div class="cell cell--ex" data-cell data-ex="w9e7" data-label="Exercise 7">
+    <div class="cell-head"><label for="e7">Exercise 7</label><span class="solved-badge"></span></div>
+    <div class="cell-prompt"><p>Preview a 3% raise for Physics in one UPDATE: send back each instructor's <strong>name</strong>, <strong>salary before</strong> and <strong>salary after</strong>, rounded to cents.</p></div>
+    <textarea id="e7"></textarea>
+    <script type="text/plain" class="solution">UPDATE instructor i SET salary = round(o.salary * 1.03, 2) FROM instructor o WHERE o.id = i.id AND i.dept_name = 'Physics' RETURNING i.name, o.salary, i.salary;</script>
+    <details><summary>Hint</summary><p>Example 2.3, with another department and percentage. The checker rolls back for you.</p></details>
+    <details><summary>Show a solution</summary><pre><code>UPDATE instructor i
+SET salary = round(o.salary * 1.03, 2)
+FROM instructor o
+WHERE o.id = i.id AND i.dept_name = 'Physics'
+RETURNING i.name, o.salary AS old_salary, i.salary AS new_salary;</code></pre></details>
+  </div>
+
+  <div class="cell cell--ex" data-cell data-ex="w9e8" data-label="Exercise 8">
+    <div class="cell-head"><label for="e8">Exercise 8 · stretch</label><span class="solved-badge"></span></div>
+    <div class="cell-prompt"><p>The program's "who could sign up" button for CS-315: show the <strong>id</strong> and <strong>name</strong> of every student who has passed every prerequisite of CS-315 and has never taken CS-315.</p></div>
+    <textarea id="e8"></textarea>
+    <script type="text/plain" class="solution">SELECT s.id, s.name FROM student s WHERE NOT EXISTS (SELECT 1 FROM prereq p WHERE p.course_id = 'CS-315' AND NOT EXISTS (SELECT 1 FROM takes t WHERE t.id = s.id AND t.course_id = p.prereq_id AND t.grade IS NOT NULL AND t.grade <> 'F')) AND NOT EXISTS (SELECT 1 FROM takes t WHERE t.id = s.id AND t.course_id = 'CS-315');</script>
+    <details><summary>Hint</summary><p>"Passed every prerequisite" is "there is no prerequisite they have not passed": a NOT EXISTS around exercise 3's query, with <code>s.id</code> in place of a fixed id. Add a second NOT EXISTS for "never taken".</p></details>
+    <details><summary>Show a solution</summary><pre><code>SELECT s.id, s.name
+FROM student s
+WHERE NOT EXISTS (
+        SELECT 1 FROM prereq p
+        WHERE p.course_id = 'CS-315'
+          AND NOT EXISTS (
+            SELECT 1 FROM takes t
+            WHERE t.id = s.id AND t.course_id = p.prereq_id
+              AND t.grade IS NOT NULL AND t.grade &lt;&gt; 'F'))
+  AND NOT EXISTS (
+        SELECT 1 FROM takes t
+        WHERE t.id = s.id AND t.course_id = 'CS-315');</code></pre></details>
+  </div>
+</section>
+
+<section id="scratch" aria-labelledby="scratch-h">
+  <h2 id="scratch-h">Scratch pad</h2>
+  <p>For Lab 6: try each query here with a value in place of each <code>%s</code> before you put it in <code>lab6.py</code>. Press Reset database to start again.</p>
+  <div class="cell" data-cell data-label="Scratch">
+    <div class="cell-head"><label for="cs1">Scratch pad</label></div>
+    <textarea id="cs1">SELECT * FROM prereq ORDER BY course_id;</textarea>
+  </div>
+</section>
+
+<section id="next" aria-labelledby="next-h">
+  <h2 id="next-h">Next</h2>
+  <p><a href="lab6.html">Lab 6</a> puts these queries in a Python program. Next week looks under the tables: how PostgreSQL stores rows on disk, and how an index finds one without reading them all. <a href="../../project/index.html">Project milestone 3</a>, due April 4, builds your project's own program the same way.</p>
+</section>
+</main>
+
+<footer>
+  <p>CS 4600/5200 · Database Theory and Applications · University of Central Missouri · Dr. Gorkem Kar. The database runs on <a href="https://pglite.dev/">PGlite</a>, PostgreSQL compiled to run in a web browser.</p>
+</footer>
+</div>
+
+<script type="text/plain" id="seed-sql">
+-- CS 4600/5200 Database Theory and Applications, Spring 2027
+-- Sample database from week 5 on: the week 3 university (seven tables), plus
+-- prereq, which says which course must come before which. Week 3's gaps are
+-- still here: a department with no people, a course nobody teaches, an
+-- instructor with no salary yet, and a student with no department.
+-- Runs on PostgreSQL 14 or newer, and in the browser playground.
+-- Load it with:  psql -d university -f university.sql
+-- It drops the old tables first (and any views built on them), so it is
+-- safe to run again whenever you want the starting data back.
+
+DROP TABLE IF EXISTS prereq, advisor, teaches, takes, course, student, instructor, department CASCADE;
+
+CREATE TABLE department (
+  dept_name  varchar(20) PRIMARY KEY,
+  building   varchar(15) NOT NULL,
+  budget     numeric(12,2) CHECK (budget > 0)
+);
+
+CREATE TABLE instructor (
+  id         char(5) PRIMARY KEY,
+  name       varchar(30) NOT NULL,
+  dept_name  varchar(20) REFERENCES department,
+  salary     numeric(8,2) CHECK (salary > 29000)
+);
+
+CREATE TABLE student (
+  id         char(5) PRIMARY KEY,
+  name       varchar(30) NOT NULL,
+  dept_name  varchar(20) REFERENCES department,
+  tot_cred   integer DEFAULT 0 CHECK (tot_cred >= 0)
+);
+
+CREATE TABLE course (
+  course_id  varchar(8) PRIMARY KEY,
+  title      varchar(40) NOT NULL,
+  dept_name  varchar(20) REFERENCES department,
+  credits    integer CHECK (credits > 0)
+);
+
+CREATE TABLE takes (
+  id         char(5) REFERENCES student,
+  course_id  varchar(8) REFERENCES course,
+  semester   varchar(6) CHECK (semester IN ('Fall', 'Spring', 'Summer')),
+  year       integer CHECK (year BETWEEN 2000 AND 2100),
+  grade      varchar(2),
+  PRIMARY KEY (id, course_id, semester, year)
+);
+
+INSERT INTO department VALUES
+  ('Comp. Sci.',  'Hale',   120000),
+  ('Mathematics', 'Hale',    90000),
+  ('Physics',     'Kirk',    85000),
+  ('Biology',     'Morrow',  95000),
+  ('History',     'Linden',  50000),
+  ('Music',       'Linden',  60000);
+
+INSERT INTO instructor VALUES
+  ('10101', 'Avery Chen',   'Comp. Sci.',  98000),
+  ('12121', 'Jordan Patel', 'Comp. Sci.',  92000),
+  ('15151', 'Maria Lopez',  'Mathematics', 87000),
+  ('22222', 'Sam Okafor',   'Physics',     95000),
+  ('32343', 'Lena Fischer', 'History',     61000),
+  ('33456', 'Kofi Mensah',  'Physics',     87000),
+  ('45565', 'Priya Raman',  'Comp. Sci.',  75000),
+  ('58583', 'Tomas Novak',  'History',     62000),
+  ('76543', 'Hana Sato',    'Biology',     80000),
+  ('83821', 'Diego Torres', 'Music',       72000);
+
+INSERT INTO student VALUES
+  ('00128', 'Riley Adams',   'Comp. Sci.',  102),
+  ('12345', 'Morgan Lee',    'Comp. Sci.',   32),
+  ('19991', 'Casey Brooks',  'History',      80),
+  ('23121', 'Jamie Rivera',  'Physics',     110),
+  ('44553', 'Taylor Nguyen', 'Physics',      56),
+  ('45678', 'Drew Kim',      'Physics',      46),
+  ('54321', 'Alex Johnson',  'Comp. Sci.',   54),
+  ('55739', 'Sky Martinez',  'Music',        38),
+  ('70557', 'Quinn Davis',   'Physics',       0),
+  ('76653', 'Robin Ali',     'Mathematics',  58),
+  ('98765', 'Jesse Park',    'Mathematics',  98),
+  ('98988', 'Avery Clark',   'Biology',     120);
+
+INSERT INTO course VALUES
+  ('CS-101',  'Intro to Computer Science', 'Comp. Sci.',  4),
+  ('CS-190',  'Game Design',               'Comp. Sci.',  4),
+  ('CS-315',  'Robotics',                  'Comp. Sci.',  3),
+  ('CS-347',  'Database System Concepts',  'Comp. Sci.',  3),
+  ('MA-201',  'Linear Algebra',            'Mathematics', 3),
+  ('PHY-101', 'Physical Principles',       'Physics',     4),
+  ('HIS-351', 'World History',             'History',     3),
+  ('MU-199',  'Music Video Production',    'Music',       3),
+  ('BIO-101', 'Intro to Biology',          'Biology',     4);
+
+INSERT INTO takes VALUES
+  ('00128', 'CS-101',  'Fall',   2025, 'A'),
+  ('00128', 'CS-347',  'Fall',   2025, 'A-'),
+  ('12345', 'CS-101',  'Fall',   2025, 'C'),
+  ('12345', 'CS-190',  'Spring', 2026, 'A'),
+  ('12345', 'CS-315',  'Spring', 2026, 'A'),
+  ('12345', 'CS-347',  'Fall',   2025, 'A'),
+  ('19991', 'HIS-351', 'Spring', 2026, 'B'),
+  ('23121', 'PHY-101', 'Fall',   2025, 'C+'),
+  ('44553', 'PHY-101', 'Fall',   2025, 'B-'),
+  ('45678', 'CS-101',  'Fall',   2025, 'F'),
+  ('45678', 'CS-101',  'Spring', 2026, 'B+'),
+  ('45678', 'CS-315',  'Spring', 2026, 'B'),
+  ('54321', 'CS-101',  'Fall',   2025, 'A-'),
+  ('54321', 'CS-190',  'Spring', 2026, 'B+'),
+  ('55739', 'MU-199',  'Spring', 2026, 'A-'),
+  ('76653', 'MA-201',  'Fall',   2025, 'C'),
+  ('98765', 'CS-101',  'Fall',   2025, 'C-'),
+  ('98765', 'CS-315',  'Spring', 2026, 'B'),
+  ('98988', 'BIO-101', 'Spring', 2026, 'A'),
+  ('98988', 'CS-347',  'Spring', 2027, NULL),
+  ('70557', 'CS-347',  'Spring', 2027, NULL),
+  ('54321', 'MA-201',  'Spring', 2027, NULL);
+
+-- New in week 3 ------------------------------------------------------------
+
+CREATE TABLE teaches (
+  id         char(5) REFERENCES instructor,
+  course_id  varchar(8) REFERENCES course,
+  semester   varchar(6) CHECK (semester IN ('Fall', 'Spring', 'Summer')),
+  year       integer CHECK (year BETWEEN 2000 AND 2100),
+  PRIMARY KEY (id, course_id, semester, year)
+);
+
+CREATE TABLE advisor (
+  s_id       char(5) PRIMARY KEY REFERENCES student,
+  i_id       char(5) NOT NULL REFERENCES instructor
+);
+
+-- A department with no instructors, students or courses yet.
+INSERT INTO department VALUES ('Economics', 'Watson', 70000);
+
+-- A new hire whose salary is not set yet.
+INSERT INTO instructor VALUES ('98345', 'Noor Haddad', 'Mathematics', NULL);
+
+-- A student who has not declared a department.
+INSERT INTO student VALUES ('61234', 'Emery Walsh', NULL, 12);
+
+-- A course in the catalog that nobody teaches or takes yet.
+INSERT INTO course VALUES ('CS-319', 'Image Processing', 'Comp. Sci.', 3);
+
+INSERT INTO teaches VALUES
+  ('10101', 'CS-101',  'Fall',   2025),
+  ('10101', 'CS-347',  'Fall',   2025),
+  ('10101', 'CS-315',  'Spring', 2026),
+  ('12121', 'CS-190',  'Spring', 2026),
+  ('45565', 'CS-101',  'Spring', 2026),
+  ('45565', 'CS-347',  'Spring', 2027),
+  ('15151', 'MA-201',  'Fall',   2025),
+  ('15151', 'MA-201',  'Spring', 2027),
+  ('22222', 'PHY-101', 'Fall',   2025),
+  ('32343', 'HIS-351', 'Spring', 2026),
+  ('83821', 'MU-199',  'Spring', 2026),
+  ('76543', 'BIO-101', 'Spring', 2026);
+
+INSERT INTO advisor VALUES
+  ('00128', '45565'),
+  ('12345', '10101'),
+  ('19991', '32343'),
+  ('23121', '22222'),
+  ('44553', '22222'),
+  ('45678', '33456'),
+  ('54321', '10101'),
+  ('76653', '15151'),
+  ('98765', '15151'),
+  ('98988', '76543');
+
+-- New in week 5 ------------------------------------------------------------
+
+-- prereq: course_id requires prereq_id first. Both are courses, so both are
+-- foreign keys to course; a course cannot require itself.
+CREATE TABLE prereq (
+  course_id  varchar(8) REFERENCES course,
+  prereq_id  varchar(8) REFERENCES course,
+  PRIMARY KEY (course_id, prereq_id),
+  CHECK (course_id <> prereq_id)
+);
+
+INSERT INTO prereq VALUES
+  ('CS-190', 'CS-101'),
+  ('CS-315', 'CS-190'),
+  ('CS-319', 'CS-315'),
+  ('CS-319', 'MA-201'),
+  ('CS-347', 'CS-101'),
+  ('CS-347', 'MA-201');
+
+-- table_info(name): one row per column of a table, with its type, whether it
+-- may be NULL, and the keys it takes part in (with ON DELETE, when it is not the
+-- default). Like psql's \d, for the playground.
+--   SELECT * FROM table_info('advisor');
+CREATE OR REPLACE FUNCTION table_info(t text)
+RETURNS TABLE (column_name text, data_type text, nulls text, keys text)
+LANGUAGE sql STABLE AS $$
+  SELECT a.attname::text,
+         format_type(a.atttypid, a.atttypmod),
+         CASE WHEN a.attnotnull THEN 'not null' ELSE 'null allowed' END,
+         coalesce((
+           SELECT string_agg(
+                    CASE con.contype WHEN 'p' THEN 'primary key' WHEN 'u' THEN 'unique'
+                                     ELSE 'references ' || con.confrelid::regclass::text END
+                    || CASE WHEN cardinality(con.conkey) > 1 THEN ' (' || (
+                         SELECT string_agg(x.attname, ', ' ORDER BY k.ord)
+                         FROM unnest(con.conkey) WITH ORDINALITY AS k(n, ord)
+                         JOIN pg_attribute x ON x.attrelid = con.conrelid AND x.attnum = k.n) || ')'
+                       ELSE '' END
+                    || CASE WHEN con.contype = 'f' THEN CASE con.confdeltype
+                         WHEN 'c' THEN ' on delete cascade' WHEN 'n' THEN ' on delete set null'
+                         WHEN 'd' THEN ' on delete set default' WHEN 'r' THEN ' on delete restrict'
+                         ELSE '' END ELSE '' END,
+                    '; ' ORDER BY CASE con.contype WHEN 'p' THEN 1 WHEN 'u' THEN 2 ELSE 3 END,
+                                  con.confrelid::regclass::text)
+           FROM pg_constraint con
+           WHERE con.conrelid = a.attrelid AND a.attnum = ANY (con.conkey)
+             AND con.contype IN ('p', 'u', 'f')), '')
+  FROM pg_attribute a
+  WHERE a.attrelid = to_regclass(t) AND a.attnum > 0 AND NOT a.attisdropped
+  ORDER BY a.attnum
+$$;
+
+</script>
+<script type="module" src="../../assets/playground.js"></script>
+</body>
+</html>
