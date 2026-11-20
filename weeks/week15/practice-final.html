@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sample Final Exam · CS 4600/5200</title>
+<meta name="description" content="CS 4600/5200 sample final exam: the same eight parts, format and length as the real final, with different questions and answers to check yourself.">
+<link rel="stylesheet" href="../../assets/course.css">
+<link rel="stylesheet" href="../../assets/db.css">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to the questions</a>
+
+<div class="doc">
+<header class="doc-masthead">
+  <p class="inst"><span>CS 4600/5200 · Database Theory and Applications</span><span>Week 15</span><span><a href="../../index.html">Course home</a></span></p>
+  <h1>Sample final exam</h1>
+  <p class="tagline">The same eight parts, the same kinds of question and about the same length as the real final, but none of its questions. Do it on paper, in 2 hours, with only the <a href="formula-sheet.html">formula sheet</a>, before you open any answer. Then mark it yourself.</p>
+</header>
+
+<dl class="facts">
+  <div><dt>Final</dt><dd>Finals week, May 3 to 7, at the time in the university's final exam schedule</dd></div>
+  <div><dt>Length</dt><dd>2 hours, 100 points (CS 5200: 110, scaled to 100)</dd></div>
+  <div><dt>Allowed</dt><dd>A pen. No notes and no calculator; the <a href="formula-sheet.html">formula sheet</a> is the exam's last page</dd></div>
+  <div><dt>Online section</dt><dd>In Brightspace with Honorlock (camera on, screen recorded), once, any time from Monday, May 3, to Sunday, May 9, 11:59 p.m. CT, with the same 2-hour limit</dd></div>
+  <div><dt>Covers</dt><dd>The whole course, weighted toward weeks 9 to 15</dd></div>
+</dl>
+
+<nav class="toc" aria-labelledby="toc-h">
+  <h2 id="toc-h">On this page</h2>
+  <ol>
+    <li><a href="#about">About the final</a></li>
+    <li><a href="#pa">Part A: the relational model, SQL and design (25 points)</a></li>
+    <li><a href="#pb">Part B: programs and databases (8 points)</a></li>
+    <li><a href="#pc">Part C: storage and indexes (12 points)</a></li>
+    <li><a href="#pd">Part D: query processing (12 points)</a></li>
+    <li><a href="#pe">Part E: query optimization (10 points)</a></li>
+    <li><a href="#pf">Part F: transactions and concurrency (15 points)</a></li>
+    <li><a href="#pg">Part G: recovery (10 points)</a></li>
+    <li><a href="#ph">Part H: NoSQL and distributed data (8 points)</a></li>
+    <li><a href="#grad">CS 5200: the extra question</a></li>
+  </ol>
+</nav>
+
+<main id="main">
+
+<section id="about" aria-labelledby="about-h">
+  <h2 id="about-h">About the final</h2>
+  <ul>
+    <li>The university database, the two big tables from week 10 and the shape of a Lab 9 event document are printed after the questions. The last page is the <a href="formula-sheet.html">formula sheet</a>.</li>
+    <li>Write SQL and Python the way you would type them. Small slips cost nothing; a wrong join or a wrong idea does.</li>
+    <li>Show your arithmetic for costs and estimates: most of the points are for the method. There is no calculator, and every number works out by hand.</li>
+    <li>CS 4600 students stop after Part H. CS 5200 students also answer G1.</li>
+  </ul>
+  <p>The answers below are one correct way. For SQL, any query that returns the same rows on every possible database, not just this one, earns full credit. Every SQL answer and plan here was run on the course database.</p>
+</section>
+
+<section id="pa" aria-labelledby="pa-h">
+  <h2 id="pa-h">Part A: the relational model, SQL and design (25 points)</h2>
+  <ol class="qs">
+    <li><p><strong>A1 (6 points).</strong> For every department, show its name, the number of courses it offers and the total credits of those courses. Include departments that offer no course, with 0 for both.</p>
+      <details><summary>Answer</summary><pre><code>SELECT d.dept_name, count(c.course_id) AS courses,
+       coalesce(sum(c.credits), 0) AS credits
+FROM department d
+LEFT JOIN course c ON c.dept_name = d.dept_name
+GROUP BY d.dept_name;</code></pre><p>Seven rows; Comp. Sci. has 5 courses and 17 credits, Economics 0 and 0. Counting <code>c.course_id</code> rather than <code>*</code> gives Economics 0, and coalesce turns its NULL sum into 0. Marking: 2 for the LEFT JOIN, 2 for the two aggregates, 2 for the zeros.</p></details></li>
+    <li><p><strong>A2 (5 points).</strong> In relational algebra: the names of the instructors who have never taught a course.</p>
+      <details><summary>Answer</summary><p>π<sub>name</sub>(instructor ⋈ (π<sub>id</sub>(instructor) − π<sub>id</sub>(teaches))). The difference finds the ids; the join brings back the names. Three instructors: Kofi Mensah, Noor Haddad and Tomas Novak. Subtracting names instead of ids is wrong: two instructors could share a name.</p></details></li>
+    <li><p><strong>A3 (8 points).</strong> Booking(guest_id, guest_name, check_in, room_no, room_type, rate) has the dependencies { guest_id → guest_name,  guest_id check_in → room_no,  room_no → room_type,  room_type → rate }.<br>(a, 2 points) Give the candidate key. (b, 2 points) Is Booking in 3NF? Name a dependency that decides it. (c, 4 points) Decompose it into 3NF.</p>
+      <details><summary>Answer</summary><p>(a) {guest_id, check_in}: its closure adds guest_name, room_no, room_type and rate, and neither attribute alone reaches the other.</p><p>(b) No. room_type → rate has a left side that is not a superkey and a right side that is not prime; guest_id → guest_name and room_no → room_type break it too.</p><p>(c) (<u>guest_id</u>, guest_name), (<u>guest_id, check_in</u>, room_no), (<u>room_no</u>, room_type), (<u>room_type</u>, rate). Lossless, every dependency kept, each table in BCNF.</p></details></li>
+    <li><p><strong>A4 (6 points).</strong> An E-R diagram has entity sets team (<u>team_id</u>, name), coach (<u>coach_id</u>, name) and player (<u>player_id</u>, name). head_coach is one-to-one between team and coach, total on team. plays_for is many-to-many between player and team, with an attribute season. A player may play for the same team in several seasons. Map the diagram to tables, with primary and foreign keys.</p>
+      <details><summary>Answer</summary><ul>
+        <li>team(<u>team_id</u>, name, coach_id NOT NULL UNIQUE), coach_id references coach</li>
+        <li>coach(<u>coach_id</u>, name)</li>
+        <li>player(<u>player_id</u>, name)</li>
+        <li>plays_for(<u>player_id, team_id, season</u>), each id a foreign key to its table</li>
+      </ul><p>NOT NULL makes head_coach total on team; UNIQUE makes it one-to-one. season is in the key because the same player and team can appear in several seasons. Marking: 2 for the coach column with both constraints, 3 for plays_for and its key, 1 for the rest.</p></details></li>
+  </ol>
+</section>
+
+<section id="pb" aria-labelledby="pb-h">
+  <h2 id="pb-h">Part B: programs and databases (8 points)</h2>
+  <ol class="qs">
+    <li><p><strong>B1 (5 points).</strong> A Python program moves 5,000 of an instructor's salary into their department's budget:</p>
+<pre>cur.execute("UPDATE instructor SET salary = salary - 5000 WHERE id = %s", (iid,))
+cur.execute("UPDATE department SET budget = budget + 5000 WHERE dept_name = %s", (dept,))
+conn.commit()</pre>
+      <p>(a, 2 points) The second statement fails. With psycopg's default settings, is the first change saved? (b, 2 points) Rewrite the code so that both changes are saved or neither is, and the program says which. (c, 1 point) Why can the first statement fail on this database even with a valid id?</p>
+      <details><summary>Answer</summary><p>(a) No. psycopg starts a transaction at the first statement and nothing is saved until commit; the error aborts the transaction, and the program never reaches commit. But the connection is now in a failed transaction, so every later statement fails until the program rolls back.</p><pre><code>try:
+    with conn.transaction():
+        cur.execute("UPDATE instructor SET salary = salary - 5000 WHERE id = %s", (iid,))
+        cur.execute("UPDATE department SET budget = budget + 5000 WHERE dept_name = %s", (dept,))
+    print("moved")
+except psycopg.Error as e:
+    print("not moved:", e.sqlstate)</code></pre><p>(c) The CHECK constraint: salary must stay above 29,000. An explicit commit after both statements and rollback in the except clause also earns full credit.</p></details></li>
+    <li><p><strong>B2 (3 points).</strong> A page of a web application lists big_takes 50 rows at a time with <code>ORDER BY reg_id LIMIT 50 OFFSET 40000</code>. Why does it get slower the further the user pages, and what query keeps every page fast?</p>
+      <details><summary>Answer</summary><p>OFFSET still produces and throws away the 40,000 rows before the page. Remember the last reg_id shown and ask for the next ones instead: <code>WHERE reg_id &gt; 40000 ORDER BY reg_id LIMIT 50</code>, which starts in the primary key's index exactly where the last page ended.</p></details></li>
+  </ol>
+</section>
+
+<section id="pc" aria-labelledby="pc-h">
+  <h2 id="pc-h">Part C: storage and indexes (12 points)</h2>
+  <ol class="qs">
+    <li><p><strong>C1 (4 points).</strong> A table has 2 million rows and a B<sup>+</sup>-tree index on its key with about 100 entries per page. (a, 2 points) How many levels does the tree have? (b, 1 point) How many pages does finding one row by key read? (c, 1 point) How many levels would it need with 400 entries per page?</p>
+      <details><summary>Answer</summary><p>(a) Four: 100<sup>3</sup> = 1 million is too few, 100<sup>4</sup> = 100 million is enough. (b) Five: one per level plus the row's page. (c) Three: 400<sup>2</sup> = 160,000 is too few, 400<sup>3</sup> = 64 million is enough.</p></details></li>
+    <li><p><strong>C2 (4 points).</strong> instructor has a B-tree index on (dept_name, salary). For each WHERE clause, can the index find the rows? Say why.<br>(i) <code>WHERE dept_name = 'Physics'</code><br>(ii) <code>WHERE salary &gt; 90000</code><br>(iii) <code>WHERE dept_name = 'Physics' AND salary &gt; 90000</code><br>(iv) <code>WHERE lower(dept_name) = 'physics'</code></p>
+      <details><summary>Answer</summary><p>(i) Yes: the leading column. (ii) No: salary is sorted only within each department, so high salaries are spread through the index. (iii) Yes, best of all: equality on the first column, then a range in the second, one contiguous stretch. (iv) No: the index holds dept_name, not lower(dept_name); an index on the expression would.</p></details></li>
+    <li><p><strong>C3 (4 points).</strong> (a, 2 points) A query keeps 40% of a table's rows, and there is an index on the condition's column. Why may a sequential scan still be faster? (b, 2 points) What does the buffer pool do, and why does it make the second run of a query faster?</p>
+      <details><summary>Answer</summary><p>(a) Rows that match are on almost every page, so the index would visit nearly every page anyway, in random order and with the index's own pages on top; a sequential scan reads each page once, in order. (b) It keeps recently used pages in memory; the second run finds them there and reads few or none from disk.</p></details></li>
+  </ol>
+</section>
+
+<section id="pd" aria-labelledby="pd-h">
+  <h2 id="pd-h">Part D: query processing (12 points)</h2>
+  <ol class="qs">
+    <li><p><strong>D1 (6 points).</strong> r has 5,000 rows on 100 pages; s has 50,000 rows on 1,000 pages. They are joined on an equality condition. Give the cost in pages of: (a, 2 points) block nested loop, r outer; (b, 2 points) indexed nested loop, r outer, with c = 3; (c, 1 point) hash join, the hash table on r fitting in memory. (d, 1 point) Both inputs arrive already sorted on the join column. What is the cost of a merge join?</p>
+      <details><summary>Answer</summary><p>(a) 100 × 1,000 + 100 = 100,100. (b) 100 + 5,000 × 3 = 15,100. (c) 100 + 1,000 = 1,100. (d) 100 + 1,000 = 1,100, and its output is sorted too.</p></details></li>
+    <li><p><strong>D2 (6 points).</strong> With an index on big_takes (student_no), PostgreSQL printed this plan:</p>
+<pre>SELECT t.course_id, t.grade
+FROM big_student s JOIN big_takes t ON t.student_no = s.student_no
+WHERE s.student_no = 77;
+
+Nested Loop
+  -&gt;  Index Only Scan using big_student_pkey on big_student s
+        Index Cond: (student_no = 77)
+  -&gt;  Bitmap Heap Scan on big_takes t
+        Recheck Cond: (student_no = 77)
+        -&gt;  Bitmap Index Scan on big_takes_student_no_idx
+              Index Cond: (student_no = 77)</pre>
+      <p>(a, 2 points) Why a nested loop and not a hash join? (b, 2 points) What does the bitmap scan do differently from a plain index scan, and why does it help here? (c, 2 points) Why can big_student be read with an index-only scan?</p>
+      <details><summary>Answer</summary><p>(a) One outer row: the inner side runs once, through the index, and touches a dozen pages. A hash join would read all of big_takes to build or probe its table. (b) It first collects the addresses of all matching rows from the index, then reads each table page once, in page order, instead of jumping back and forth row by row. Student 77's 10 enrollments are on 10 different pages. (c) The query needs only student_no from big_student, and that column is in the primary key's index.</p></details></li>
+  </ol>
+</section>
+
+<section id="pe" aria-labelledby="pe-h">
+  <h2 id="pe-h">Part E: query optimization (10 points)</h2>
+  <p>big_takes has 100,000 rows; year runs from 2001 to 2027; the common-values list gives CS-101 a frequency of 0.21428 and a NULL grade a frequency of 0.03704.</p>
+  <ol class="qs">
+    <li><p><strong>E1 (5 points).</strong> Estimate the rows each condition keeps, showing the selectivity: (a, 1 point) <code>grade IS NULL</code>; (b, 2 points) <code>year &gt;= 2020</code>, assuming the years are spread evenly; (c, 2 points) <code>course_id = 'CS-101' AND year &gt;= 2020</code>, and the assumption you used.</p>
+      <details><summary>Answer</summary><p>(a) 0.03704 × 100,000 = 3,704. (b) The rows not below 2020: 1 − (2020 − 2001) / (2027 − 2001) = 7/26 ≈ 0.27, so about 27,000. (c) 0.21428 × 7/26 × 100,000 ≈ 5,800, assuming the course and the year are independent. The real counts are 29,630 and 6,351: recent years are a little busier than the even spread assumes.</p></details></li>
+    <li><p><strong>E2 (5 points).</strong> (a, 2 points) Estimate the rows of big_student ⋈ department on dept_name, and say why. (b, 3 points) A query joins big_takes, big_student and department and keeps only departments in one building. Which join would you do first, and why?</p>
+      <details><summary>Answer</summary><p>(a) 10,000: dept_name is the key of department and a foreign key in big_student, so each student matches exactly one department. (b) Select the building's departments first, then join them with big_student, then with big_takes: each step keeps the intermediate result as small as possible. Joining big_takes and big_student first builds 100,000 rows only to throw most of them away.</p></details></li>
+  </ol>
+</section>
+
+<section id="pf" aria-labelledby="pf-h">
+  <h2 id="pf-h">Part F: transactions and concurrency (15 points)</h2>
+  <ol class="qs">
+    <li><p><strong>F1 (6 points).</strong> Schedule S: r<sub>1</sub>(X), r<sub>2</sub>(Y), w<sub>1</sub>(X), r<sub>2</sub>(X), w<sub>2</sub>(Y), r<sub>1</sub>(Z), w<sub>1</sub>(Z), c<sub>1</sub>, c<sub>2</sub>.<br>(a, 3 points) List the conflicting pairs and draw the precedence graph. (b, 2 points) Is S conflict serializable? If so, give the equivalent serial order. (c, 1 point) Is S recoverable?</p>
+      <details><summary>Answer</summary><p>(a) Only X is used by both: w<sub>1</sub>(X) before r<sub>2</sub>(X) gives T1 → T2. (r<sub>1</sub>(X) before r<sub>2</sub>(X) is two reads, no conflict.) The graph is the one edge T1 → T2. (b) Yes, no cycle: T1 then T2. (c) Yes: T2 reads X from T1, and T1 commits first.</p></details></li>
+    <li><p><strong>F2 (5 points).</strong> At READ COMMITTED, session A runs <code>SELECT count(*) FROM takes WHERE course_id = 'CS-101';</code> twice in one transaction. Between the two, session B inserts a CS-101 enrollment and commits. (a, 2 points) What does A see, and what is the anomaly called? (b, 3 points) What changes if A runs at REPEATABLE READ in PostgreSQL, and why?</p>
+      <details><summary>Answer</summary><p>(a) The second count is one higher: a phantom, a row that appears between two reads with the same condition. (b) Both counts are the same. At REPEATABLE READ, PostgreSQL takes one snapshot at the transaction's first statement and every statement reads from it, so B's later commit is invisible to A.</p></details></li>
+    <li><p><strong>F3 (4 points).</strong> T1 locks A, T2 locks B, then T1 asks for B and T2 asks for A, all exclusive. (a, 2 points) Draw the wait-for graph and say what has happened. (b, 2 points) What does PostgreSQL do about it, and what should the program do?</p>
+      <details><summary>Answer</summary><p>(a) T1 → T2 (T1 waits for T2's lock on B) and T2 → T1: a cycle, a deadlock. (b) After a short wait it checks for a cycle and aborts one of the two with a deadlock error; the other goes on. The program rolls back and retries the aborted transaction. Taking locks in the same order everywhere prevents it.</p></details></li>
+  </ol>
+</section>
+
+<section id="pg" aria-labelledby="pg-h">
+  <h2 id="pg-h">Part G: recovery (10 points)</h2>
+  <p>The system crashes right after record 10. Before the crash, every change before the checkpoint had reached disk.</p>
+<pre> 1  &lt;T1 start&gt;
+ 2  &lt;T1, X, 10, 20&gt;
+ 3  &lt;T2 start&gt;
+ 4  &lt;T2, Y, 5, 15&gt;
+ 5  &lt;T1 commit&gt;
+ 6  &lt;checkpoint {T2}&gt;
+ 7  &lt;T3 start&gt;
+ 8  &lt;T3, Z, 7, 9&gt;
+ 9  &lt;T2, X, 20, 25&gt;
+10  &lt;T3 commit&gt;</pre>
+  <ol class="qs">
+    <li><p><strong>Ga (4 points).</strong> Run the redo pass. What are X, Y and Z at its end, and what is the undo list?</p>
+      <details><summary>Answer</summary><p>Redo starts at the checkpoint with the undo list {T2}. Record 7 adds T3; record 8 sets Z = 9; record 9 sets X = 25; record 10 removes T3. Y = 15 was already on disk. End: X = 25, Y = 15, Z = 9, undo list {T2}.</p></details></li>
+    <li><p><strong>Gb (6 points).</strong> Run the undo pass. List the log records it writes, in order, and give the final values.</p>
+      <details><summary>Answer</summary><p>&lt;T2, X, 20&gt; (X = 20), then &lt;T2, Y, 5&gt; (Y = 5), then &lt;T2 abort&gt; at record 3. Final: X = 20, Y = 5, Z = 9. X goes back to T1's committed 20, not to 10; T3 committed, so Z stays 9.</p></details></li>
+  </ol>
+</section>
+
+<section id="ph" aria-labelledby="ph-h">
+  <h2 id="ph-h">Part H: NoSQL and distributed data (8 points)</h2>
+  <ol class="qs">
+    <li><p><strong>H1 (4 points).</strong> An item has N = 3 replicas. (a, 2 points) Does R = 1, W = 3 guarantee that every read sees the latest write? What does it cost? (b, 2 points) With R = 2 and W = 2, how many replicas can be down while reads and writes both still succeed?</p>
+      <details><summary>Answer</summary><p>(a) Yes, 1 + 3 &gt; 3; reads are fast, but a write fails if any one replica is down. (b) One.</p></details></li>
+    <li><p><strong>H2 (4 points).</strong> As in Lab 9, event(id, doc) stores events as jsonb with a numeric capacity. (a, 2 points) Write a query for the titles of the events with capacity over 100. (b, 2 points) Would a GIN index on doc make it fast? If not, what index would?</p>
+      <details><summary>Answer</summary><pre><code>SELECT doc-&gt;&gt;'title'
+FROM event
+WHERE (doc-&gt;&gt;'capacity')::int &gt; 100;
+
+CREATE INDEX ON event (((doc-&gt;&gt;'capacity')::int));</code></pre><p>(b) No: a GIN index on doc answers containment (@&gt;) and key questions, not ranges. A B-tree on the expression does, if the query uses the same expression.</p></details></li>
+  </ol>
+</section>
+
+<section id="grad" aria-labelledby="grad-h">
+  <h2 id="grad-h">CS 5200: the extra question</h2>
+  <p>On the final, CS 5200 students answer one more question, worth 10 points. Their score is out of 110 and scaled to 100.</p>
+  <ol class="qs">
+    <li><p><strong>G1 (10 points).</strong> (a, 6 points) PostgreSQL's REPEATABLE READ is snapshot isolation. Explain why readers never wait for writers under it, and describe write skew, with an example in which two transactions each keep a rule and together break it. (b, 4 points) During a network partition, what must a replicated store choose between, and what does each choice look like to a user?</p>
+      <details><summary>Answer</summary><p>(a) Each transaction reads from a snapshot of committed versions taken when it starts, and a write creates a new version instead of overwriting, so a reader just reads the older version. Write skew: the rule is that at least one doctor is on call. Alice and Bob are both on call; each transaction checks that the other is on call and takes itself off. Neither writes what the other read, so snapshot isolation lets both commit, and no one is on call. SERIALIZABLE detects this and aborts one.</p><p>(b) Consistency or availability. Choosing consistency, the side that cannot reach a quorum refuses requests (an error or a wait). Choosing availability, both sides answer, so a user may read stale data and conflicting writes must be merged later.</p></details></li>
+  </ol>
+</section>
+</main>
+
+<footer>
+  <p>CS 4600/5200 · Database Theory and Applications · University of Central Missouri · Dr. Gorkem Kar · Spring 2027</p>
+</footer>
+</div>
+</body>
+</html>

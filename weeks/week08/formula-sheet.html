@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Midterm Exam formula sheet · CS 4600/5200</title>
+<meta name="description" content="The formula sheet printed as the last page of the CS 4600/5200 midterm, posted so you know before the exam what you will be given.">
+<link rel="stylesheet" href="../../assets/course.css">
+<link rel="stylesheet" href="../../assets/db.css">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to the formulas</a>
+<div class="doc">
+<header class="doc-masthead">
+  <p class="inst"><span>CS 4600/5200 · Database Theory and Applications</span><span>Spring 2027</span><span><a href="../../index.html">Course home</a></span></p>
+  <h1>Midterm Exam: the formula sheet</h1>
+  <p class="tagline">This exact page is the last page of the midterm, and it is inside the online quiz. You bring nothing else: no notes, no calculator. Learn what is here so you don't have to read it for the first time in the exam.</p>
+</header>
+<main id="main">
+<h2>Relational algebra</h2>
+<ul><li>σ<sub>p</sub>(r): the rows of r where p holds · π<sub>A</sub>(r): the columns A of r, duplicates removed · ρ<sub>x</sub>(r): r renamed x</li><li>r × s: every pair of rows · r ⋈ s: pairs that agree on the common attributes, which appear once · r ⋈<sub>θ</sub> s = σ<sub>θ</sub>(r × s)</li><li>r ∪ s, r ∩ s, r − s: r and s must have the same attributes</li><li>r ÷ s, where s's attributes S are among r's: the rows t of π<sub>R−S</sub>(r) such that t combined with every row of s is in r</li><li>Conditions use =, ≠, &lt;, ≤, &gt;, ≥ and ∧ (and), ∨ (or), ¬ (not)</li></ul>
+<h2>SQL</h2>
+<ul><li>A query is evaluated in this order: FROM, WHERE, GROUP BY, HAVING, SELECT, ORDER BY</li><li>A comparison with NULL is unknown; WHERE and HAVING keep only rows where the condition is true. count(*) counts rows; count(col) and the other aggregates skip NULL</li></ul>
+<h2>Functional dependencies and normal forms</h2>
+<ul><li>Armstrong's axioms. Reflexivity: if β ⊆ α, then α → β. Augmentation: if α → β, then γα → γβ. Transitivity: if α → β and β → γ, then α → γ</li><li>Closure α<sup>+</sup>: start with α; while some β → γ in F has β ⊆ α<sup>+</sup>, add γ. α is a superkey of R if α<sup>+</sup> = R; a candidate key is a minimal superkey; an attribute is prime if it is in some candidate key</li><li>BCNF: for every nontrivial α → β that holds, α is a superkey</li><li>3NF: for every nontrivial α → β that holds, α is a superkey, or every attribute of β − α is prime</li><li>A decomposition of R into R<sub>1</sub>, R<sub>2</sub> is lossless if R<sub>1</sub> ∩ R<sub>2</sub> → R<sub>1</sub> or R<sub>1</sub> ∩ R<sub>2</sub> → R<sub>2</sub>. It preserves dependencies if the dependencies that hold on each R<sub>i</sub> together imply all of F</li></ul>
+</main>
+<footer><p>CS 4600/5200 · Midterm Exam formula sheet · Spring 2027</p></footer>
+</div>
+</body>
+</html>

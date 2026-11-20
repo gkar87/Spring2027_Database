@@ -373,6 +373,64 @@ ORDER BY year, semester;</textarea>
   </div>
 </section>
 
+<section id="more" aria-labelledby="more-h">
+  <h2 id="more-h">5. More examples to try</h2>
+  <p>More grouping, subqueries and windows on the same tables.</p>
+  <p>A student who takes two courses in a department counts twice in the first column and once in the second.</p>
+  <div class="cell" data-cell data-label="Example 5.1">
+    <div class="cell-head"><label for="c51">Example 5.1 · count(*) and count(DISTINCT)</label></div>
+    <textarea id="c51">SELECT c.dept_name,
+       count(*)             AS enrollments,
+       count(DISTINCT t.id) AS students
+FROM takes t JOIN course c ON c.course_id = t.course_id
+GROUP BY c.dept_name
+ORDER BY c.dept_name;</textarea>
+  </div>
+  <p>CASE turns each letter into points; avg skips the courses still in progress.</p>
+  <div class="cell" data-cell data-label="Example 5.2">
+    <div class="cell-head"><label for="c52">Example 5.2 · a grade point average with CASE</label></div>
+    <textarea id="c52">SELECT s.name,
+       round(avg(CASE t.grade WHEN 'A' THEN 4.0 WHEN 'A-' THEN 3.7 WHEN 'B+' THEN 3.3
+                              WHEN 'B' THEN 3.0 WHEN 'B-' THEN 2.7 WHEN 'C+' THEN 2.3
+                              WHEN 'C' THEN 2.0 WHEN 'C-' THEN 1.7 WHEN 'F' THEN 0 END), 2) AS gpa,
+       count(t.grade) AS graded
+FROM student s JOIN takes t ON t.id = s.id
+GROUP BY s.id, s.name
+ORDER BY gpa DESC NULLS LAST, s.name;</textarea>
+  </div>
+  <p>Each aggregate can have its own WHERE.</p>
+  <div class="cell" data-cell data-label="Example 5.3">
+    <div class="cell-head"><label for="c53">Example 5.3 · FILTER: several counts in one pass</label></div>
+    <textarea id="c53">SELECT course_id,
+       count(*)                                  AS enrolled,
+       count(*) FILTER (WHERE grade IS NULL)     AS in_progress,
+       count(*) FILTER (WHERE grade LIKE 'A%')  AS a_grades
+FROM takes
+GROUP BY course_id
+ORDER BY course_id;</textarea>
+  </div>
+  <p>The window sums each department's salaries without collapsing the rows.</p>
+  <div class="cell" data-cell data-label="Example 5.4">
+    <div class="cell-head"><label for="c54">Example 5.4 · a share of the department's total</label></div>
+    <textarea id="c54">SELECT name, dept_name, salary,
+       round(100 * salary / sum(salary) OVER (PARTITION BY dept_name), 1) AS pct_of_dept
+FROM instructor
+WHERE salary IS NOT NULL
+ORDER BY dept_name, pct_of_dept DESC;</textarea>
+  </div>
+  <p>A WITH result used twice: once to join, once inside a subquery.</p>
+  <div class="cell" data-cell data-label="Example 5.5">
+    <div class="cell-head"><label for="c55">Example 5.5 · more courses than the average student</label></div>
+    <textarea id="c55">WITH per_student AS (
+  SELECT id, count(*) AS n FROM takes GROUP BY id
+)
+SELECT s.name, p.n
+FROM per_student p JOIN student s ON s.id = p.id
+WHERE p.n &gt; (SELECT avg(n) FROM per_student)
+ORDER BY p.n DESC, s.name;</textarea>
+  </div>
+</section>
+
 <section id="exercises" aria-labelledby="ex-h">
   <h2 id="ex-h">Exercises</h2>
   <p>Write each query, then press <strong>Check answer</strong> (or <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Enter</kbd>). Column names don't matter, but the columns must come in the order asked, and row order doesn't matter. Exercises 1 to 7 are for everyone; exercise 8 is a stretch.</p>

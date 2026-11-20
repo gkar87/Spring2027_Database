@@ -454,6 +454,72 @@ ROLLBACK;</textarea>
   </div>
 </section>
 
+<section id="more" aria-labelledby="more-h">
+  <h2 id="more-h">7. More examples to try</h2>
+  <p>More changes to the data and the schema. Each starts with BEGIN and ends with ROLLBACK.</p>
+  <p>RETURNING shows the rows as the change left them.</p>
+  <div class="cell" data-cell data-label="Example 7.1">
+    <div class="cell-head"><label for="c71">Example 7.1 · UPDATE ... RETURNING</label></div>
+    <textarea id="c71">BEGIN;
+UPDATE student SET tot_cred = tot_cred + 3
+WHERE dept_name = 'Music'
+RETURNING id, name, tot_cred;
+ROLLBACK;</textarea>
+  </div>
+  <p>Enroll every Computer Science student with at least 50 credits in CS-347 for Fall 2027.</p>
+  <div class="cell" data-cell data-label="Example 7.2">
+    <div class="cell-head"><label for="c72">Example 7.2 · INSERT from a query</label></div>
+    <textarea id="c72">BEGIN;
+INSERT INTO takes (id, course_id, semester, year)
+SELECT id, 'CS-347', 'Fall', 2027
+FROM student
+WHERE dept_name = 'Comp. Sci.' AND tot_cred &gt;= 50
+RETURNING id, course_id, semester, year;
+ROLLBACK;</textarea>
+  </div>
+  <p>When the instructor goes, the office stays and its occupant becomes NULL.</p>
+  <div class="cell" data-cell data-label="Example 7.3">
+    <div class="cell-head"><label for="c73">Example 7.3 · ON DELETE SET NULL</label></div>
+    <textarea id="c73">BEGIN;
+CREATE TABLE office (
+  room     varchar(10) PRIMARY KEY,
+  occupant char(5) REFERENCES instructor ON DELETE SET NULL
+);
+INSERT INTO office VALUES ('Hale 210', '83821'), ('Hale 212', '10101');
+DELETE FROM teaches WHERE id = '83821';
+DELETE FROM instructor WHERE id = '83821';
+SELECT * FROM office ORDER BY room;
+ROLLBACK;</textarea>
+  </div>
+  <p>The recursion of slide 23, run the other way: follow prereq from the prerequisite to the course.</p>
+  <div class="cell" data-cell data-label="Example 7.4">
+    <div class="cell-head"><label for="c74">Example 7.4 · what CS-101 opens up</label></div>
+    <textarea id="c74">WITH RECURSIVE unlocks(course_id) AS (
+  SELECT course_id FROM prereq WHERE prereq_id = 'CS-101'
+  UNION
+  SELECT p.course_id
+  FROM prereq p
+  JOIN unlocks u ON p.prereq_id = u.course_id
+)
+SELECT u.course_id, c.title
+FROM unlocks u JOIN course c ON c.course_id = u.course_id
+ORDER BY u.course_id;</textarea>
+  </div>
+  <p>A view that joins three tables can be read, but PostgreSQL cannot tell which table an UPDATE should change.</p>
+  <div class="cell" data-cell data-label="Example 7.5">
+    <div class="cell-head"><label for="c75">Example 7.5 · a view over a join, and a refused update</label></div>
+    <textarea id="c75">BEGIN;
+CREATE VIEW advising AS
+SELECT s.name AS student, i.name AS advisor
+FROM student s
+JOIN advisor a    ON a.s_id = s.id
+JOIN instructor i ON i.id = a.i_id;
+SELECT * FROM advising ORDER BY advisor, student;
+UPDATE advising SET advisor = 'Sam Okafor' WHERE student = 'Riley Adams';
+ROLLBACK;</textarea>
+  </div>
+</section>
+
 <section id="exercises" aria-labelledby="ex-h">
   <h2 id="ex-h">Exercises</h2>
   <p>Write the statements, then press <strong>Check answer</strong> (or <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Enter</kbd>). Each exercise ends with a SELECT, and that last result is what is checked. Don't write <code>BEGIN</code> or <code>ROLLBACK</code>: Check does that for you, so your changes are undone afterwards. Column names don't matter, but the columns must come in the order asked, and row order doesn't matter. Exercises 1 to 7 are for everyone; exercise 8 is a stretch.</p>

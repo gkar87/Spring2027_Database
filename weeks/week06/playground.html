@@ -353,6 +353,77 @@ ROLLBACK;</textarea>
   </div>
 </section>
 
+<section id="more" aria-labelledby="more-h">
+  <h2 id="more-h">5. More examples to try</h2>
+  <p>More of the library, mapped to tables. Each box starts with BEGIN and ends with ROLLBACK, so the library stays as it was.</p>
+  <p>table_info shows each column, whether it may be NULL, and the keys.</p>
+  <div class="cell" data-cell data-label="Example 5.1">
+    <div class="cell-head"><label for="c51">Example 5.1 · the keys the library already has</label></div>
+    <textarea id="c51">SELECT * FROM table_info('book');
+SELECT * FROM table_info('patron');
+SELECT * FROM table_info('branch');</textarea>
+  </div>
+  <p>A loan relates a patron, a book and a branch, and has dates of its own.</p>
+  <div class="cell" data-cell data-label="Example 5.2">
+    <div class="cell-head"><label for="c52">Example 5.2 · a relationship with its own attributes</label></div>
+    <textarea id="c52">BEGIN;
+CREATE TABLE loan (
+  patron_id varchar(5)  REFERENCES patron,
+  isbn      varchar(17) REFERENCES book,
+  branch_id varchar(4)  NOT NULL REFERENCES branch,
+  borrowed  date NOT NULL,
+  due       date NOT NULL,
+  PRIMARY KEY (patron_id, isbn, borrowed),
+  CHECK (due &gt; borrowed)
+);
+INSERT INTO loan VALUES
+  ('P0001', '978-1-0000-0002-8', 'MAIN', '2027-02-01', '2027-02-22'),
+  ('P0004', '978-1-0000-0005-9', 'LAKE', '2027-02-03', '2027-02-24');
+SELECT p.name, b.title, l.branch_id, l.due
+FROM loan l
+JOIN patron p ON p.patron_id = l.patron_id
+JOIN book b   ON b.isbn = l.isbn
+ORDER BY l.due;
+ROLLBACK;</textarea>
+  </div>
+  <p>A book can have several authors and an author several books, so the relationship gets its own table and its key is both columns.</p>
+  <div class="cell" data-cell data-label="Example 5.3">
+    <div class="cell-head"><label for="c53">Example 5.3 · many-to-many: who wrote what</label></div>
+    <textarea id="c53">BEGIN;
+CREATE TABLE wrote (
+  author_id varchar(4)  REFERENCES author,
+  isbn      varchar(17) REFERENCES book,
+  PRIMARY KEY (author_id, isbn)
+);
+INSERT INTO wrote VALUES
+  ('A001', '978-1-0000-0001-1'), ('A002', '978-1-0000-0001-1'),
+  ('A001', '978-1-0000-0003-5'), ('A003', '978-1-0000-0004-2');
+SELECT a.name, count(w.isbn) AS books
+FROM author a LEFT JOIN wrote w ON w.author_id = a.author_id
+GROUP BY a.author_id, a.name
+ORDER BY books DESC, a.name;
+ROLLBACK;</textarea>
+  </div>
+  <p>A copy is numbered within its book, so its key borrows the book's isbn, and deleting the book deletes its copies.</p>
+  <div class="cell" data-cell data-label="Example 5.4">
+    <div class="cell-head"><label for="c54">Example 5.4 · a weak entity: copies of a book</label></div>
+    <textarea id="c54">BEGIN;
+CREATE TABLE copy (
+  isbn      varchar(17) REFERENCES book ON DELETE CASCADE,
+  copy_no   integer,
+  branch_id varchar(4) NOT NULL REFERENCES branch,
+  PRIMARY KEY (isbn, copy_no)
+);
+INSERT INTO copy VALUES
+  ('978-1-0000-0001-1', 1, 'MAIN'), ('978-1-0000-0001-1', 2, 'EAST'),
+  ('978-1-0000-0004-2', 1, 'LAKE');
+SELECT count(*) AS copies_before FROM copy;
+DELETE FROM book WHERE isbn = '978-1-0000-0001-1';
+SELECT count(*) AS copies_after FROM copy;
+ROLLBACK;</textarea>
+  </div>
+</section>
+
 <section id="studio" aria-labelledby="ex-h">
   <h2 id="ex-h">Studio exercises: map the library</h2>
   <p>Slides 27 to 29 revised the library's first draft. Here you turn the revised design into tables, one piece at a time. Each box starts with the line that is checked: <code>table_info</code> for the table you build. Write your statements above it, then press <strong>Check answer</strong> (or <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Enter</kbd>). Types are not checked, but column names, NOT NULL and keys are, so use the names in the prompt. Don't write <code>BEGIN</code> or <code>ROLLBACK</code>: Check does that for you. Exercises 1 to 7 are for everyone; exercise 8 is a stretch.</p>

@@ -351,6 +351,38 @@ ROLLBACK;</textarea>
   </div>
 </section>
 
+<section id="more" aria-labelledby="more-h">
+  <h2 id="more-h">6. More examples to try</h2>
+  <p>More estimates next to the truth. Work out each estimate by hand first, with the formula sheet, then run the box.</p>
+  <p>The value is in the most-common-values list, so its listed frequency is used.</p>
+  <div class="cell" data-cell data-label="Example 6.1">
+    <div class="cell-head"><label for="c61">Example 6.1 · equality on a common value</label></div>
+    <textarea id="c61">SELECT * FROM plan_rows('SELECT * FROM big_takes WHERE grade = ''F''');</textarea>
+  </div>
+  <p>A range uses the histogram: about (v − min) / (max − min) of the rows.</p>
+  <div class="cell" data-cell data-label="Example 6.2">
+    <div class="cell-head"><label for="c62">Example 6.2 · a range</label></div>
+    <textarea id="c62">SELECT * FROM plan_rows('SELECT * FROM big_student WHERE tot_cred &lt; 30');</textarea>
+  </div>
+  <p>For p1 OR p2 the planner uses s1 + s2 − s1 × s2.</p>
+  <div class="cell" data-cell data-label="Example 6.3">
+    <div class="cell-head"><label for="c63">Example 6.3 · an OR</label></div>
+    <textarea id="c63">SELECT * FROM plan_rows('SELECT * FROM big_takes WHERE course_id = ''CS-101'' OR year = 2027');</textarea>
+  </div>
+  <p>The selection shrinks one side first; the join size follows from it.</p>
+  <div class="cell" data-cell data-label="Example 6.4">
+    <div class="cell-head"><label for="c64">Example 6.4 · a join after a selection</label></div>
+    <textarea id="c64">SELECT * FROM plan_rows('SELECT * FROM big_student s
+  JOIN big_takes t ON t.student_no = s.student_no
+  WHERE s.dept_name = ''Physics''');</textarea>
+  </div>
+  <p>A fixed prefix is turned into a range of strings.</p>
+  <div class="cell" data-cell data-label="Example 6.5">
+    <div class="cell-head"><label for="c65">Example 6.5 · a prefix with LIKE</label></div>
+    <textarea id="c65">SELECT * FROM plan_rows('SELECT * FROM big_student WHERE name LIKE ''A%''');</textarea>
+  </div>
+</section>
+
 <section id="exercises" aria-labelledby="ex-h">
   <h2 id="ex-h">Exercises</h2>
   <p>Inside the quotes of <code>plan_rows</code>, <code>plan_steps</code> or <code>plan_actual</code>, write each quote of the query twice: <code>''MU-199''</code>. A <code>SET LOCAL</code> or <code>CREATE</code> in your answer lasts until the check is over.</p>

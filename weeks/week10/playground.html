@@ -333,6 +333,44 @@ ROLLBACK;</textarea>
   </div>
 </section>
 
+<section id="more" aria-labelledby="more-h">
+  <h2 id="more-h">5. More examples to try</h2>
+  <p>More about pages and indexes on the two big tables.</p>
+  <p>An index is stored in pages too; the primary keys already have one.</p>
+  <div class="cell" data-cell data-label="Example 5.1">
+    <div class="cell-head"><label for="c51">Example 5.1 · tables and their indexes, in pages</label></div>
+    <textarea id="c51">SELECT c.relname, CASE c.relkind WHEN 'r' THEN 'table' WHEN 'i' THEN 'index' END AS kind,
+       pg_relation_size(c.oid) / 8192 AS pages
+FROM pg_class c
+WHERE c.relname LIKE 'big_%'
+ORDER BY c.relname;</textarea>
+  </div>
+  <p>An index on only the enrollments still in progress is far smaller, and serves only queries that ask for them.</p>
+  <div class="cell" data-cell data-label="Example 5.2">
+    <div class="cell-head"><label for="c52">Example 5.2 · a partial index</label></div>
+    <textarea id="c52">BEGIN;
+CREATE INDEX big_takes_open ON big_takes (student_no) WHERE grade IS NULL;
+SELECT pg_relation_size('big_takes_open') / 8192 AS index_pages;
+SELECT * FROM plan_steps('SELECT * FROM big_takes WHERE grade IS NULL AND student_no = 4321');
+SELECT * FROM plan_steps('SELECT * FROM big_takes WHERE student_no = 4321');
+ROLLBACK;</textarea>
+  </div>
+  <p>The B+-tree finds the first key, then reads the leaves in order.</p>
+  <div class="cell" data-cell data-label="Example 5.3">
+    <div class="cell-head"><label for="c53">Example 5.3 · a range on the primary key</label></div>
+    <textarea id="c53">EXPLAIN (ANALYZE, BUFFERS, COSTS OFF)
+SELECT count(*) FROM big_student WHERE student_no BETWEEN 100 AND 199;</textarea>
+  </div>
+  <p>When every column the query needs is in the index, PostgreSQL can skip most of the table.</p>
+  <div class="cell" data-cell data-label="Example 5.4">
+    <div class="cell-head"><label for="c54">Example 5.4 · an index that answers on its own</label></div>
+    <textarea id="c54">BEGIN;
+CREATE INDEX big_takes_sno_course ON big_takes (student_no, course_id);
+SELECT * FROM plan_steps('SELECT course_id FROM big_takes WHERE student_no = 4321');
+ROLLBACK;</textarea>
+  </div>
+</section>
+
 <section id="exercises" aria-labelledby="ex-h">
   <h2 id="ex-h">Exercises</h2>
   <p>Exercises 3 to 8 ask you to create an index and show a plan with <code>plan_steps</code>. Use the index name the exercise gives: it is part of the answer. Checking runs inside a transaction that is rolled back, so the index is never kept.</p>

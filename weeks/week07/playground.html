@@ -322,6 +322,59 @@ ROLLBACK;</textarea>
   <p>The 3NF design keeps one table, <code>dept_advisor(s_id, i_id, dept_name)</code>, with primary key <code>(s_id, dept_name)</code>. The second insert is then refused by the key, at the price of repeating each instructor's department.</p>
 </section>
 
+<section id="more" aria-labelledby="more-h">
+  <h2 id="more-h">5. More examples to try</h2>
+  <p>More tests of dependencies and keys, on takes_flat, which repeats each student's and each course's facts on every enrollment.</p>
+  <p>A dependency fails if some group of rows agrees on the left side and disagrees on the right.</p>
+  <div class="cell" data-cell data-label="Example 5.1">
+    <div class="cell-head"><label for="c51">Example 5.1 · which dependencies hold here</label></div>
+    <textarea id="c51">SELECT 'id -&gt; name, dept_name' AS fd, count(*) AS violating_groups
+FROM (SELECT id FROM takes_flat GROUP BY id
+      HAVING count(DISTINCT (name, dept_name)) &gt; 1) v
+UNION ALL
+SELECT 'course_id -&gt; title, credits', count(*)
+FROM (SELECT course_id FROM takes_flat GROUP BY course_id
+      HAVING count(DISTINCT (title, credits)) &gt; 1) v
+UNION ALL
+SELECT 'course_id -&gt; semester', count(*)
+FROM (SELECT course_id FROM takes_flat GROUP BY course_id
+      HAVING count(DISTINCT semester) &gt; 1) v;</textarea>
+  </div>
+  <p>A set of columns is a superkey of this data if no two rows share its values.</p>
+  <div class="cell" data-cell data-label="Example 5.2">
+    <div class="cell-head"><label for="c52">Example 5.2 · is it a superkey?</label></div>
+    <textarea id="c52">SELECT count(*)                                         AS row_count,
+       count(DISTINCT (id, course_id, semester, year)) AS distinct_full_key,
+       count(DISTINCT (id, course_id))                 AS distinct_id_course
+FROM takes_flat;</textarea>
+  </div>
+  <p>Change one copy of a course's title and the table holds two titles for one course.</p>
+  <div class="cell" data-cell data-label="Example 5.3">
+    <div class="cell-head"><label for="c53">Example 5.3 · an update anomaly in takes_flat</label></div>
+    <textarea id="c53">BEGIN;
+UPDATE takes_flat SET title = 'Databases'
+WHERE course_id = 'CS-347' AND id = '00128';
+SELECT DISTINCT course_id, title FROM takes_flat WHERE course_id = 'CS-347';
+ROLLBACK;</textarea>
+  </div>
+  <p>Split by the two dependencies; the join gives back exactly the original rows, so the split is lossless.</p>
+  <div class="cell" data-cell data-label="Example 5.4">
+    <div class="cell-head"><label for="c54">Example 5.4 · split into three, and join back</label></div>
+    <textarea id="c54">BEGIN;
+CREATE TABLE s_part AS SELECT DISTINCT id, name, dept_name FROM takes_flat;
+CREATE TABLE c_part AS SELECT DISTINCT course_id, title, credits FROM takes_flat;
+CREATE TABLE e_part AS SELECT id, course_id, semester, year, grade FROM takes_flat;
+WITH back AS (
+  SELECT e.id, s.name, s.dept_name, e.course_id, c.title, c.credits, e.semester, e.year, e.grade
+  FROM e_part e JOIN s_part s ON s.id = e.id JOIN c_part c ON c.course_id = e.course_id
+)
+SELECT (SELECT count(*) FROM takes_flat) AS original,
+       (SELECT count(*) FROM back)       AS joined_back,
+       (SELECT count(*) FROM (SELECT * FROM back EXCEPT SELECT * FROM takes_flat) x) AS extra_rows;
+ROLLBACK;</textarea>
+  </div>
+</section>
+
 <section id="exercises" aria-labelledby="ex-h">
   <h2 id="ex-h">Exercises</h2>
   <p>Write the statements, then press <strong>Check answer</strong> (or <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Enter</kbd>). The last result is what is checked. Don't write <code>BEGIN</code> or <code>ROLLBACK</code>: Check does that for you. Column names don't matter, but the columns must come in the order asked, and row order doesn't matter. Exercises 1 to 7 are for everyone; exercise 8 is a stretch.</p>

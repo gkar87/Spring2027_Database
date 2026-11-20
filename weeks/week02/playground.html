@@ -299,6 +299,35 @@ SELECT dept_name FROM student;</textarea>
   </div>
 </section>
 
+<section id="more" aria-labelledby="more-h">
+  <h2 id="more-h">6. More examples to try</h2>
+  <p>More algebra on the same tables. Each box shows the answer, the tree and the SQL it becomes.</p>
+  <p>ρ gives a result a name you can use later.</p>
+  <div class="cell" data-cell data-lang="ra" data-label="Example 6.1">
+    <div class="cell-head"><label for="c61">Example 6.1 · Algebra · rename a result</label></div>
+    <textarea id="c61">ρ[cs](π[name, salary](σ[dept_name = 'Comp. Sci.'](instructor)))</textarea>
+  </div>
+  <p>∩ keeps the IDs in both results; the join brings back the names.</p>
+  <div class="cell" data-cell data-lang="ra" data-label="Example 6.2">
+    <div class="cell-head"><label for="c62">Example 6.2 · Algebra · students who took both courses</label></div>
+    <textarea id="c62">A ← π[id](σ[course_id = 'CS-101'](takes))
+B ← π[id](σ[course_id = 'CS-347'](takes))
+π[name](student ⋈ (A ∩ B))</textarea>
+  </div>
+  <p>Every salary that is smaller than some other salary, taken away from all salaries.</p>
+  <div class="cell" data-cell data-lang="ra" data-label="Example 6.3">
+    <div class="cell-head"><label for="c63">Example 6.3 · Algebra · the highest salary, without max</label></div>
+    <textarea id="c63">smaller ← π[i1.salary](σ[i1.salary &lt; i2.salary](ρ[i1](instructor) × ρ[i2](instructor)))
+π[salary](instructor) − smaller</textarea>
+  </div>
+  <p>Difference of two projections on course_id.</p>
+  <div class="cell" data-cell data-lang="ra" data-label="Example 6.4">
+    <div class="cell-head"><label for="c64">Example 6.4 · Algebra · courses nobody took in Spring 2026</label></div>
+    <textarea id="c64">S ← π[course_id](σ[semester = 'Spring' ∧ year = 2026](takes))
+π[course_id, title](course ⋈ (π[course_id](course) − S))</textarea>
+  </div>
+</section>
+
 <section id="exercises" aria-labelledby="ex-h">
   <h2 id="ex-h">Exercises</h2>
   <p>Write each answer in relational algebra, then press <strong>Check answer</strong> (or <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Enter</kbd>). Attribute names don't matter, but the attributes must come in the order asked. Exercises 1 to 6 are for everyone; 7 and 8 are a stretch.</p>

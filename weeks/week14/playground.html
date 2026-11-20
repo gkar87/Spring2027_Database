@@ -339,6 +339,53 @@ psql -d university_copy -c "SELECT count(*) FROM takes"</code></pre>
   <p>A dump is a snapshot of one moment. To recover to any moment, a server keeps a <strong>base backup</strong>, a copy of its files, and archives every WAL file after it. Replaying the archived WAL on the base backup brings the database forward to just before the mistake: <strong>point-in-time recovery</strong>.</p>
 </section>
 
+<section id="more" aria-labelledby="more-h">
+  <h2 id="more-h">7. More examples to try</h2>
+  <p>More recovery from the same log, and more about privileges.</p>
+  <p>Redo repeats every update from the checkpoint on, committed or not, so each item ends with its last logged value.</p>
+  <div class="cell" data-cell data-label="Example 7.1">
+    <div class="cell-head"><label for="c71">Example 7.1 · after the redo pass</label></div>
+    <textarea id="c71">SELECT DISTINCT ON (item) item, new_val AS after_redo, lsn
+FROM wal_log
+WHERE item IS NOT NULL
+  AND lsn &gt;= (SELECT max(lsn) FROM wal_log WHERE kind = 'checkpoint')
+ORDER BY item, lsn DESC;</textarea>
+  </div>
+  <p>Transactions with no commit or abort are undone, newest record first, back to each old value.</p>
+  <div class="cell" data-cell data-label="Example 7.2">
+    <div class="cell-head"><label for="c72">Example 7.2 · the undo pass</label></div>
+    <textarea id="c72">SELECT lsn, tx, item, old_val AS restore_to
+FROM wal_log
+WHERE kind = 'update'
+  AND tx IN (SELECT tx FROM wal_log WHERE tx IS NOT NULL
+             GROUP BY tx HAVING NOT bool_or(kind IN ('commit', 'abort')))
+ORDER BY lsn DESC;</textarea>
+  </div>
+  <p>A role made IN ROLE another inherits its privileges.</p>
+  <div class="cell" data-cell data-label="Example 7.3">
+    <div class="cell-head"><label for="c73">Example 7.3 · a group role</label></div>
+    <textarea id="c73">BEGIN;
+CREATE ROLE staff_demo;
+GRANT SELECT ON course TO staff_demo;
+CREATE ROLE ta_demo IN ROLE staff_demo;
+SET ROLE ta_demo;
+SELECT current_user, count(*) AS courses FROM course;
+RESET ROLE;
+ROLLBACK;</textarea>
+  </div>
+  <p>A privilege granted can be taken back.</p>
+  <div class="cell" data-cell data-label="Example 7.4">
+    <div class="cell-head"><label for="c74">Example 7.4 · REVOKE</label></div>
+    <textarea id="c74">BEGIN;
+CREATE ROLE clerk_demo;
+GRANT SELECT ON department TO clerk_demo;
+SELECT has_table_privilege('clerk_demo', 'department', 'SELECT') AS before_revoke;
+REVOKE SELECT ON department FROM clerk_demo;
+SELECT has_table_privilege('clerk_demo', 'department', 'SELECT') AS after_revoke;
+ROLLBACK;</textarea>
+  </div>
+</section>
+
 <section id="exercises" aria-labelledby="ex-h">
   <h2 id="ex-h">Exercises</h2>
   <p>Exercises 1 to 5 are about <code>wal_log</code>, with the crash right after record 18 unless the exercise says otherwise. Exercises 6 to 8 create roles; the checker rolls them back, so leave out <code>BEGIN</code>, <code>COMMIT</code> and <code>ROLLBACK</code>. The last statement's result is the one checked.</p>

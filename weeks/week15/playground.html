@@ -389,6 +389,51 @@ ROLLBACK;</textarea>
   <p>That price is the <strong>CAP</strong> trade-off. When the network splits the replicas into groups that can't reach each other (a <em>partition</em>), a system must choose: refuse some requests until the network heals, keeping the replicas <em>consistent</em>, or answer from whatever replicas it can reach, staying <em>available</em> but possibly stale. Many NoSQL systems choose availability and promise <strong>eventual consistency</strong>: once the writes stop, the replicas come to agree. PostgreSQL's own replication sends the WAL of week 14 to standby servers; with <code>synchronous_commit</code> set to wait for a standby, a commit waits for a second machine.</p>
 </section>
 
+<section id="more" aria-labelledby="more-h">
+  <h2 id="more-h">8. More examples to try</h2>
+  <p>More document, key-value and replication questions.</p>
+  <p>-&gt;&gt; gives text, so cast it to a number before averaging.</p>
+  <div class="cell" data-cell data-label="Example 8.1">
+    <div class="cell-head"><label for="c81">Example 8.1 · ratings by term</label></div>
+    <textarea id="c81">SELECT doc -&gt;&gt; 'term' AS term,
+       count(*) AS reviews,
+       round(avg((doc -&gt;&gt; 'rating')::int), 2) AS avg_rating
+FROM review
+GROUP BY doc -&gt;&gt; 'term'
+ORDER BY term;</textarea>
+  </div>
+  <p>Documents need not all have the same keys; ? tests for one.</p>
+  <div class="cell" data-cell data-label="Example 8.2">
+    <div class="cell-head"><label for="c82">Example 8.2 · documents without a key</label></div>
+    <textarea id="c82">SELECT count(*) FILTER (WHERE doc ? 'would_recommend')     AS has_recommend,
+       count(*) FILTER (WHERE NOT doc ? 'would_recommend') AS lacks_recommend
+FROM review;</textarea>
+  </div>
+  <p>jsonb_set replaces the value at a path and leaves the rest of the document alone.</p>
+  <div class="cell" data-cell data-label="Example 8.3">
+    <div class="cell-head"><label for="c83">Example 8.3 · change one value inside a document</label></div>
+    <textarea id="c83">BEGIN;
+UPDATE review SET doc = jsonb_set(doc, '{rating}', '4')
+WHERE id = 1
+RETURNING doc;
+ROLLBACK;</textarea>
+  </div>
+  <p>- drops a key; || merges in another document.</p>
+  <div class="cell" data-cell data-label="Example 8.4">
+    <div class="cell-head"><label for="c84">Example 8.4 · remove a key, add a key</label></div>
+    <textarea id="c84">SELECT doc - 'student'               AS without_student,
+       doc || '{"verified": true}'  AS with_flag
+FROM review
+WHERE id = 2;</textarea>
+  </div>
+  <p>With N copies, writes waiting for W and reads asking R, a read sees the latest write when R + W &gt; N.</p>
+  <div class="cell" data-cell data-label="Example 8.5">
+    <div class="cell-head"><label for="c85">Example 8.5 · quorums by hand</label></div>
+    <textarea id="c85">SELECT n, w, r, r + w &gt; n AS read_sees_latest_write
+FROM (VALUES (3, 2, 2), (3, 1, 1), (3, 3, 1), (5, 3, 3), (5, 2, 3)) AS q(n, w, r);</textarea>
+  </div>
+</section>
+
 <section id="exercises" aria-labelledby="ex-h">
   <h2 id="ex-h">Exercises</h2>
   <p>Exercises 1 to 4 query <code>review</code>. Exercises 5 to 8 create or change something; the checker rolls it back, so leave out <code>BEGIN</code>, <code>COMMIT</code> and <code>ROLLBACK</code>. The last statement's result is the one checked.</p>

@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Final Exam formula sheet · CS 4600/5200</title>
+<meta name="description" content="The formula sheet printed as the last page of the CS 4600/5200 final exam, posted so you know before the exam what you will be given.">
+<link rel="stylesheet" href="../../assets/course.css">
+<link rel="stylesheet" href="../../assets/db.css">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to the formulas</a>
+<div class="doc">
+<header class="doc-masthead">
+  <p class="inst"><span>CS 4600/5200 · Database Theory and Applications</span><span>Spring 2027</span><span><a href="../../index.html">Course home</a></span></p>
+  <h1>Final Exam: the formula sheet</h1>
+  <p class="tagline">This exact page is the last page of the final exam, and it is inside the online quiz. You bring nothing else: no notes, no calculator. Learn what is here so you don't have to read it for the first time in the exam.</p>
+</header>
+<main id="main">
+<h2>Relational algebra</h2>
+<ul><li>σ<sub>p</sub>(r): the rows of r where p holds · π<sub>A</sub>(r): the columns A of r, duplicates removed · ρ<sub>x</sub>(r): r renamed x</li><li>r × s: every pair of rows · r ⋈ s: pairs that agree on the common attributes, which appear once · r ⋈<sub>θ</sub> s = σ<sub>θ</sub>(r × s)</li><li>r ∪ s, r ∩ s, r − s: r and s must have the same attributes</li><li>r ÷ s, where s's attributes S are among r's: the rows t of π<sub>R−S</sub>(r) such that t combined with every row of s is in r</li><li>Conditions use =, ≠, &lt;, ≤, &gt;, ≥ and ∧ (and), ∨ (or), ¬ (not)</li></ul>
+<h2>SQL</h2>
+<ul><li>A query is evaluated in this order: FROM, WHERE, GROUP BY, HAVING, SELECT, ORDER BY</li><li>A comparison with NULL is unknown; WHERE and HAVING keep only rows where the condition is true. count(*) counts rows; count(col) and the other aggregates skip NULL</li></ul>
+<h2>Functional dependencies and normal forms</h2>
+<ul><li>Armstrong's axioms. Reflexivity: if β ⊆ α, then α → β. Augmentation: if α → β, then γα → γβ. Transitivity: if α → β and β → γ, then α → γ</li><li>Closure α<sup>+</sup>: start with α; while some β → γ in F has β ⊆ α<sup>+</sup>, add γ. α is a superkey of R if α<sup>+</sup> = R; a candidate key is a minimal superkey; an attribute is prime if it is in some candidate key</li><li>BCNF: for every nontrivial α → β that holds, α is a superkey</li><li>3NF: for every nontrivial α → β that holds, α is a superkey, or every attribute of β − α is prime</li><li>A decomposition of R into R<sub>1</sub>, R<sub>2</sub> is lossless if R<sub>1</sub> ∩ R<sub>2</sub> → R<sub>1</sub> or R<sub>1</sub> ∩ R<sub>2</sub> → R<sub>2</sub>. It preserves dependencies if the dependencies that hold on each R<sub>i</sub> together imply all of F</li></ul>
+<h2>Indexes</h2>
+<ul><li>A B<sup>+</sup>-tree with fanout f (entries per page) over n keys has about ⌈log<sub>f</sub> n⌉ levels. Finding one row by key reads one page per level, plus the row's page in the table</li></ul>
+<h2>Join costs, in pages read (r is the outer input)</h2>
+<ul><li>b<sub>r</sub>, b<sub>s</sub>: pages of r and s · n<sub>r</sub>, n<sub>s</sub>: rows of r and s</li><li>Block nested loop: b<sub>r</sub> × b<sub>s</sub> + b<sub>r</sub></li><li>Indexed nested loop: b<sub>r</sub> + n<sub>r</sub> × c, where c is the cost of one lookup in the index on s</li><li>Merge join, inputs already sorted: b<sub>r</sub> + b<sub>s</sub> · Hash join, hash table on one input fits in memory: b<sub>r</sub> + b<sub>s</sub></li></ul>
+<h2>Estimates</h2>
+<ul><li>Rows kept = selectivity × n<sub>r</sub>. V(A, r): number of distinct values of A in r</li><li>A = v: 1 / V(A, r), assuming every value is equally common; for a value in the common-values list, its listed frequency</li><li>A &lt; v: (v − min) / (max − min) · p<sub>1</sub> ∧ p<sub>2</sub>: the product of the two selectivities, assuming independence</li><li>r ⋈ s on A: at most n<sub>r</sub> rows if A is a key of s and a foreign key in r; otherwise n<sub>r</sub> × n<sub>s</sub> / max(V(A, r), V(A, s))</li><li>σ<sub>θ</sub>(r ⋈ s) = σ<sub>θ</sub>(r) ⋈ s when θ uses only attributes of r</li></ul>
+<h2>Transactions and recovery</h2>
+<ul><li>Two operations conflict if they belong to different transactions, use the same item, and at least one is a write. Precedence graph: an edge T<sub>i</sub> → T<sub>j</sub> for each conflicting pair where T<sub>i</sub>'s operation comes first; a schedule is conflict serializable if the graph has no cycle</li><li>Log records: &lt;T start&gt;, &lt;T, X, old value, new value&gt;, &lt;T commit&gt;, &lt;T abort&gt;, &lt;checkpoint L&gt; with L the active transactions. Undo writes the redo-only record &lt;T, X, old value&gt;</li></ul>
+<h2>Replication</h2>
+<ul><li>N copies, writes wait for W, reads ask R: every read sees the latest write if R + W &gt; N</li></ul>
+</main>
+<footer><p>CS 4600/5200 · Final Exam formula sheet · Spring 2027</p></footer>
+</div>
+</body>
+</html>

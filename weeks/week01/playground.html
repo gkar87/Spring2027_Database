@@ -334,6 +334,39 @@ VALUES ('00777', 'Lee Grant', 'Astrology', 0);</textarea>
   <div class="tvl" data-tvl></div>
 </section>
 
+<section id="more" aria-labelledby="more-h">
+  <h2 id="more-h">7. More examples to try</h2>
+  <p>Each box is one more question about the same tables. Run it, then change a value and run it again.</p>
+  <p>Two comparisons on one column pick out a range.</p>
+  <div class="cell" data-cell data-label="Example 7.1">
+    <div class="cell-head"><label for="c71">Example 7.1 · a range of values</label></div>
+    <textarea id="c71">SELECT name, tot_cred
+FROM student
+WHERE tot_cred &gt;= 50 AND tot_cred &lt;= 100
+ORDER BY tot_cred;</textarea>
+  </div>
+  <p>NOT flips a condition, and OR keeps a row if either side holds.</p>
+  <div class="cell" data-cell data-label="Example 7.2">
+    <div class="cell-head"><label for="c72">Example 7.2 · OR, and NOT</label></div>
+    <textarea id="c72">SELECT name, dept_name, salary
+FROM instructor
+WHERE dept_name = 'History' OR NOT salary &gt; 90000
+ORDER BY name;</textarea>
+  </div>
+  <p>The key of takes is (id, course_id, semester, year), so the same student, course and term cannot appear twice.</p>
+  <div class="cell" data-cell data-label="Example 7.3">
+    <div class="cell-head"><label for="c73">Example 7.3 · a key of four attributes</label></div>
+    <textarea id="c73">INSERT INTO takes VALUES ('00128', 'CS-101', 'Fall', 2025, 'B');</textarea>
+  </div>
+  <p>Courses still in progress have no grade, so the comparison gives neither true nor false.</p>
+  <div class="cell" data-cell data-label="Example 7.4">
+    <div class="cell-head"><label for="c74">Example 7.4 · a comparison with NULL is unknown</label></div>
+    <textarea id="c74">SELECT id, course_id, year, grade, grade = 'A' AS is_an_a
+FROM takes
+WHERE year = 2027 OR grade = 'A';</textarea>
+  </div>
+</section>
+
 <section id="exercises" aria-labelledby="ex-h">
   <h2 id="ex-h">Exercises</h2>
   <p>Write each query, then press <strong>Check answer</strong> (or <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Enter</kbd>). Column names don't matter, but the columns must come in the order asked, and row order doesn't matter unless the exercise says so. Exercises 1 to 5 are for everyone; exercise 6 is a stretch.</p>

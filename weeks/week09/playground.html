@@ -284,6 +284,56 @@ LIMIT 5;</textarea>
   </div>
 </section>
 
+<section id="more" aria-labelledby="more-h">
+  <h2 id="more-h">4. More examples to try</h2>
+  <p>More of what an application sends, and how to send less.</p>
+  <p>The statement is parsed once; each EXECUTE sends only the values.</p>
+  <div class="cell" data-cell data-label="Example 4.1">
+    <div class="cell-head"><label for="c41">Example 4.1 · one prepared INSERT, two sets of values</label></div>
+    <textarea id="c41">DEALLOCATE ALL;
+BEGIN;
+PREPARE add_dept(text, text, numeric) AS
+  INSERT INTO department VALUES ($1, $2, $3) RETURNING *;
+EXECUTE add_dept('Art', 'Morrow', 40000);
+EXECUTE add_dept('Drama', 'Linden', 30000);
+ROLLBACK;</textarea>
+  </div>
+  <p>The same input, pasted into the text or passed as a quoted value. Nothing here runs the built query.</p>
+  <div class="cell" data-cell data-label="Example 4.2">
+    <div class="cell-head"><label for="c42">Example 4.2 · what string-building does to a query</label></div>
+    <textarea id="c42">SELECT 'SELECT * FROM student WHERE name = ''' || $$x' OR '1'='1$$ || '''' AS built_by_pasting,
+       format('SELECT * FROM student WHERE name = %L', $$x' OR '1'='1$$) AS built_with_format;</textarea>
+  </div>
+  <p>If the enrollment is already there, change its grade instead of failing.</p>
+  <div class="cell" data-cell data-label="Example 4.3">
+    <div class="cell-head"><label for="c43">Example 4.3 · an upsert that updates</label></div>
+    <textarea id="c43">BEGIN;
+INSERT INTO takes VALUES ('00128', 'CS-347', 'Fall', 2025, 'A')
+ON CONFLICT (id, course_id, semester, year)
+DO UPDATE SET grade = EXCLUDED.grade
+RETURNING *;
+ROLLBACK;</textarea>
+  </div>
+  <p>The next page after Taylor Nguyen, most credits first; the id breaks ties.</p>
+  <div class="cell" data-cell data-label="Example 4.4">
+    <div class="cell-head"><label for="c44">Example 4.4 · keyset paging on two columns</label></div>
+    <textarea id="c44">SELECT id, name, tot_cred
+FROM student
+WHERE (tot_cred, id) &lt; (56, '44553')
+ORDER BY tot_cred DESC, id DESC
+LIMIT 4;</textarea>
+  </div>
+  <p>One query returns each student with their courses as a list.</p>
+  <div class="cell" data-cell data-label="Example 4.5">
+    <div class="cell-head"><label for="c45">Example 4.5 · one round trip instead of one per student</label></div>
+    <textarea id="c45">SELECT s.name, string_agg(t.course_id, ', ' ORDER BY t.course_id) AS courses
+FROM student s
+LEFT JOIN takes t ON t.id = s.id
+GROUP BY s.id, s.name
+ORDER BY s.name;</textarea>
+  </div>
+</section>
+
 <section id="exercises" aria-labelledby="ex-h">
   <h2 id="ex-h">Exercises</h2>
   <p>Write the SQL a program would send, with the values written in. Check each answer; checking never changes the data.</p>

@@ -317,6 +317,47 @@ SELECT * FROM plan_actual('SELECT * FROM big_takes ORDER BY year LIMIT 5');</tex
   </div>
 </section>
 
+<section id="more" aria-labelledby="more-h">
+  <h2 id="more-h">6. More examples to try</h2>
+  <p>More plans to read. Compare the steps with the cost formulas from the slides.</p>
+  <p>With an index on name, the first ten rows in order come straight from the index; no sort step.</p>
+  <div class="cell" data-cell data-label="Example 6.1">
+    <div class="cell-head"><label for="c61">Example 6.1 · an index on the sort column</label></div>
+    <textarea id="c61">BEGIN;
+CREATE INDEX big_student_name_idx ON big_student (name);
+SELECT * FROM plan_actual('SELECT * FROM big_student ORDER BY name LIMIT 10');
+ROLLBACK;</textarea>
+  </div>
+  <p>PostgreSQL first removes duplicate student numbers (the HashAggregate step), then joins, so each student counts once however many CS-347 enrollments match.</p>
+  <div class="cell" data-cell data-label="Example 6.2">
+    <div class="cell-head"><label for="c62">Example 6.2 · IN counts each student once</label></div>
+    <textarea id="c62">SELECT * FROM plan_actual('SELECT count(*) FROM big_student
+  WHERE student_no IN (SELECT student_no FROM big_takes WHERE course_id = ''CS-347'')');</textarea>
+  </div>
+  <p>Removing duplicates is grouping with no aggregate.</p>
+  <div class="cell" data-cell data-label="Example 6.3">
+    <div class="cell-head"><label for="c63">Example 6.3 · DISTINCT by hashing</label></div>
+    <textarea id="c63">SELECT * FROM plan_actual('SELECT DISTINCT course_id, year FROM big_takes');</textarea>
+  </div>
+  <p>The selection on one student comes first, so each join step handles few rows.</p>
+  <div class="cell" data-cell data-label="Example 6.4">
+    <div class="cell-head"><label for="c64">Example 6.4 · three tables, one student</label></div>
+    <textarea id="c64">SELECT * FROM plan_steps('SELECT s.name, c.title
+  FROM big_student s
+  JOIN big_takes t ON t.student_no = s.student_no
+  JOIN course c    ON c.course_id = t.course_id
+  WHERE s.student_no = 77');</textarea>
+  </div>
+  <p>UNION adds a step that removes duplicates; UNION ALL just appends.</p>
+  <div class="cell" data-cell data-label="Example 6.5">
+    <div class="cell-head"><label for="c65">Example 6.5 · UNION and UNION ALL</label></div>
+    <textarea id="c65">SELECT * FROM plan_actual('SELECT course_id FROM big_takes WHERE year = 2025
+  UNION SELECT course_id FROM big_takes WHERE year = 2026');
+SELECT * FROM plan_actual('SELECT course_id FROM big_takes WHERE year = 2025
+  UNION ALL SELECT course_id FROM big_takes WHERE year = 2026');</textarea>
+  </div>
+</section>
+
 <section id="exercises" aria-labelledby="ex-h">
   <h2 id="ex-h">Exercises</h2>
   <p>Several exercises use this join, the Music students and their enrollments:</p>

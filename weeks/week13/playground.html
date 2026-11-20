@@ -356,6 +356,51 @@ ROLLBACK;</textarea>
   </div>
 </section>
 
+<section id="more" aria-labelledby="more-h">
+  <h2 id="more-h">6. More examples to try</h2>
+  <p>More questions about the five schedules in sched, and about transactions.</p>
+  <p>R, W and C followed by the transaction number and the item.</p>
+  <div class="cell" data-cell data-label="Example 6.1">
+    <div class="cell-head"><label for="c61">Example 6.1 · each schedule on one line</label></div>
+    <textarea id="c61">SELECT sched,
+       string_agg(op || tx || coalesce('(' || item || ')', ''), ' ' ORDER BY step) AS schedule
+FROM sched
+GROUP BY sched
+ORDER BY sched;</textarea>
+  </div>
+  <p>A schedule is serial if each transaction runs in one unbroken stretch: the runs equal the transactions.</p>
+  <div class="cell" data-cell data-label="Example 6.2">
+    <div class="cell-head"><label for="c62">Example 6.2 · which schedules are serial</label></div>
+    <textarea id="c62">SELECT sched,
+       count(*) FILTER (WHERE tx &lt;&gt; prev) + 1 AS runs,
+       count(DISTINCT tx)                   AS transactions
+FROM (SELECT sched, tx, lag(tx) OVER (PARTITION BY sched ORDER BY step) AS prev
+      FROM sched) s
+GROUP BY sched
+ORDER BY sched;</textarea>
+  </div>
+  <p>In a serializable schedule, conflicts must agree with some serial order; here is the order the commits came in.</p>
+  <div class="cell" data-cell data-label="Example 6.3">
+    <div class="cell-head"><label for="c63">Example 6.3 · the commit order</label></div>
+    <textarea id="c63">SELECT sched, string_agg('T' || tx, ' then ' ORDER BY step) AS commit_order
+FROM sched
+WHERE op = 'C'
+GROUP BY sched
+ORDER BY sched;</textarea>
+  </div>
+  <p>FOR UPDATE SKIP LOCKED takes the next free rows; it is how a job queue hands out work.</p>
+  <div class="cell" data-cell data-label="Example 6.4">
+    <div class="cell-head"><label for="c64">Example 6.4 · skip the rows someone else holds</label></div>
+    <textarea id="c64">BEGIN;
+SELECT dept_name, budget
+FROM department
+ORDER BY dept_name
+LIMIT 2
+FOR UPDATE SKIP LOCKED;
+ROLLBACK;</textarea>
+  </div>
+</section>
+
 <section id="exercises" aria-labelledby="ex-h">
   <h2 id="ex-h">Exercises</h2>
   <p>The checker wraps your answer in its own transaction and rolls it back, so leave out <code>BEGIN</code>, <code>COMMIT</code> and <code>ROLLBACK</code>. <code>SAVEPOINT</code> and <code>ROLLBACK TO SAVEPOINT</code> are fine. The last statement's result is the one checked.</p>

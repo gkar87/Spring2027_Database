@@ -351,6 +351,52 @@ SELECT dept_name FROM student;</textarea>
   </div>
 </section>
 
+<section id="more" aria-labelledby="more-h">
+  <h2 id="more-h">6. More examples to try</h2>
+  <p>More joins, outer joins and set operations on this week's seven tables.</p>
+  <p>Two joins in a row: student to advisor, advisor to instructor.</p>
+  <div class="cell" data-cell data-label="Example 6.1">
+    <div class="cell-head"><label for="c61">Example 6.1 · student, advisor and the advisor's department</label></div>
+    <textarea id="c61">SELECT s.name AS student, i.name AS advisor, i.dept_name
+FROM student s
+JOIN advisor a    ON a.s_id = s.id
+JOIN instructor i ON i.id = a.i_id
+ORDER BY s.name;</textarea>
+  </div>
+  <p>A LEFT JOIN keeps every student; the ones with no match have NULL on the right.</p>
+  <div class="cell" data-cell data-label="Example 6.2">
+    <div class="cell-head"><label for="c62">Example 6.2 · students with no advisor</label></div>
+    <textarea id="c62">SELECT s.name, s.dept_name
+FROM student s
+LEFT JOIN advisor a ON a.s_id = s.id
+WHERE a.s_id IS NULL
+ORDER BY s.name;</textarea>
+  </div>
+  <p>Keeps unmatched rows from both sides: a department with no students, and a student with no department.</p>
+  <div class="cell" data-cell data-label="Example 6.3">
+    <div class="cell-head"><label for="c63">Example 6.3 · FULL OUTER JOIN</label></div>
+    <textarea id="c63">SELECT d.dept_name AS department, s.name AS student
+FROM department d
+FULL JOIN student s ON s.dept_name = d.dept_name
+ORDER BY department NULLS LAST, student;</textarea>
+  </div>
+  <p>COALESCE returns its first argument that is not NULL.</p>
+  <div class="cell" data-cell data-label="Example 6.4">
+    <div class="cell-head"><label for="c64">Example 6.4 · COALESCE to show a NULL</label></div>
+    <textarea id="c64">SELECT name, COALESCE(dept_name, '(undeclared)') AS major
+FROM student
+ORDER BY major, name;</textarea>
+  </div>
+  <p>Set operations compare whole rows: course, semester and year must all match.</p>
+  <div class="cell" data-cell data-label="Example 6.5">
+    <div class="cell-head"><label for="c65">Example 6.5 · INTERSECT: taught and taken in the same term</label></div>
+    <textarea id="c65">SELECT course_id, semester, year FROM teaches
+INTERSECT
+SELECT course_id, semester, year FROM takes
+ORDER BY year, semester, course_id;</textarea>
+  </div>
+</section>
+
 <section id="exercises" aria-labelledby="ex-h">
   <h2 id="ex-h">Exercises</h2>
   <p>Write each query, then press <strong>Check answer</strong> (or <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Enter</kbd>). Column names don't matter, but the columns must come in the order asked, and row order doesn't matter unless the exercise says so. Exercises 1 to 7 are for everyone; exercise 8 is a stretch.</p>
