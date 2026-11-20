@@ -135,6 +135,31 @@
   
 </section>
 
+<!-- 5b ────────────────────────────────────────────── web applications -->
+<section class="slide" id="s5web">
+  <h2>From a web page to the database</h2>
+  <div class="slide-main">
+    <table class="tbl tbl--compact">
+      <caption>The three tiers of a web application, and what each one does with the data</caption>
+      <thead><tr><th scope="col">Tier</th><th scope="col">What runs there</th><th scope="col">What it does with the data</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Browser</strong></td><td>HTML, a form, JavaScript</td><td>Sends a request over HTTP with the user's input; never talks to the database.</td></tr>
+        <tr><td><strong>Application server</strong></td><td>A Python program (Flask, Django), Java, Node</td><td>Checks who the user is, runs the business rules, sends parameterized SQL through a pooled connection, turns rows into a page or JSON.</td></tr>
+        <tr><td><strong>Database server</strong></td><td>PostgreSQL</td><td>Stores the data and enforces the constraints, transactions and roles of weeks 5, 13 and 14.</td></tr>
+      </tbody>
+    </table>
+    <ul>
+      <li>HTTP forgets each request, so who is signed in travels as a session cookie, and the application checks it on every request before any SQL runs.</li>
+      <li>A large web application keeps the same shape and splits the middle tier: pages, business logic and data access in separate layers, many application servers sharing pooled connections, and a cache in front of the slow queries.</li>
+    </ul>
+    <div class="callout">
+      <span class="mark" aria-hidden="true">→</span>
+      <p>The rest of this lecture runs in the middle tier. Milestone 3 builds that tier as a command-line program; a web page in front of it is allowed but earns nothing extra.</p>
+    </div>
+  </div>
+  
+</section>
+
 <!-- 6 ─────────────────────────────────────────────── first program -->
 <section class="slide" id="s6">
   <h2>A first program</h2>
@@ -604,7 +629,7 @@ q = sql.SQL(<span class="s">"SELECT count(*) FROM {}"</span>).format(
       <div>
         <h3>Read</h3>
         <ul>
-          <li>Sections 5.1 (SQL from a programming language, including Python), 9.7 and 9.8 (application performance and security).</li>
+          <li>Sections 5.1 (SQL from a programming language, including Python), 9.1–9.4 (web interfaces and application architectures), 9.7 and 9.8 (application performance and security).</li>
         </ul>
       </div>
       <div>
@@ -644,7 +669,7 @@ q = sql.SQL(<span class="s">"SELECT count(*) FROM {}"</span>).format(
     </ul>
     <div class="callout" style="margin-top:20px">
       <span class="mark" aria-hidden="true">→</span>
-      <p>Stuck installing psycopg? Bring your laptop to office hours, Tuesday and Wednesday 12:00–3:00 p.m., MIC room D159, or post in the week 9 discussion in Brightspace.</p>
+      <p>Stuck installing psycopg? Bring your laptop to office hours, Tuesday and Wednesday 12:00–3:00 p.m., MIC room D159, or email me.</p>
     </div>
   </div>
   

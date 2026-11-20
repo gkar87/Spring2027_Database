@@ -282,7 +282,7 @@ FROM pg_locks WHERE mode = 'SIReadLock';</pre>
     <li><strong>"WARNING: there is already a transaction in progress"</strong> after <code>BEGIN</code>: the previous task was never finished in that session. Run <code>ROLLBACK;</code> and start the task again.</li>
     <li><strong>The setup itself waits</strong>: the other session still has a transaction open on the lab tables. Run <code>ROLLBACK;</code> in B.</li>
     <li><strong>"relation "lab8_section" does not exist"</strong>: run <code>\i lab8_setup.sql</code> in A, from the folder where the file is, and check both sessions are connected to <code>university</code>.</li>
-    <li><strong>Anything else</strong>: copy the exact message and bring it to office hours, Tuesday and Wednesday 12:00–3:00 p.m., MIC room D159, or post it in the week 13 discussion in Brightspace.</li>
+    <li><strong>Anything else</strong>: copy the exact message and bring it to office hours, Tuesday and Wednesday 12:00–3:00 p.m., MIC room D159, or email it to me.</li>
   </ul>
 </section>
 </main>

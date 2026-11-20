@@ -173,7 +173,7 @@ $env:PGPASSWORD = "the password you chose in Lab 0"</pre>
     <li><strong>An error that the query has a different number of placeholders than parameters</strong>: the tuple has the wrong number of values. A tuple of one value needs a comma: <code>(text,)</code>.</li>
     <li><strong>P2 finds no one for 'ri'</strong>: the <code>%</code> wildcards must be part of the value, <code>"%" + text + "%"</code>, not of the SQL text.</li>
     <li><strong>"role "registrar_app" cannot be dropped because some objects depend on it"</strong>: you granted it privileges in another database. Run <code>DROP OWNED BY registrar_app;</code> in that database, then run <code>lab6.sql</code> again.</li>
-    <li><strong>Anything else</strong>: copy the exact message and bring it to office hours, Tuesday and Wednesday 12:00–3:00 p.m., MIC room D159, or post it in the week 9 discussion in Brightspace.</li>
+    <li><strong>Anything else</strong>: copy the exact message and bring it to office hours, Tuesday and Wednesday 12:00–3:00 p.m., MIC room D159, or email it to me.</li>
   </ul>
 </section>
 </main>

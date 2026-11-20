@@ -152,7 +152,7 @@ FROM c ORDER BY rn;</pre></li>
     <li><strong>"window functions are not allowed in WHERE"</strong>: compute the rank in a <code>WITH</code> step, then filter on it in the outer query (slide 23).</li>
     <li><strong>"more than one row returned by a subquery used as an expression"</strong>: a subquery after <code>=</code> or <code>&gt;</code> returned a list. Use <code>IN</code>, <code>ALL</code> or <code>SOME</code>, or make it return one value (slides 11 and 12).</li>
     <li><strong>A count that is too high after a join</strong>: <code>count(*)</code> counts the padded row too. Count a column from the right-hand table (slide 9), or use <code>count(DISTINCT …)</code> where the question says "different".</li>
-    <li><strong>Anything else</strong>: copy the exact message and bring it to office hours, Tuesday and Wednesday 12:00–3:00 p.m., MIC room D159, or post it in the week 4 discussion in Brightspace.</li>
+    <li><strong>Anything else</strong>: copy the exact message and bring it to office hours, Tuesday and Wednesday 12:00–3:00 p.m., MIC room D159, or email it to me.</li>
   </ul>
 </section>
 </main>

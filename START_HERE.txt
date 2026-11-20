@@ -11,7 +11,8 @@ START HERE
 
 2. Open the course home
    Open index.html in the extracted folder. It has the schedule and a link to
-   every week's slides, playground and lab, and to the term project.
+   every week's slides, playground and lab, to the term project, and to the
+   syllabus (syllabus.html), which has the grading and course policies.
 
 3. In week 1: set up PostgreSQL
    Lab 0 (weeks/week01/lab0.html) walks you through installing PostgreSQL on
@@ -72,6 +73,5 @@ turn it sideways for larger slides.
 Getting help
 ------------
 Office hours: Tuesday and Wednesday, 12:00 to 3:00 p.m., MIC room D159.
-Questions about a lab: post in the Brightspace discussion, so classmates can
-see the answer, or email kar@ucmo.edu.
+Questions about a lab: email kar@ucmo.edu. There is no discussion board.
 

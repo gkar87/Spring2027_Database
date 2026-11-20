@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Syllabus · CS 4600/5200 Database Theory and Applications · Spring 2027</title>
+<meta name="description" content="Syllabus for CS 4600/5200 Database Theory and Applications, Spring 2027, University of Central Missouri: catalog description, learning outcomes, assessment and grading, exams, course policies, AI use, course outline and university policies.">
+<link rel="stylesheet" href="assets/course.css">
+<link rel="stylesheet" href="assets/db.css">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to the syllabus</a>
+
+<div class="doc">
+
+  <header class="doc-masthead">
+    <p class="inst">
+      <span>University of Central Missouri</span>
+      <span>School of Computer Science and Cybersecurity</span>
+      <span><a href="index.html">Course home</a></span>
+    </p>
+    <h1>CS 4600/5200 Database Theory and Applications: syllabus</h1>
+    <p class="tagline">Everything about how the course runs, following the department's master syllabus for CS 4600/5200. The weeks, slides and labs are on the <a href="index.html">course home</a>; the dates are in its schedule.</p>
+    <p class="instructor">
+      <strong>Dr. Gorkem Kar</strong>
+      <span>Face to face and online</span>
+      <span>Spring 2027</span>
+    </p>
+  </header>
+
+  <nav class="toc" aria-labelledby="toc-h">
+    <h2 id="toc-h">On this page</h2>
+    <ol>
+      <li><a href="#glance">Course at a glance</a></li>
+      <li><a href="#description">Description and outcomes</a></li>
+      <li><a href="#grading">Assessment and grading</a></li>
+      <li><a href="#exams">Examinations</a></li>
+      <li><a href="#policy">Course policies</a></li>
+      <li><a href="#ai-use">Policy on AI tools</a></li>
+      <li><a href="#outline">Outline of course content</a></li>
+      <li><a href="#university">University policies</a></li>
+    </ol>
+  </nav>
+
+  <main id="main">
+
+    <section id="glance" aria-labelledby="glance-h">
+      <h2 id="glance-h">Course at a glance</h2>
+
+      <dl class="facts">
+        <div><dt>Course</dt><dd>CS 4600 (undergraduate) and CS 5200 (graduate), taught together</dd></div>
+        <div><dt>Credit hours</dt><dd>3</dd></div>
+        <div><dt>College</dt><dd>Health, Science, and Technology · Computer Science and Cybersecurity</dd></div>
+        <div><dt>Term</dt><dd>Spring 2027, Tue Jan 12 to Tue Apr 27; final exam May 3–7</dd></div>
+        <div><dt>Class</dt><dd>Tuesdays 3:00–5:40 p.m. CT, face to face at the Missouri Innovation Campus (MIC), room to be announced</dd></div>
+        <div><dt>Online section</dt><dd>The same lecture, recorded each Tuesday and posted in Brightspace</dd></div>
+        <div><dt>Office hours</dt><dd>Tue and Wed 12:00–3:00 p.m., MIC D159</dd></div>
+        <div><dt>Contact</dt><dd><a href="mailto:kar@ucmo.edu">kar@ucmo.edu</a> · (660) 543-6612</dd></div>
+      </dl>
+
+      <h3>Prerequisites</h3>
+      <p>(CS 2400 or MATH 2410) and (CS 2300 or CS 4170).</p>
+
+      <h3>Textbook and software</h3>
+      <ul>
+        <li><strong>Required:</strong> Silberschatz, Korth and Sudarshan, <em>Database System Concepts</em>, 7th edition, McGraw-Hill, 2019. Readings for each week are in the <a href="index.html#schedule">schedule</a>.</li>
+        <li><strong>Software:</strong> PostgreSQL and Python 3 on your own computer, set up in <a href="weeks/week01/lab0.html">Lab 0</a>. Every week also has a playground that runs SQL in your browser. No paid software is needed.</li>
+      </ul>
+
+      <h3>Response times</h3>
+      <p>I answer email within one business day. Labs, quizzes and project milestones are graded, with comments, within seven days of the deadline; exams within ten days.</p>
+    </section>
+
+    <section id="description" aria-labelledby="desc-h">
+      <h2 id="desc-h">Description and outcomes</h2>
+
+      <h3>Catalog description</h3>
+      <p>Topics include: E-R model, relational database design, normalization theory, SQL, application design and development, and database administration. Query optimization and concurrent operation issues will be presented. Significant application-oriented projects will be required.</p>
+
+      <h3>What you will be able to do</h3>
+      <p>On completing the course, every student will be able to:</p>
+      <ol>
+        <li>Use a relational model to design databases (weeks 1–2 and 6, project milestones 1–2).</li>
+        <li>Employ normalization rules as needed to obtain data in normal form (week 7, Lab 5, milestone 2).</li>
+        <li>Include security and integrity rules in a database (weeks 5, 9 and 13, Labs 4, 6 and 8, milestone 3).</li>
+        <li>Write and test a database using SQL (weeks 3–5, Labs 1–4, milestones 2–4).</li>
+        <li>Proceed with further study in the database area (weeks 10–15, Labs 7–8, milestone 4).</li>
+      </ol>
+      <p>Graduate students (CS 5200) will also be able to:</p>
+      <ol start="6">
+        <li>Understand the differences between NoSQL and SQL databases (week 15, the final exam's NoSQL part).</li>
+        <li>Use a NoSQL database tool for application development (<a href="weeks/week15/lab9.html">Lab 9</a>, and the NoSQL feature of the <a href="project/index.html">term project</a>).</li>
+      </ol>
+      <p>Every handout marks graduate-only work with <span class="tag-grad">Graduate (CS 5200)</span>.</p>
+
+      <h3>Program outcomes this course supports</h3>
+      <ul>
+        <li><strong>Computer Science:</strong> SO1 analyze a complex computing problem; SO2 design, implement and evaluate a computing-based solution; SO3 communicate effectively; SO4 professional responsibilities and ethical judgment; SO5 work effectively in a team; SO6 apply computer science theory and software development fundamentals.</li>
+        <li><strong>Cybersecurity:</strong> CY SO1 to SO5, the same five abilities as CS SO1 to SO5.</li>
+        <li><strong>Software Engineering:</strong> SE SO1 solve complex engineering problems; SO2 engineering design that meets specified needs; SO3 communicate with a range of audiences; SO5 function on a team; SO7 acquire and apply new knowledge.</li>
+        <li><strong>Graduate, Computer Science:</strong> Outcome 3 current techniques, skills and tools; Outcome 4 communication, teamwork and ethics; Outcome 5 continuing professional development.</li>
+        <li><strong>Graduate, Cybersecurity:</strong> Outcome 1 apply algorithmic principles and formal models to advanced problems.</li>
+      </ul>
+    </section>
+
+    <section id="grading" aria-labelledby="grading-h">
+      <h2 id="grading-h">Assessment and grading</h2>
+      <p>The lecture is the basic mechanism of the course, with live demonstrations on the course database. Assessment is criterion-referenced: each piece of work has a rubric, and your grade depends on meeting it, not on how others do.</p>
+
+      <div class="fig-scroll" tabindex="0" role="region" aria-label="Graded components">
+      <table class="tbl">
+        <caption>Graded components. Weights total 100%. There is no participation grade.</caption>
+        <thead>
+          <tr><th scope="col">Component</th><th scope="col">In the master syllabus</th><th scope="col" class="num">Weight</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Weekly quizzes in Brightspace, 10 questions each, lowest two dropped</td><td>Regular examinations</td><td class="num">10%</td></tr>
+          <tr><td>Labs 0–8, plus <a href="weeks/week15/lab9.html">Lab 9</a> for CS 5200: SQL and Python, each with written answers</td><td>Programming and written assignments</td><td class="num">25%</td></tr>
+          <tr><td><a href="project/index.html">Term project</a>, four milestones (5 + 5 + 7 + 8 points), with a design report, a demo and a walkthrough; CS 5200 adds a paper critique</td><td>Semester project and written assignments</td><td class="num">25%</td></tr>
+          <tr><td>Midterm, Tuesday, March 2</td><td>Regular examinations</td><td class="num">20%</td></tr>
+          <tr><td>Final exam, finals week, comprehensive</td><td>Comprehensive final exam</td><td class="num">20%</td></tr>
+        </tbody>
+      </table>
+      </div>
+
+      <h3>Grade scale</h3>
+      <p>A 90–100 · B 80–89 · C 70–79 · D 60–69 · F below 60, the scale in the department's master syllabus.</p>
+
+      <h3>Late work</h3>
+      <p>Labs and project milestones lose <strong>10% per day for up to three days</strong>, and are not accepted after that. Quizzes and exams have fixed windows and cannot be late; the online section takes each quiz within 48 hours of the recording. The milestone 4 demo and walkthrough can't be late either: if you can't come on April 27, tell me beforehand. If something makes a deadline impossible, write to me before it passes.</p>
+    </section>
+
+    <section id="exams" aria-labelledby="exams-h">
+      <h2 id="exams-h">Examinations</h2>
+      <ul>
+        <li><strong>Midterm:</strong> Tuesday, March 2, in class, 90 minutes, 100 points, weeks 1–7. One page of your own handwritten notes, both sides. The <a href="weeks/week08/index.html">week 8 slides</a> show the parts.</li>
+        <li><strong>Final:</strong> finals week, May 3–7, at the time in the university's final exam schedule. Comprehensive, 2 hours, 100 points. Two pages of your own handwritten notes and a basic calculator.</li>
+        <li>CS 5200 students answer one extra 10-point question on each exam.</li>
+        <li>The online section takes both exams in Brightspace, with the same time limit.</li>
+        <li>If illness or an emergency makes an exam date impossible, tell me before the exam if you possibly can. A make-up is given for a documented reason.</li>
+      </ul>
+    </section>
+
+    <section id="policy" aria-labelledby="policy-h">
+      <h2 id="policy-h">Course policies</h2>
+
+      <h3>Attendance</h3>
+      <p>Face-to-face students are expected at every Tuesday class, and online students to watch each week's recording before that week's quiz. Attendance is not graded, but the quizzes and exams assume everything shown in class, and the in-class part of Lab 0 gets PostgreSQL working on your computer. If you miss a class, watch its recording. If you will miss an exam, see <a href="#exams">Examinations</a>.</p>
+
+      <h3>Communication</h3>
+      <p>There is no discussion board in this course. Ask about the material in class or in office hours. Everything else, including a lab you are stuck on, accommodations, illness, extensions and grading questions, goes to me by email at <a href="mailto:kar@ucmo.edu">kar@ucmo.edu</a>.</p>
+
+      <h3>Labs and the project</h3>
+      <p>The project is individual or a team of two. You may discuss ideas with classmates, but the SQL, code and writing you submit must be your own, and you cite anything you did not write. You use your own computer; a student whose computer can't install software tells me in the first two weeks.</p>
+    </section>
+
+    <section id="ai-use" aria-labelledby="aiuse-h">
+      <h2 id="aiuse-h">Policy on AI tools</h2>
+      <p>This course follows the department's <strong>limited use</strong> model for generative AI.</p>
+      <table class="tbl">
+        <caption>What is permitted, by kind of work.</caption>
+        <thead><tr><th scope="col">Work</th><th scope="col">Generative AI allowed?</th><th scope="col">What you must do</th></tr></thead>
+        <tbody>
+          <tr><td>Labs and project milestones</td><td>To explain an error message, a keyword or an idea, and only where the handout allows it</td><td>The design, SQL and code are your own. End each submission with one line on how you used AI, if at all.</td></tr>
+          <tr><td>CS 5200 paper critique</td><td>To explain a term or a piece of notation, not to summarize the paper or write the critique</td><td>The reading and the judgement are yours; say in one line how you used AI, if at all.</td></tr>
+          <tr><td>Quizzes, midterm and final</td><td>No</td><td>Using one is an academic honesty violation.</td></tr>
+        </tbody>
+      </table>
+      <p>In the milestone 4 walkthrough you explain your own code and answer questions about it. A part you cannot explain earns no credit, however it was written.</p>
+    </section>
+
+    <section id="outline" aria-labelledby="outline-h">
+      <h2 id="outline-h">Outline of course content</h2>
+      <p>The seven parts of the master syllabus, and the weeks that teach them.</p>
+      <div class="fig-scroll" tabindex="0" role="region" aria-label="Master syllabus outline and the weeks that cover it">
+      <table class="tbl">
+        <caption>Master syllabus outline, mapped to this term's weeks.</caption>
+        <thead><tr><th scope="col">Part</th><th scope="col">Topics</th><th scope="col">Weeks</th></tr></thead>
+        <tbody>
+          <tr><td>1. Introduction</td><td>Evolution of database systems; architecture of a DBMS; the future of database systems</td><td>1, 15</td></tr>
+          <tr><td>2. Relational model</td><td>Structure of a relational database; relational-algebra operations; modification of the database</td><td>1, 2, 5</td></tr>
+          <tr><td>3. SQL</td><td>Basic query structure; modification; data types and schemas; constraints and triggers; authorization</td><td>3, 4, 5</td></tr>
+          <tr><td>4. Database design and the E-R model</td><td>E-R model and diagrams; design issues; weak entity sets; reduction to relational schemas</td><td>6</td></tr>
+          <tr><td>5. Relational database design</td><td>First normal form; decomposition using functional and multivalued dependencies; more normal forms; the design process</td><td>7</td></tr>
+          <tr><td>6. Application design and development</td><td>Web interface to a database; building large web applications; authorization in SQL; application security</td><td>5, 9</td></tr>
+          <tr><td>7. Advanced topics</td><td>Query optimization; concurrent operations (plus storage, indexes, recovery and NoSQL)</td><td>10–15</td></tr>
+        </tbody>
+      </table>
+      </div>
+    </section>
+
+    <section id="university" aria-labelledby="univ-h">
+      <h2 id="univ-h">University policies</h2>
+
+      <h3>ADA</h3>
+      <p>Students with documented disabilities who are seeking accommodations should contact the Office of Accessibility Services at Union 224, 660-543-4983 or access@ucmo.edu. If you want to share information about your needs that I should be aware of, such as emergency medical information or special arrangements for field trips or internships, please see me privately after class or during office hours. Please contact Accessibility Services at 660-543-4983 or access@ucmo.edu at least 72 hours in advance if you will require accommodations due to a disability.</p>
+      <p>Every page of this course is built to meet WCAG 2.1 AA. If something is hard to use, tell me which page and what happened, and I will provide an accessible version.</p>
+
+      <h3>Title IX</h3>
+      <p>The University of Central Missouri seeks to foster a safe and healthy environment built on mutual respect and trust. Sex discrimination, including sexual harassment, sexual violence, and other forms of sexual misconduct, will not be tolerated. All faculty and most staff are considered mandated reporters by the University and must disclose all information they receive about sexual misconduct to the Title IX Coordinator. As a faculty or staff member of the University, I am a mandated reporter. This means I am required to report information shared with me regarding sex discrimination and sexual misconduct. If you, or someone you know, has experienced sex discrimination or sexual misconduct, please know that assistance and options are available. UCM strongly encourages all members of the community to seek support and report incidents of this nature to the Title IX Coordinator. Anyone who wishes to report sexual misconduct, to learn more about the University process and options available, or to utilize a confidential resource, please visit the UCM Title IX Information Page.</p>
+      <p>If you are pregnant, you are also protected under Title IX. For accommodations related to your pregnancy, you should contact the Office of Accessibility Services at Union 224, 660-543-4983, or access@ucmo.edu.</p>
+
+      <h3>Access, opportunity, and community</h3>
+      <p>The University of Central Missouri's administrators, faculty, and staff seek a campus environment that recognizes all dimensions of diversity and inclusiveness. All students are welcome in our classes, and differences are acknowledged rather than erased or denied. Dimensions of diversity can include sex, race, age, national origin, ethnicity, gender identity and expression, intellectual and physical ability, sexuality, income, faith and non-faith perspectives, socio-economic class, primary language, family status, military experience, and more. Inclusive learning is facilitated by creative and innovative thought and mutual respect; being in this class means that you, your faculty member, and your peers strive to foster a welcoming and equitable environment for all.</p>
+
+      <h3>Academic honesty</h3>
+      <p>This instructor will enforce UCM's Academic Honesty Policy as described in the Academic Policy Library and UCM Student Handbook.</p>
+
+      <h3>Student conduct</h3>
+      <p>Each student who enrolls at UCM assumes an obligation to abide by the university's rules and regulations and local, state, and federal laws. The Student Handbook describes student rights and responsibilities.</p>
+    </section>
+
+  </main>
+
+  <footer>
+    <p>CS 4600/5200 · Database Theory and Applications · Syllabus · Spring 2027 · University of Central Missouri · Dr. Gorkem Kar.</p>
+  </footer>
+
+</div>
+</body>
+</html>
